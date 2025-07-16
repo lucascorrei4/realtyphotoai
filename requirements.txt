@@ -1,0 +1,13 @@
+opencv-python==4.8.1.78
+pillow==10.0.1
+numpy==1.24.3
+torch==2.0.1
+torchvision==0.15.2
+transformers==4.33.2
+diffusers==0.20.2
+accelerate==0.21.0
+scikit-image==0.21.0
+matplotlib==3.7.2
+requests==2.31.0
+python-dotenv==1.0.0
+gradio==3.44.4
