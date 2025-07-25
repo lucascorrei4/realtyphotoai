@@ -66,7 +66,7 @@ echo "🌐 Configuring Nginx..."
 sudo tee /etc/nginx/sites-available/realestate-ai > /dev/null <<EOF
 server {
     listen 80;
-    server_name YOUR_DOMAIN_OR_IP;
+    server_name realtyphotoai.com 31.97.147.23;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -77,6 +77,7 @@ server {
         proxy_read_timeout 300;
         proxy_connect_timeout 300;
         proxy_send_timeout 300;
+        client_max_body_size 10M;
     }
 }
 EOF
