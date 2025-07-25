@@ -1,0 +1,30 @@
+# VPS-optimized requirements for Real Estate AI App
+# This version uses CPU-only PyTorch and specific versions for better compatibility
+
+# Core ML libraries (CPU-only for smaller size)
+torch==2.0.1+cpu --find-links https://download.pytorch.org/whl/torch_stable.html
+torchvision==0.15.2+cpu --find-links https://download.pytorch.org/whl/torch_stable.html
+
+# Image processing
+opencv-python-headless==4.8.1.78
+pillow==10.0.1
+numpy==1.24.3
+scikit-image==0.20.0
+
+# AI/ML libraries
+transformers==4.35.2
+diffusers==0.21.4
+accelerate==0.24.1
+
+# Web framework
+gradio==3.50.2
+gunicorn==21.2.0
+
+# Utilities
+matplotlib==3.7.2
+requests==2.31.0
+python-dotenv==1.0.0
+
+# Optional: For better performance
+# psutil==5.9.6  # System monitoring
+# huggingface-hub==0.17.3  # Model management
