@@ -2,9 +2,10 @@
 
 An AI-powered agent that specializes in analyzing home photos and generating professional enhancement suggestions for real estate marketing. The agent can identify room types, architectural styles, and suggest photorealistic improvements while preserving structural elements.
 
-## 🚀 Deploy to Heroku
-
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/lucascorrei4/realtyphotoai)
+> **⚠️ DEPRECATED:** This version has been completely refactored. Please use the new FastAPI backend version in the same repository.
+> 
+> **🚀 New Version:** See `README_NEW.md` for the modern FastAPI backend with best practices.
+> **📦 VPS Deployment:** Use `deploy_vps_new.sh` for production deployment.
 
 ## ✨ Features
 

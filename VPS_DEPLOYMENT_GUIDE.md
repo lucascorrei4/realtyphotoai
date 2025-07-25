@@ -1,6 +1,6 @@
 # 🚀 VPS Deployment Guide for Real Estate AI App
 
-This guide will help you deploy your Real Estate AI application on your Hostinger VPS instead of Heroku, avoiding the 500MB size limit.
+This guide will help you deploy your Real Estate AI application on your Hostinger VPS for production use.
 
 ## 📋 Prerequisites
 

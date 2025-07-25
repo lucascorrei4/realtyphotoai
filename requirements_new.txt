@@ -1,0 +1,58 @@
+# Real Estate Photo AI Backend - Production Requirements
+# Updated for FastAPI architecture with best practices
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Core ML libraries (CPU-only for VPS efficiency)
+torch==2.1.1+cpu --find-links https://download.pytorch.org/whl/torch_stable.html
+torchvision==0.16.1+cpu --find-links https://download.pytorch.org/whl/torch_stable.html
+
+# Image processing
+opencv-python-headless==4.8.1.78
+pillow==10.1.0
+numpy==1.24.4
+scikit-image==0.22.0
+
+# AI/ML libraries
+transformers==4.35.2
+diffusers==0.21.4
+accelerate==0.24.1
+huggingface-hub==0.19.4
+
+# Data validation and serialization
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# HTTP and networking
+httpx==0.25.2
+requests==2.31.0
+
+# Configuration and environment
+python-dotenv==1.0.0
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Production server
+gunicorn==21.2.0
+
+# Utilities
+typing-extensions==4.8.0
+click==8.1.7
+
+# Development and testing (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+
+# Security
+cryptography==41.0.8
+
+# Performance monitoring (optional)
+psutil==5.9.6 
