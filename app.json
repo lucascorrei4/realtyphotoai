@@ -1,0 +1,30 @@
+{
+  "name": "Real Estate Graphic Designer",
+  "description": "AI-powered agent for real estate photo enhancement suggestions",
+  "image": "heroku/python",
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "env": {
+    "PYTHONPATH": {
+      "required": false
+    }
+  },
+  "addons": [],
+  "keywords": [
+    "python",
+    "ai",
+    "real-estate",
+    "image-processing",
+    "gradio"
+  ]
+}
