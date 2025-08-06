@@ -67,8 +67,20 @@ print(suggestion)
 analysis = agent.analyze_image("path/to/room_image.jpg")
 print(f"Room: {analysis['room_type']}")
 print(f"Style: {analysis['style']}")
-print(f"Suggestion: {agent.suggest_enhancement('path/to/room_image.jpg')}")
+    print(f"Suggestion: {agent.suggest_enhancement('path/to/room_image.jpg')}")
 ```
+
+## 🖼️ Image-to-Image Enhancement
+
+Transform an existing room photo into a modern design while preserving the
+original layout using the `room_enhancer.py` utility:
+
+```bash
+python room_enhancer.py path/to/room.jpg --style modern --strength 0.7
+```
+
+The script uses a Stable Diffusion image-to-image pipeline to add contemporary
+furniture and décor without altering the fundamental structure of the room.
 
 ## 🎯 Example Enhancement Suggestions
 
