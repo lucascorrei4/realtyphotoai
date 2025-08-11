@@ -223,6 +223,13 @@ If you're not getting ChatGPT-quality results:
 
 The goal is to achieve results where someone looking at the before/after images can immediately recognize it's the exact same room with furniture added - just like the best ChatGPT examples.
 
+## 🚀 Deployment to Hostinger
+
+This repository includes a GitHub Actions workflow that builds and deploys the service to a Hostinger VPS.
+1. Add secrets: `HOSTINGER_HOST`, `HOSTINGER_PORT`, `HOSTINGER_USER`, `HOSTINGER_PRIVATE_KEY`, `HOSTINGER_APP_PATH`.
+2. On pushes to `main` the workflow compiles the project and uploads `dist` and configuration files via SCP.
+3. After upload it installs production dependencies and reloads PM2 using `ecosystem.config.js`.
+
 ## 📄 License
 
 MIT License - See LICENSE file for details 

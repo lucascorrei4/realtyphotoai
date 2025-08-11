@@ -1,0 +1,54 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Copy files to Hostinger
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          key: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          source: |
+            package.json
+            package-lock.json
+            dist/**
+            ecosystem.config.js
+            nginx.conf
+          target: ${{ secrets.HOSTINGER_APP_PATH }}
+          strip_components: 0
+          overwrite: true
+
+      - name: Install and restart on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          key: ${{ secrets.HOSTINGER_PRIVATE_KEY }}
+          script: |
+            cd ${{ secrets.HOSTINGER_APP_PATH }}
+            npm ci --only=production
+            pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js --env production
