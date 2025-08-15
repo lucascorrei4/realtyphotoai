@@ -4,6 +4,8 @@ import { AppConfig } from '../types';
 // Load environment variables
 dotenv.config();
 
+
+
 class ConfigManager {
   private config: AppConfig;
 
@@ -16,12 +18,16 @@ class ConfigManager {
     return {
       port: parseInt(process.env.PORT || '8000', 10),
       nodeEnv: process.env.NODE_ENV || 'development',
-      appName: process.env.APP_NAME || 'Real Estate Photo AI Backend',
+      appName: process.env.APP_NAME || 'RealtyPhotoAI Lab Backend',
       appVersion: process.env.APP_VERSION || '1.0.0',
       apiPrefix: process.env.API_PREFIX || '/api/v1',
       maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10), // 10MB
-      allowedFileTypes: (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/webp').split(','),
-      replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
+      allowedFileTypes: (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/webp,image/heic').split(','),
+      replicateApiToken: process.env.REPLICATE_API_TOKEN || (process.env.NODE_ENV === 'development' ? 'dev-token-placeholder' : ''),
+      // ⚠️  IMPORTANT: Always specify a version (e.g., :latest, :v1.0.0, or specific hash)
+      //    - :latest = Most recent version (good for development, may change behavior)
+      //    - :v1.0.0 = Semantic version (stable, if supported by model)
+      //    - :hash = Specific version hash (most stable, never changes)
       stableDiffusionModel: process.env.STABLE_DIFFUSION_MODEL || 'asiryan/juggernaut-xl-v7:latest',
       defaultPrompt: process.env.DEFAULT_PROMPT || 'modern furnished living room, stylish furniture, warm lighting, professional interior design, photorealistic',
       defaultNegativePrompt: process.env.NEGATIVE_PROMPT || 'blurry, low quality, distorted, cluttered, messy, dark, poor lighting, oversaturated, unrealistic',
@@ -44,11 +50,14 @@ class ConfigManager {
   }
 
   private validateConfig(): void {
-    const requiredFields: Array<keyof AppConfig> = ['replicateApiToken'];
-    
-    for (const field of requiredFields) {
-      if (!this.config[field]) {
-        throw new Error(`Missing required configuration: ${field}`);
+    // Only require replicateApiToken in production
+    if (this.config.nodeEnv === 'production') {
+      const requiredFields: Array<keyof AppConfig> = ['replicateApiToken'];
+      
+      for (const field of requiredFields) {
+        if (!this.config[field]) {
+          throw new Error(`Missing required configuration: ${field}`);
+        }
       }
     }
 

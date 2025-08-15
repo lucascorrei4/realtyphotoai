@@ -1,4 +1,4 @@
-# 🏠 Real Estate Photo AI - Enhanced Interior Design
+# 🏠 RealtyPhotoAI Lab - Enhanced Interior Design
 
 Professional Node.js backend for AI-powered real estate photo enhancement that **preserves original room structure** while adding beautiful furniture and decor.
 
@@ -31,8 +31,38 @@ npm run dev
 ```
 
 ### 2. Test Pages
+- **Home Page**: `http://localhost:8000/` - Main application interface (simplified, user-friendly)
+- **Alternative Home**: `http://localhost:8000/home` - Alternative access to home page
+- **Lab Interface**: `http://localhost:8000/lab` - Full test page with all options (advanced users)
 - **Enhanced Test Page**: `http://localhost:8000/test-enhanced` - Full featured with ControlNet
 - **Simple Test Page**: `http://localhost:8000/test` - Basic interface
+
+## 🏠 New Home Page Interface
+
+The application now features a **simplified, user-friendly home page** that makes AI-powered photo enhancement accessible to everyone:
+
+### ✨ **Key Features**
+- **Three AI Services**: Interior Design, Image Enhancement, and Element Replacement
+- **Simplified Forms**: Only essential fields visible, technical parameters optimized automatically
+- **Professional Results**: Hardcoded optimal settings ensure consistent, high-quality output
+- **No Learning Curve**: Users can start immediately without understanding technical details
+
+### 🎯 **Available Services**
+1. **🏠 Interior Design**: Transform empty rooms into beautifully decorated spaces
+2. **✨ Image Enhancement**: Improve image quality, lighting, and colors
+3. **🎨 Replace Elements**: Creative style transformations and element replacement
+
+### 🚀 **Access the Home Page**
+```bash
+# Main application interface
+http://localhost:8000/          # Root route
+http://localhost:8000/home      # Alternative route
+
+# For advanced users (full options)
+http://localhost:8000/lab       # Full test page with all parameters
+```
+
+---
 
 ## 🔧 Critical Configuration for Structure Preservation
 

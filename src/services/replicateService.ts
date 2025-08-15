@@ -7,11 +7,19 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import sharp from 'sharp';
 import { PromptingUtils } from '../utils/promptingUtils';
+import { InteriorDesignService } from './interiorDesignService';
+import { ElementReplacementService } from './elementReplacementService';
+import { ImageEnhancementService } from './imageEnhancementService';
 
 export class ReplicateService {
   private replicate: Replicate;
   private readonly defaultModel: string;
   private readonly qualityPresets: Record<string, QualityPreset>;
+  
+  // Specialized services for each model type
+  private readonly interiorDesignService: InteriorDesignService;
+  private readonly elementReplacementService: ElementReplacementService;
+  private readonly imageEnhancementService: ImageEnhancementService;
 
   constructor() {
     this.replicate = new Replicate({
@@ -19,6 +27,11 @@ export class ReplicateService {
     });
     this.defaultModel = config.stableDiffusionModel;
     this.qualityPresets = this.initializeQualityPresets();
+    
+    // Initialize specialized services
+    this.interiorDesignService = new InteriorDesignService();
+    this.elementReplacementService = new ElementReplacementService();
+    this.imageEnhancementService = new ImageEnhancementService();
   }
 
   private initializeQualityPresets(): Record<string, QualityPreset> {
@@ -117,14 +130,16 @@ export class ReplicateService {
    */
   private isControlNetModel(): boolean {
     const controlNetModels = [
-      'black-forest-labs/flux-canny-pro',
-      'xlabs-ai/flux-dev-controlnet'
+      'black-forest-labs/flux-canny-pro:latest',
+      'xlabs-ai/flux-dev-controlnet:latest'
       // Note: lucataco/juggernaut-xl-v9 is a pure text-to-image model, not ControlNet
       // Note: fofr/controlnet-depth and jagilley/controlnet-canny don't exist on Replicate
     ];
     
     return controlNetModels.some(model => this.defaultModel.includes(model.split(':')[0]));
   }
+
+
 
   /**
    * Process image with AI decoration using proper ControlNet models
@@ -137,6 +152,27 @@ export class ReplicateService {
     // For now, use single-pass workflow for all models
     // TODO: Implement proper ControlNet + Juggernaut workflow later
     return this.processImageSinglePass(imagePath, request);
+  }
+
+  /**
+   * Process image specifically with the Interior Design model
+   * This method delegates to the specialized InteriorDesignService
+   * 
+   * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
+   */
+  public async processImageWithInteriorDesign(
+    imagePath: string,
+    prompt: string,
+    options: {
+      promptStrength?: number;
+      numInferenceSteps?: number;
+      guidanceScale?: number;
+      seed?: number;
+      negativePrompt?: string;
+    } = {}
+  ): Promise<{ outputUrl: string; metadata: any }> {
+    // Delegate to specialized service
+    return this.interiorDesignService.processImage(imagePath, prompt, options);
   }
 
   // TODO: Implement two-pass depth + inpainting workflow when ControlNet models are available */
@@ -176,13 +212,56 @@ export class ReplicateService {
         imagePath
       });
 
+      // Check if file is HEIC and provide better error handling
+      const fileExtension = path.extname(imagePath).toLowerCase();
+      const isHeic = fileExtension === '.heic' || fileExtension === '.heif';
+      
+      if (isHeic) {
+        logger.warn('⚠️ HEIC file detected - this may cause processing issues', {
+          requestId,
+          imagePath,
+          fileExtension
+        });
+        
+        // Try to validate the HEIC file can be processed
+        try {
+          const sharp = require('sharp');
+          await sharp(imagePath).metadata();
+          logger.info('✅ HEIC file validation successful', { requestId });
+        } catch (heicError) {
+          logger.error('❌ HEIC file validation failed', {
+            requestId,
+            error: heicError instanceof Error ? heicError.message : String(heicError)
+          });
+          
+          throw new Error(`HEIC file appears to be corrupted or unsupported. Please try converting it to JPEG or PNG format first. Error: ${heicError instanceof Error ? heicError.message : String(heicError)}`);
+        }
+      }
+
       // Convert image to base64
       logger.info('🔄 Converting image to base64', { requestId });
-      const base64Image = await FileUtils.imageToBase64(imagePath);
-      logger.info('✅ Base64 conversion completed', { 
-        requestId, 
-        base64Length: base64Image.length 
-      });
+      let base64Image: string;
+      
+      try {
+        base64Image = await FileUtils.imageToBase64(imagePath);
+        logger.info('✅ Base64 conversion completed', { 
+          requestId, 
+          base64Length: base64Image.length 
+        });
+      } catch (base64Error) {
+        logger.error('❌ Base64 conversion failed', {
+          requestId,
+          error: base64Error instanceof Error ? base64Error.message : String(base64Error),
+          imagePath,
+          isHeic
+        });
+        
+        if (isHeic) {
+          throw new Error(`Failed to process HEIC file. The file may be corrupted or in an unsupported format. Please try converting it to JPEG or PNG first. Technical error: ${base64Error instanceof Error ? base64Error.message : String(base64Error)}`);
+        } else {
+          throw new Error(`Failed to convert image to base64: ${base64Error instanceof Error ? base64Error.message : String(base64Error)}`);
+        }
+      }
       
       // Generate ControlNet image for proper ControlNet models
       let controlImage: string | undefined;
@@ -368,7 +447,7 @@ export class ReplicateService {
 
     // Base input parameters
     const input: ReplicateInput = {
-      prompt: prompt,
+      prompt,
       num_inference_steps: request.steps || preset.steps,
       guidance_scale: request.guidance || preset.guidance,
       // Use strength for transformation control
@@ -497,12 +576,12 @@ export class ReplicateService {
         bestFor: ['Photorealistic interiors', 'Room transformation', 'Two-pass depth workflow', 'High-quality results']
       },
       'interior-design': {
-        model: 'adirik/interior-design',
+        model: 'adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6eac38',
         description: 'Specialized model for interior design and furniture placement',
         bestFor: ['Living rooms', 'Bedrooms', 'Office spaces', 'Furniture arrangement']
       },
       'controlnet-canny': {
-        model: 'black-forest-labs/flux-canny-pro',
+        model: 'black-forest-labs/flux-canny-pro:latest',
         description: 'ControlNet with Canny edge detection for structure preservation',
         bestFor: ['Architectural preservation', 'Edge-based control', 'Structure maintaining']
       },
@@ -539,5 +618,36 @@ export class ReplicateService {
       });
       throw new Error(`Failed to get model info: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * Enhance image using bria/increase-resolution model for image enhancement
+   * This method delegates to the specialized ImageEnhancementService
+   * 
+   * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
+   */
+  public async enhanceImage(
+    imagePath: string,
+    referenceImagePath: string | null = null,
+    enhancementType: string = 'luminosity',
+    enhancementStrength: string = 'moderate'
+  ): Promise<string> {
+    // Delegate to specialized service
+    return this.imageEnhancementService.enhanceImage(imagePath, referenceImagePath, enhancementType, enhancementStrength);
+  }
+
+  /**
+   * Replace elements in image using flux-kontext-pro model
+   * This method delegates to the specialized ElementReplacementService
+   * 
+   * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
+   */
+  public async replaceElements(
+    imagePath: string,
+    prompt: string,
+    outputFormat: string = 'jpg'
+  ): Promise<string> {
+    // Delegate to specialized service
+    return this.elementReplacementService.replaceElements(imagePath, prompt, outputFormat);
   }
 } 
