@@ -95,8 +95,10 @@ jobs:
         
         # Stop existing processes
         echo "Stopping existing processes..."
-        pm2 stop realtyphotoai || true
-        pm2 delete realtyphotoai || true
+        pm2 stop realtyphotoai-backend || true
+        pm2 stop realtyphotoai-frontend || true
+        pm2 delete realtyphotoai-backend || true
+        pm2 delete realtyphotoai-frontend || true
         
         # Backup existing files
         echo "Backing up existing files..."
@@ -135,6 +137,10 @@ jobs:
         cd /var/www/realtyphotoai
         npm ci --only=production
         
+        # Install serve package for frontend
+        echo "Installing serve package for frontend..."
+        npm install -g serve
+        
         # Set proper permissions
         echo "Setting permissions..."
         chown -R www-data:www-data /var/www/realtyphotoai
@@ -169,10 +175,18 @@ jobs:
         # Wait a bit for the application to start
         sleep 30
         
-        # Check if the application is responding
-        if curl -f http://${{ env.SSH_HOST }}:3000/health || curl -f http://${{ env.SSH_HOST }}:3000/; then
-          echo "✅ Application is running successfully!"
+        # Check if the backend is responding
+        if curl -f http://${{ env.SSH_HOST }}:8000/health; then
+          echo "✅ Backend API is running successfully on port 8000!"
         else
-          echo "❌ Application health check failed"
+          echo "❌ Backend API health check failed"
+          exit 1
+        fi
+        
+        # Check if the frontend is responding
+        if curl -f http://${{ env.SSH_HOST }}:3000/; then
+          echo "✅ Frontend is running successfully on port 3000!"
+        else
+          echo "❌ Frontend health check failed"
           exit 1
         fi
