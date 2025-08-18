@@ -1,6 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Palette, Upload, Sparkles, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Upload, Sparkles, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { getEndpointUrl, getBackendUrl } from '../config/api';
+import { authenticatedFormDataFetch } from '../utils/apiUtils';
+import StatsWidget from '../components/StatsWidget';
+import { RecentGenerationsWidget } from '../components';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ElementReplacementRequest {
   id: string;
@@ -13,6 +17,7 @@ interface ElementReplacementRequest {
 }
 
 const ReplaceElements: React.FC = () => {
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('Replace the floor for a modern black mirror floor');
   const [outputFormat, setOutputFormat] = useState('jpg');
@@ -91,10 +96,7 @@ const ReplaceElements: React.FC = () => {
       formData.append('prompt', prompt);
       formData.append('outputFormat', outputFormat);
 
-      const response = await fetch(getEndpointUrl('REPLACE_ELEMENTS'), {
-        method: 'POST',
-        body: formData
-      });
+      const response = await authenticatedFormDataFetch('/api/v1/replace-elements', formData);
 
       const result = await response.json();
 
@@ -161,69 +163,15 @@ const ReplaceElements: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          🎨 Replace Elements
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Transform images by replacing elements or changing styles using AI
-        </p>
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-purple-500 rounded-full">
-              <Palette className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Requests</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">{requests.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-500 rounded-full">
-              <Clock className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Pending</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {requests.filter(r => r.status === 'pending').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-yellow-500 rounded-full">
-              <Sparkles className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Processing</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {requests.filter(r => r.status === 'processing').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-green-500 rounded-full">
-              <CheckCircle className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {requests.filter(r => r.status === 'completed').length}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+
+      {/* Stats Widget */}
+      <StatsWidget
+        modelType="element_replacement"
+        title="🎨 Replace Elements"
+        description="Transform images by replacing elements or changing styles using AI"
+        userId={user?.id}
+      />
 
       {/* Form - Matching home.html structure exactly */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -248,8 +196,8 @@ const ReplaceElements: React.FC = () => {
             {/* Modern drag & drop area */}
             <div
               className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${isDragOver
-                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
                 }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -295,6 +243,31 @@ const ReplaceElements: React.FC = () => {
             </small>
           </div>
 
+          {/* File Preview */}
+          {selectedFile && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Selected Image to Transform
+              </h3>
+              <div className="relative inline-block">
+                <img
+                  src={URL.createObjectURL(selectedFile)}
+                  alt={selectedFile.name}
+                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+                />
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
+              </p>
+            </div>
+          )}
+
           {/* Transformation Prompt - EXACTLY as in home.html */}
           <div className="form-group">
             <label htmlFor="replacePrompt" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -314,7 +287,7 @@ const ReplaceElements: React.FC = () => {
           </div>
 
           {/* Output Format - EXACTLY as in home.html */}
-          <div className="form-group">
+          <div className="form-group" style={{ display: 'none' }}>
             <label htmlFor="outputFormat" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               📁 Output Format
             </label>
@@ -330,21 +303,6 @@ const ReplaceElements: React.FC = () => {
             </select>
             <small className="text-gray-500 dark:text-gray-400 mt-1 block">
               Choose the output format for your transformed image
-            </small>
-          </div>
-
-          {/* Model Information - EXACTLY as in home.html */}
-          <div className="form-group" style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', border: '2px solid #e9ecef' }}>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <span className="font-semibold text-gray-700 dark:text-gray-300">
-                🎨 Flux Kontext Pro Model
-              </span>
-            </label>
-            <small className="text-gray-600 dark:text-gray-400 block mt-2">
-              ✓ Advanced AI model for element replacement and style transfer<br />
-              ✓ Can transform images into different artistic styles<br />
-              ✓ Maintains image structure while changing appearance<br />
-              ✓ Perfect for creative transformations and style experiments
             </small>
           </div>
 
@@ -366,30 +324,7 @@ const ReplaceElements: React.FC = () => {
         </form>
       </div>
 
-      {/* File Preview */}
-      {selectedFile && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Selected Image to Transform
-          </h3>
-          <div className="relative inline-block">
-            <img
-              src={URL.createObjectURL(selectedFile)}
-              alt={selectedFile.name}
-              className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-            />
-            <button
-              onClick={() => setSelectedFile(null)}
-              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-            >
-              ×
-            </button>
-          </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
-          </p>
-        </div>
-      )}
+
 
       {/* Results */}
       {results.length > 0 && (
@@ -514,6 +449,17 @@ const ReplaceElements: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Recent Generations Widget */}
+      <RecentGenerationsWidget
+        userId={user?.id}
+        title="Element Replacement Generations"
+        description="View your latest element replacement transformations with before/after comparisons"
+        showFilters={false}
+        maxItems={10}
+        className="mt-6"
+        modelTypeFilter="element_replacement"
+      />
     </div>
   );
 };

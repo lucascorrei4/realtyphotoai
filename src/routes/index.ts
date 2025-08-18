@@ -3,7 +3,11 @@ import rateLimit from 'express-rate-limit';
 import { ImageController } from '../controllers/imageController';
 import { uploadMiddleware, uploadMultipleMiddleware, handleUploadError, validateUploadedFile } from '../middleware/uploadMiddleware';
 import { asyncHandler } from '../middleware/errorHandler';
+import { authenticateToken } from '../middleware/authMiddleware';
 import { config } from '../config';
+import authRoutes from './auth';
+import adminRoutes from './admin';
+import userRoutes from './user';
 
 const router = Router();
 const imageController = new ImageController();
@@ -58,6 +62,7 @@ router.post('/upload',
 
 // Main image processing endpoint
 router.post('/process-image', 
+  authenticateToken,
   processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
@@ -67,6 +72,7 @@ router.post('/process-image',
 
 // Interior design processing endpoint
 router.post('/interior-design', 
+  authenticateToken,
   processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
@@ -76,6 +82,7 @@ router.post('/interior-design',
 
 // Image enhancement endpoint
 router.post('/image-enhancement', 
+  authenticateToken,
   processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 20 },
@@ -87,6 +94,7 @@ router.post('/image-enhancement',
 
 // Element replacement endpoint
 router.post('/replace-elements', 
+  authenticateToken,
   processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 1 }
@@ -94,5 +102,14 @@ router.post('/replace-elements',
   handleUploadError,
   asyncHandler(imageController.replaceElements)
 );
+
+// Authentication routes
+router.use('/auth', authRoutes);
+
+// Admin routes
+router.use('/admin', adminRoutes);
+
+// User routes
+router.use('/user', userRoutes);
 
 export default router; 

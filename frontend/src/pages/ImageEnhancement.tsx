@@ -1,12 +1,21 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Upload, Image as ImageIcon, Download, Clock, FileText, X } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Upload } from 'lucide-react';
 import { getEndpointUrl, API_CONFIG, getBackendUrl } from '../config/api';
+import { authenticatedFormDataFetch } from '../utils/apiUtils';
+import StatsWidget from '../components/StatsWidget';
+import { RecentGenerationsWidget } from '../components';
+import { useAuth } from '../contexts/AuthContext';
 
-interface FileWithPreview extends File {
-  preview?: string;
+interface ImageEnhancementRequest {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  createdAt: string;
+  image?: string;
+  result?: string;
 }
 
 const ImageEnhancement: React.FC = () => {
+  const { user } = useAuth();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -16,6 +25,7 @@ const ImageEnhancement: React.FC = () => {
   const [showOriginals, setShowOriginals] = useState(true);
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [requests, setRequests] = useState<ImageEnhancementRequest[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
@@ -23,14 +33,14 @@ const ImageEnhancement: React.FC = () => {
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
-    
+
     console.log('Files selected:', files.length, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
-    
+
     if (files.length === 0) {
       console.log('No files selected');
       return;
     }
-    
+
     if (files.length > maxFileCount) {
       alert(`⚠️ Maximum ${maxFileCount} files allowed. Please select fewer files.`);
       event.target.value = '';
@@ -39,16 +49,16 @@ const ImageEnhancement: React.FC = () => {
 
     // Validate file types and sizes
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-    
+
     for (const file of files) {
       console.log('Validating file:', file.name, 'Type:', file.type, 'Size:', file.size);
-      
+
       if (!validTypes.includes(file.type)) {
         alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         event.target.value = '';
         return;
       }
-      
+
       if (file.size > maxFileSize) {
         alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         event.target.value = '';
@@ -59,7 +69,7 @@ const ImageEnhancement: React.FC = () => {
     try {
       // Create previews for selected files
       const previews = files.map(file => URL.createObjectURL(file));
-      
+
       setSelectedFiles(files);
       setFilePreviews(previews);
       console.log('Files set successfully:', files.length);
@@ -99,12 +109,12 @@ const ImageEnhancement: React.FC = () => {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
     console.log('Files dropped:', files.length, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
-    
+
     if (files.length === 0) return;
-    
+
     if (files.length > maxFileCount) {
       alert(`⚠️ Maximum ${maxFileCount} files allowed. Please select fewer files.`);
       return;
@@ -117,22 +127,22 @@ const ImageEnhancement: React.FC = () => {
         alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return false;
       }
-      
+
       if (file.size > maxFileSize) {
         alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return false;
       }
-      
+
       return true;
     });
 
     if (validFiles.length > 0) {
       try {
         const previews = validFiles.map(file => URL.createObjectURL(file));
-        
+
         setSelectedFiles(validFiles);
         setFilePreviews(previews);
-        
+
         // Update the hidden file input with the dropped files
         if (fileInputRef.current) {
           // Create a new DataTransfer object and add the files
@@ -140,7 +150,7 @@ const ImageEnhancement: React.FC = () => {
           validFiles.forEach(file => dataTransfer.items.add(file));
           fileInputRef.current.files = dataTransfer.files;
         }
-        
+
         console.log('Dropped files processed successfully:', validFiles.length);
       } catch (error) {
         console.error('Error processing dropped files:', error);
@@ -155,7 +165,7 @@ const ImageEnhancement: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    
+
     if (selectedFiles.length === 0) {
       alert('Please select at least one image to enhance.');
       return;
@@ -165,14 +175,23 @@ const ImageEnhancement: React.FC = () => {
     setResults([]);
     const startTime = Date.now();
 
+    // Create a new request entry
+    const newRequest: ImageEnhancementRequest = {
+      id: Date.now().toString(),
+      status: 'processing',
+      createdAt: new Date().toISOString(),
+      image: selectedFiles[0]?.name
+    };
+    setRequests(prev => [newRequest, ...prev]);
+
     try {
       const formData = new FormData();
-      
+
       // Debug: Log what we're about to send
       console.log('Submitting form with files:', selectedFiles.map(f => ({ name: f.name, type: f.type, size: f.size })));
       console.log('Hidden input files:', fileInputRef.current?.files);
       console.log('Selected files are File instances:', selectedFiles.every(f => f instanceof File));
-      
+
       // Append all selected images - use the actual File objects from selectedFiles
       selectedFiles.forEach((file, index) => {
         // Ensure we're using the actual File object, not a preview
@@ -215,17 +234,18 @@ const ImageEnhancement: React.FC = () => {
         }
       });
 
-      const response = await fetch(getEndpointUrl('IMAGE_ENHANCEMENT'), {
-        method: 'POST',
-        body: formData,
-        // Don't set Content-Type header - let the browser set it automatically for FormData
-      });
+      const response = await authenticatedFormDataFetch('/api/v1/image-enhancement', formData);
 
       const result = await response.json();
       const endTime = Date.now();
       setProcessingTime(endTime - startTime);
 
       if (result.success) {
+        // Update request status to completed
+        setRequests(prev => prev.map(req =>
+          req.id === newRequest.id ? { ...req, status: 'completed', result: 'success' } : req
+        ));
+
         // Handle the backend response format correctly
         if (result.data && result.data.enhancedImages) {
           // Multiple images enhanced
@@ -245,9 +265,17 @@ const ImageEnhancement: React.FC = () => {
           setResults(result.data.enhancedImages || [result.data.enhancedImage]);
         }
       } else {
+        // Update request status to failed
+        setRequests(prev => prev.map(req =>
+          req.id === newRequest.id ? { ...req, status: 'failed', result: result.message || result.error } : req
+        ));
         alert(`Enhancement failed: ${result.message || result.error}`);
       }
     } catch (error) {
+      // Update request status to failed
+      setRequests(prev => prev.map(req =>
+        req.id === newRequest.id ? { ...req, status: 'failed', result: 'Network error' } : req
+      ));
       console.error('Enhancement error:', error);
       alert('Enhancement failed. Please try again.');
     } finally {
@@ -271,15 +299,15 @@ const ImageEnhancement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          ✨ Image Enhancement
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Enhance multiple images with AI-powered luminosity and color improvements
-        </p>
-      </div>
+
+
+      {/* Stats Widget */}
+      <StatsWidget
+        modelType="image_enhancement"
+        title="✨ Image Enhancement"
+        description="Enhance multiple images with AI-powered luminosity and color improvements"
+        userId={user?.id}
+      />
 
       {/* Form - Matching home.html structure exactly */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -289,7 +317,7 @@ const ImageEnhancement: React.FC = () => {
             <label htmlFor="enhancementImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               📸 Images to Enhance (JPG/PNG/WebP/HEIC) - Up to 20 photos
             </label>
-            
+
             {/* Hidden file input */}
             <input
               ref={fileInputRef}
@@ -301,28 +329,25 @@ const ImageEnhancement: React.FC = () => {
               className="hidden"
               required
             />
-            
+
             {/* Modern drag & drop area */}
             <div
-              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${
-                isDragOver
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-              }`}
+              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${isDragOver
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={openFileDialog}
             >
               <div className="flex flex-col items-center space-y-4">
-                <div className={`p-3 rounded-full ${
-                  isDragOver ? 'bg-blue-100 dark:bg-blue-800' : 'bg-gray-100 dark:bg-gray-700'
-                }`}>
-                  <Upload className={`h-8 w-8 ${
-                    isDragOver ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'
-                  }`} />
+                <div className={`p-3 rounded-full ${isDragOver ? 'bg-blue-100 dark:bg-blue-800' : 'bg-gray-100 dark:bg-gray-700'
+                  }`}>
+                  <Upload className={`h-8 w-8 ${isDragOver ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'
+                    }`} />
                 </div>
-                
+
                 <div>
                   <p className="text-lg font-medium text-gray-900 dark:text-white">
                     {isDragOver ? 'Drop images here' : 'Click to select or drag & drop'}
@@ -334,7 +359,7 @@ const ImageEnhancement: React.FC = () => {
                     Supports JPG, PNG, WebP, and HEIC formats
                   </p>
                 </div>
-                
+
                 {!isDragOver && (
                   <button
                     type="button"
@@ -349,34 +374,50 @@ const ImageEnhancement: React.FC = () => {
                 )}
               </div>
             </div>
-            
-            <small className="text-gray-500 dark:text-gray-400 mt-1 block">
-              Select up to 20 images that need luminosity and color enhancement. Hold Ctrl/Cmd to select multiple files.
-            </small>
-            
-            {/* Pro Tip - EXACTLY as in home.html */}
-            <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-700 border border-dashed border-gray-300 dark:border-gray-600 rounded text-center text-gray-600 dark:text-gray-400 text-xs">
-              💡 <strong>Pro Tip:</strong> You can also drag and drop multiple images here!
-            </div>
 
             {/* File Counter - EXACTLY as in home.html */}
             {selectedFiles.length > 0 && (
-              <div id="fileCounter" className="mt-2 p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm">
-                <span className="font-semibold text-blue-700 dark:text-blue-300">
-                  {selectedFiles.length}
-                </span> files selected
-                <div className="text-gray-600 dark:text-gray-400 text-xs mt-1">
-                  {selectedFiles.length === 1 
-                    ? `${selectedFiles[0].name} (${(selectedFiles[0].size / 1024 / 1024).toFixed(1)}MB)`
-                    : `${selectedFiles.length} files, ${(totalSize / 1024 / 1024).toFixed(1)}MB total`
-                  }
+              <>
+                <div id="fileCounter" className="mt-2 p-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm">
+                  <div className="text-gray-600 dark:text-gray-400 text-xs mt-1">
+                    {selectedFiles.length === 1
+                      ? `${selectedFiles[0].name} (${(selectedFiles[0].size / 1024 / 1024).toFixed(1)}MB)`
+                      : `${selectedFiles.length} files, ${(totalSize / 1024 / 1024).toFixed(1)}MB total`
+                    }
+                  </div>
+
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Selected Files ({selectedFiles.length})
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {selectedFiles.map((file, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={filePreviews[index]}
+                          alt={file.name}
+                          className="w-full h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                          <button
+                            onClick={() => removeFile(index)}
+                            className="w-10 h-10 absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
+                          {file.name}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
           {/* Reference Image - Hidden in original but we'll show it */}
-          <div className="form-group">
+          <div className="form-group" style={{ display: 'none' }}>
             <label htmlFor="referenceImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               🎨 Reference Image (Optional)
             </label>
@@ -429,6 +470,34 @@ const ImageEnhancement: React.FC = () => {
             </small>
           </div>
 
+          {/* File Preview */}
+
+
+          {/* Reference Image Preview */}
+          {referenceFile && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Reference Image
+              </h3>
+              <div className="relative inline-block">
+                <img
+                  src={referencePreview || ''}
+                  alt={referenceFile.name}
+                  className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+                />
+                <button
+                  onClick={removeReferenceFile}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                {referenceFile.name}
+              </p>
+            </div>
+          )}
+
           {/* Submit Button - EXACTLY as in home.html */}
           <button
             type="submit"
@@ -447,61 +516,7 @@ const ImageEnhancement: React.FC = () => {
         </form>
       </div>
 
-      {/* File Preview */}
-      {selectedFiles.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Selected Files ({selectedFiles.length})
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {selectedFiles.map((file, index) => (
-              <div key={index} className="relative group">
-                <img
-                  src={filePreviews[index]}
-                  alt={file.name}
-                  className="w-full h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-                />
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                  <button
-                    onClick={() => removeFile(index)}
-                    className="opacity-0 group-hover:opacity-100 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-all duration-200"
-                  >
-                    ×
-                  </button>
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
-                  {file.name}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Reference Image Preview */}
-      {referenceFile && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Reference Image
-          </h3>
-          <div className="relative inline-block">
-            <img
-              src={referencePreview || ''}
-              alt={referenceFile.name}
-              className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-            />
-            <button
-              onClick={removeReferenceFile}
-              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-            >
-              ×
-            </button>
-          </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            {referenceFile.name}
-          </p>
-        </div>
-      )}
 
       {/* Results */}
       {results.length > 0 && (
@@ -564,6 +579,17 @@ const ImageEnhancement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Recent Generations Widget */}
+      <RecentGenerationsWidget
+        userId={user?.id}
+        title="Image Enhancement Generations"
+        description="View your latest image enhancement transformations with before/after comparisons"
+        showFilters={false}
+        maxItems={10}
+        className="mt-6"
+        modelTypeFilter="image_enhancement"
+      />
     </div>
   );
 };

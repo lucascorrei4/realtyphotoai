@@ -1,16 +1,20 @@
 import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import path from 'path';
 import { ReplicateService } from '../services/replicateService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import { ProcessImageRequest, ProcessImageResponse, ApiResponse } from '../types';
+import { UserStatisticsService } from '../services/userStatisticsService';
 
 export class ImageController {
   private replicateService: ReplicateService;
+  private userStatsService: UserStatisticsService;
 
   constructor() {
     this.replicateService = new ReplicateService();
+    this.userStatsService = new UserStatisticsService();
   }
 
   /**
@@ -150,9 +154,10 @@ export class ImageController {
   /**
    * Process uploaded image with AI decoration
    */
-  public processImage = async (req: Request, res: Response): Promise<void> => {
+  public processImage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     const tempFiles: string[] = [];
+    let generationId: string | undefined;
     
     try {
       if (!req.file) {
@@ -165,12 +170,34 @@ export class ImageController {
         return;
       }
 
+      // Get user ID from authenticated request
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
       tempFiles.push(req.file.path);
       
       logger.info('Starting image processing', {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
+        userId,
+      });
+
+      // Create generation record in database
+      generationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'interior_design', // This method is used for general decoration, so we'll use interior_design
+        status: 'processing',
+        input_image_url: `/uploads/${req.file.filename}`,
+        prompt: req.body?.prompt || 'General AI decoration'
       });
 
       // Parse request parameters
@@ -255,11 +282,21 @@ export class ImageController {
 
       const processingTime = Date.now() - startTime;
       
+      // Update generation record with success
+      await this.userStatsService.updateGenerationStatus(
+        generationId,
+        'completed',
+        `/outputs/${path.basename(processedImagePath)}`,
+        undefined,
+        processingTime
+      );
+      
       logger.info('Image processing completed successfully', {
         originalFile: req.file.filename,
         processedFile: path.basename(processedImagePath),
         processingTime,
         requestId: metadata.requestId,
+        generationId,
       });
 
       // Get file info for response (not currently used but available for future enhancements)
@@ -282,10 +319,26 @@ export class ImageController {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       
+      // Update generation record with failure if we have a generationId
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            processingTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation record status:', updateError as Error);
+        }
+      }
+      
       logger.error('Image processing failed', {
         error: error instanceof Error ? error.message : String(error),
         filename: req.file?.filename,
         processingTime,
+        generationId,
       });
 
       // Clean up all temp files on error
@@ -303,9 +356,10 @@ export class ImageController {
   /**
    * Process uploaded image specifically with Interior Design model
    */
-  public processImageWithInteriorDesign = async (req: Request, res: Response): Promise<void> => {
+  public processImageWithInteriorDesign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     const tempFiles: string[] = [];
+    let generationId: string | undefined;
     
     try {
       if (!req.file) {
@@ -328,6 +382,18 @@ export class ImageController {
         return;
       }
 
+      // Get user ID from authenticated request
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
       tempFiles.push(req.file.path);
       
       logger.info('Starting interior design processing', {
@@ -335,6 +401,16 @@ export class ImageController {
         originalName: req.file.originalname,
         size: req.file.size,
         prompt: req.body.prompt,
+        userId,
+      });
+
+      // Create generation record in database
+      generationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'interior_design',
+        status: 'processing',
+        input_image_url: `/uploads/${req.file.filename}`,
+        prompt: req.body.prompt
       });
 
       // Parse interior design specific parameters
@@ -416,12 +492,22 @@ export class ImageController {
 
         const processingTime = Date.now() - startTime;
         
+        // Update generation record with success
+        await this.userStatsService.updateGenerationStatus(
+          generationId,
+          'completed',
+          `/outputs/${path.basename(processedImagePath)}`,
+          undefined,
+          processingTime
+        );
+        
         logger.info('Interior design processing completed successfully', {
           originalFile: req.file.filename,
           processedFile: path.basename(processedImagePath),
           processingTime,
           requestId: metadata.requestId,
           prompt: req.body.prompt,
+          generationId,
         });
 
         const response: ProcessImageResponse = {
@@ -443,11 +529,21 @@ export class ImageController {
         console.log('❌ [IMAGE CONTROLLER] Interior design processing failed:', processingError);
         const processingTime = Date.now() - startTime;
         
+        // Update generation record with failure
+        await this.userStatsService.updateGenerationStatus(
+          generationId,
+          'failed',
+          undefined,
+          processingError instanceof Error ? processingError.message : 'Unknown error',
+          processingTime
+        );
+        
         logger.error('Interior design processing failed', {
           error: processingError instanceof Error ? processingError.message : String(processingError),
           filename: req.file.filename,
           processingTime,
           prompt: req.body.prompt,
+          generationId,
         });
 
         // Clean up all temp files on error
@@ -575,7 +671,7 @@ export class ImageController {
   /**
    * Image enhancement endpoint using bria/increase-resolution model
    */
-  public enhanceImage = async (req: Request, res: Response): Promise<void> => {
+  public enhanceImage = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     const tempFiles: string[] = [];
 
@@ -630,10 +726,31 @@ export class ImageController {
         enhancementStrength: req.body.enhancementStrength,
       });
 
+      // Get user ID from authenticated request
+      const userId = (req as AuthenticatedRequest).user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+      
       // Process all images in parallel
       const enhancementPromises = imageFiles.map(async (imageFile, index) => {
         try {
           logger.info(`🔄 Processing image ${index + 1}/${imageFiles.length}: ${imageFile.filename}`);
+          
+          // Create generation record in database
+          const generationId = await this.userStatsService.createGenerationRecord({
+            user_id: userId,
+            model_type: 'image_enhancement',
+            status: 'processing',
+            input_image_url: `/uploads/${imageFile.filename}`,
+            prompt: `Enhancement: ${req.body.enhancementType || 'luminosity'} with ${req.body.enhancementStrength || 'moderate'} strength`
+          });
           
           // Process image enhancement using Replicate
           const enhancedImageUrl = await this.replicateService.enhanceImage(
@@ -649,13 +766,34 @@ export class ImageController {
           const enhancedImagePath = await FileUtils.downloadImage(enhancedImageUrl, config.outputDir);
           tempFiles.push(enhancedImagePath);
 
+          // Update generation record with success
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'completed',
+            `/outputs/${path.basename(enhancedImagePath)}`,
+            undefined,
+            Date.now() - startTime
+          );
+
           return {
             originalImage: `/uploads/${imageFile.filename}`,
             enhancedImage: `/outputs/${path.basename(enhancedImagePath)}`,
-            filename: imageFile.filename
+            filename: imageFile.filename,
+            generationId
           };
         } catch (error) {
           logger.error(`❌ Failed to enhance image ${index + 1}: ${imageFile.filename}`, { error });
+          
+          // Update generation record with failure if we have a generationId
+          if (error && typeof error === 'object' && 'generationId' in error) {
+            await this.userStatsService.updateGenerationStatus(
+              (error as any).generationId,
+              'failed',
+              undefined,
+              error instanceof Error ? error.message : 'Unknown error'
+            );
+          }
+          
           throw error;
         }
       });
@@ -738,9 +876,10 @@ export class ImageController {
   /**
    * Replace elements in image using flux-kontext-pro model
    */
-  public replaceElements = async (req: Request, res: Response): Promise<void> => {
+  public replaceElements = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     const tempFiles: string[] = [];
+    let generationId: string | undefined;
 
     try {
       // Debug logging
@@ -772,6 +911,18 @@ export class ImageController {
         return;
       }
 
+      // Get user ID from authenticated request
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
       const imageFile = files.image[0];
 
       // Validate image file
@@ -791,7 +942,17 @@ export class ImageController {
       logger.info('🎨 Starting element replacement', {
         imageFile: imageFile.filename,
         prompt: req.body.prompt,
-        outputFormat: req.body.outputFormat || 'jpg'
+        outputFormat: req.body.outputFormat || 'jpg',
+        userId,
+      });
+
+      // Create generation record in database
+      generationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'element_replacement',
+        status: 'processing',
+        input_image_url: `/uploads/${imageFile.filename}`,
+        prompt: req.body.prompt
       });
 
       // Process element replacement using Replicate
@@ -809,10 +970,20 @@ export class ImageController {
 
       const processingTime = Date.now() - startTime;
 
+      // Update generation record with success
+      await this.userStatsService.updateGenerationStatus(
+        generationId,
+        'completed',
+        `/outputs/${path.basename(replacedImagePath)}`,
+        undefined,
+        processingTime
+      );
+
       logger.info('✅ Element replacement completed successfully', {
         processingTime,
         replacedImagePath,
         prompt: req.body.prompt,
+        generationId,
       });
 
       // Ensure the image paths are accessible
@@ -863,10 +1034,27 @@ export class ImageController {
 
     } catch (error) {
       const processingTime = Date.now() - startTime;
+      
+      // Update generation record with failure if we have a generationId
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            processingTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation record status:', updateError as Error);
+        }
+      }
+      
       logger.error('❌ Element replacement failed', { 
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
-        processingTime
+        processingTime,
+        generationId,
       });
 
       // Clean up temp files on error

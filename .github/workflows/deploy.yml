@@ -1,192 +1,66 @@
-name: Deploy to Hostinger
+name: Build and Deploy to Production
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-
-env:
-  NODE_VERSION: '18'
-  SSH_HOST: ${{ secrets.SSH_HOST }}
-  SSH_USER: ${{ secrets.SSH_USER }}
-  SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-  SSH_PORT: ${{ secrets.SSH_PORT }}
+    branches: [ "main" ]
 
 jobs:
-  test-and-build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
+    # 1. Get the code from the repository
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Setup Node.js
+
+    # 2. Set up Node.js
+    - name: Use Node.js 18
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ env.NODE_VERSION }}
+        node-version: '18'
         cache: 'npm'
-        
-    - name: Install backend dependencies
-      run: npm ci
-      
-    - name: Run backend tests
-      run: npm test
-      
-    - name: Build backend
-      run: npm run build
-      
-    - name: Install frontend dependencies
-      working-directory: ./frontend
-      run: npm ci
-      
-    - name: Run frontend tests
-      working-directory: ./frontend
-      run: npm test -- --watchAll=false
-      
-    - name: Build frontend
-      working-directory: ./frontend
-      run: npm run build
-      
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-files
-        path: |
-          dist/
-          frontend/build/
-          package.json
-          package-lock.json
-          frontend/package.json
-          frontend/package-lock.json
-          ecosystem.config.js
-          nginx.conf
-          .env.example
 
-  deploy:
-    needs: test-and-build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    
-    steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
+    # 3. Install dependencies and build BOTH apps
+    - name: Install Dependencies & Build
+      run: |
+        npm install
+        npm run build # Build the backend TS -> dist
+        cd frontend
+        npm install
+        npm run build # Build the frontend React -> build
+
+    # 4. Create the deployment package (the "artifact")
+    - name: Create Deployment Package
+      run: |
+        cd ..
+        mkdir deploy-package
+        # Copy only the files needed for production
+        cp -R dist ./deploy-package/
+        cp -R frontend/build ./deploy-package/
+        cp -R node_modules ./deploy-package/
+        cp package.json ./deploy-package/
+        cp package-lock.json ./deploy-package/
+        cp ecosystem.config.js ./deploy-package/
+        # Compress the package
+        tar -czf deploy-package.tar.gz -C deploy-package .
+
+    # 5. Deploy the package to your server
+    - name: Deploy to Server
+      uses: appleboy/ssh-action@v1.0.3
       with:
-        name: build-files
-        
-    - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.8.0
-      with:
-        ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
-        
-    - name: Add host to known_hosts
-      run: |
-        mkdir -p ~/.ssh
-        ssh-keyscan -H -p ${{ env.SSH_PORT }} ${{ env.SSH_HOST }} >> ~/.ssh/known_hosts
-        
-    - name: Deploy to Hostinger
-      run: |
-        # Create deployment script
-        cat > deploy.sh << 'EOF'
-        #!/bin/bash
-        set -e
-        
-        echo "Starting deployment..."
-        
-        # Stop existing processes
-        echo "Stopping existing processes..."
-        pm2 stop realtyphotoai-backend || true
-        pm2 stop realtyphotoai-frontend || true
-        pm2 delete realtyphotoai-backend || true
-        pm2 delete realtyphotoai-frontend || true
-        
-        # Backup existing files
-        echo "Backing up existing files..."
-        if [ -d "/var/www/realtyphotoai" ]; then
-          cp -r /var/www/realtyphotoai /var/www/realtyphotoai.backup.$(date +%Y%m%d_%H%M%S)
-        fi
-        
-        # Create directory structure
-        echo "Creating directory structure..."
-        mkdir -p /var/www/realtyphotoai
-        mkdir -p /var/www/realtyphotoai/logs
-        mkdir -p /var/www/realtyphotoai/uploads
-        mkdir -p /var/www/realtyphotoai/outputs
-        mkdir -p /var/www/realtyphotoai/temp
-        
-        # Copy backend files
-        echo "Copying backend files..."
-        cp -r dist/* /var/www/realtyphotoai/
-        cp package*.json /var/www/realtyphotoai/
-        cp ecosystem.config.js /var/www/realtyphotoai/
-        cp nginx.conf /var/www/realtyphotoai/
-        
-        # Copy frontend build
-        echo "Copying frontend build..."
-        cp -r frontend/build/* /var/www/realtyphotoai/public/
-        
-        # Set up environment file
-        echo "Setting up environment..."
-        if [ ! -f /var/www/realtyphotoai/.env ]; then
-          cp .env.example /var/www/realtyphotoai/.env
-          echo "Please configure your .env file with proper values"
-        fi
-        
-        # Install production dependencies
-        echo "Installing production dependencies..."
-        cd /var/www/realtyphotoai
-        npm ci --only=production
-        
-        # Install serve package for frontend
-        echo "Installing serve package for frontend..."
-        npm install -g serve
-        
-        # Set proper permissions
-        echo "Setting permissions..."
-        chown -R www-data:www-data /var/www/realtyphotoai
-        chmod -R 755 /var/www/realtyphotoai
-        chmod 644 /var/www/realtyphotoai/.env
-        
-        # Start application with PM2
-        echo "Starting application with PM2..."
-        pm2 start ecosystem.config.js --env production
-        
-        # Save PM2 configuration
-        pm2 save
-        
-        # Setup PM2 to start on boot
-        pm2 startup
-        
-        # Reload nginx configuration
-        echo "Reloading nginx..."
-        nginx -t && nginx -s reload
-        
-        echo "Deployment completed successfully!"
-        EOF
-        
-        chmod +x deploy.sh
-        
-        # Execute deployment script on remote server
-        scp -P ${{ env.SSH_PORT }} deploy.sh ${{ env.SSH_USER }}@${{ env.SSH_HOST }}:/tmp/
-        ssh -p ${{ env.SSH_PORT }} ${{ env.SSH_USER }}@${{ env.SSH_HOST }} "bash /tmp/deploy.sh"
-        
-    - name: Health check
-      run: |
-        # Wait a bit for the application to start
-        sleep 30
-        
-        # Check if the backend is responding
-        if curl -f http://${{ env.SSH_HOST }}:8000/health; then
-          echo "✅ Backend API is running successfully on port 8000!"
-        else
-          echo "❌ Backend API health check failed"
-          exit 1
-        fi
-        
-        # Check if the frontend is responding
-        if curl -f http://${{ env.SSH_HOST }}:3000/; then
-          echo "✅ Frontend is running successfully on port 3000!"
-        else
-          echo "❌ Frontend health check failed"
-          exit 1
-        fi
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        script: |
+          # Upload the package
+          scp -o StrictHostKeyChecking=no deploy-package.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/deploy-package.tar.gz
+          
+          # On the server, extract the package and restart the app
+          cd /var/www/realtyphotoai
+          # Extract over the old files, replacing them
+          tar -xzf /tmp/deploy-package.tar.gz
+          # Fix permissions just in case
+          sudo chown -R www-data:www-data .
+          # Reload the app with zero downtime
+          pm2 reload ecosystem.config.js

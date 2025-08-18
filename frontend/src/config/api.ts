@@ -17,6 +17,10 @@ export const API_CONFIG = {
     // Element Replacement
     REPLACE_ELEMENTS: '/api/v1/replace-elements',
     
+    // User Management
+    USER_STATS: '/api/v1/user/stats',
+    USER_GENERATIONS: '/api/v1/user/generations',
+    
     // Health and Info
     HEALTH: '/api/v1/health',
     MODEL_INFO: '/api/v1/model-info',

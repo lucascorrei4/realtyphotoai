@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StatsWidget Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .api-test {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .error {
+            background: #ffebee;
+            border: 1px solid #f44336;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>StatsWidget Backend Integration Test</h1>
+    
+    <div class="test-section">
+        <h2>Backend API Test</h2>
+        <p>Testing the user statistics endpoint to ensure the backend is properly connected to Supabase.</p>
+        
+        <button onclick="testUserStats()">Test User Stats API</button>
+        <button onclick="testAllEndpoints()">Test All Endpoints</button>
+        
+        <div id="apiResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Frontend StatsWidget Test</h2>
+        <p>Testing the StatsWidget component to ensure it can fetch and display data from the backend.</p>
+        
+        <div id="statsWidgetContainer">
+            <!-- StatsWidget will be rendered here -->
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = 'http://localhost:8000';
+        const API_PREFIX = '/api/v1';
+
+        function displayResult(title, data, isError = false) {
+            const resultsDiv = document.getElementById('apiResults');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `api-test ${isError ? 'error' : ''}`;
+            
+            resultDiv.innerHTML = `
+                <h4>${title}</h4>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        async function testUserStats() {
+            try {
+                console.log('Testing user stats endpoint...');
+                const response = await fetch(`${BACKEND_URL}${API_PREFIX}/user/stats?userId=demo-user`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayResult('✅ User Stats API Success', data);
+                    console.log('User stats API response:', data);
+                } else {
+                    displayResult('❌ User Stats API Error', data, true);
+                    console.error('User stats API error:', data);
+                }
+            } catch (error) {
+                displayResult('❌ User Stats API Exception', { error: error.message }, true);
+                console.error('User stats API exception:', error);
+            }
+        }
+
+        async function testAllEndpoints() {
+            const endpoints = [
+                '/health',
+                '/user/stats?userId=demo-user',
+                '/user/generations?userId=demo-user&limit=5'
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    console.log(`Testing endpoint: ${endpoint}`);
+                    const response = await fetch(`${BACKEND_URL}${API_PREFIX}${endpoint}`);
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        displayResult(`✅ ${endpoint}`, data);
+                    } else {
+                        displayResult(`❌ ${endpoint}`, data, true);
+                    }
+                } catch (error) {
+                    displayResult(`❌ ${endpoint} Exception`, { error: error.message }, true);
+                }
+            }
+        }
+
+        // Test the API when the page loads
+        window.addEventListener('load', () => {
+            console.log('Page loaded, testing backend connectivity...');
+            testUserStats();
+        });
+    </script>
+</body>
+</html>

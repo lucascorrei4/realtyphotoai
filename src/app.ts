@@ -30,7 +30,7 @@ class App {
       await FileUtils.ensureDirectoryExists(config.outputDir);
       await FileUtils.ensureDirectoryExists(config.tempDir);
       await FileUtils.ensureDirectoryExists('logs');
-      
+
       logger.info('Required directories initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize directories', { error });
@@ -39,6 +39,10 @@ class App {
   }
 
   private initializeMiddleware(): void {
+
+    // Trust the reverse proxy
+    this.app.set('trust proxy', 1);
+
     // Security middleware
     this.app.use(helmet({
       contentSecurityPolicy: {
@@ -89,7 +93,7 @@ class App {
       res.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
       next();
     }, express.static(path.join(process.cwd(), config.uploadDir)));
-    
+
     this.app.use('/outputs', (_req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -99,7 +103,7 @@ class App {
       res.header('Cross-Origin-Embedder-Policy', 'unsafe-none');
       next();
     }, express.static(path.join(process.cwd(), config.outputDir)));
-    
+
     this.app.use('/js', express.static(path.join(process.cwd(), 'public/js')));
     this.app.use('/css', express.static(path.join(process.cwd(), 'public/css')));
 
@@ -149,7 +153,7 @@ class App {
   }
 
   private initializeRoutes(): void {
-  
+
     // Home page - main application interface
     this.app.get('/', (_, res) => {
       res.sendFile(path.join(process.cwd(), 'public/home.html'));
@@ -197,7 +201,7 @@ class App {
           nodeEnv: config.nodeEnv,
           apiPrefix: config.apiPrefix,
           model: config.stableDiffusionModel,
-        workflow: config.enableInpaintingWorkflow ? 'depth_inpainting' : 'single_pass',
+          workflow: config.enableInpaintingWorkflow ? 'depth_inpainting' : 'single_pass',
         });
 
         logger.info('📖 API Endpoints:', {

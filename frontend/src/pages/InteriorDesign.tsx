@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Home, Palette, Upload, Image as ImageIcon, Settings, Sparkles } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { getEndpointUrl, getBackendUrl } from '../config/api';
+import { authenticatedFormDataFetch } from '../utils/apiUtils';
+import StatsWidget from '../components/StatsWidget';
+import { RecentGenerationsWidget } from '../components';
+import { useAuth } from '../contexts/AuthContext';
 
 interface InteriorDesignRequest {
   id: string;
@@ -14,6 +18,7 @@ interface InteriorDesignRequest {
 }
 
 const InteriorDesign: React.FC = () => {
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [roomType, setRoomType] = useState('living-room');
   const [style, setStyle] = useState('modern-minimalist');
@@ -166,12 +171,9 @@ const InteriorDesign: React.FC = () => {
       formData.append('strength', strength.toString());
 
       // Choose endpoint based on user preference
-      const endpoint = useInteriorDesign ? getEndpointUrl('INTERIOR_DESIGN') : getEndpointUrl('PROCESS_IMAGE');
+      const endpoint = useInteriorDesign ? '/api/v1/interior-design' : '/api/v1/process-image';
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        body: formData
-      });
+      const response = await authenticatedFormDataFetch(endpoint, formData);
 
       const result = await response.json();
 
@@ -225,69 +227,13 @@ const InteriorDesign: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          🏠 Interior Design
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Transform empty rooms into beautifully decorated spaces using AI!
-        </p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-500 rounded-full">
-              <Home className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Requests</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">{requests.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-green-500 rounded-full">
-              <Palette className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {requests.filter(r => r.status === 'completed').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-yellow-500 rounded-full">
-              <Settings className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Processing</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {requests.filter(r => r.status === 'processing').length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-purple-500 rounded-full">
-              <Sparkles className="h-6 w-6 text-white" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Success Rate</p>
-              <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {Math.round((requests.filter(r => r.status === 'completed').length / requests.length) * 100)}%
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Stats Widget */}
+      <StatsWidget
+        modelType="interior_design"
+        title="🏠 Interior Design"
+        description="Transform empty rooms into beautifully decorated spaces using AI!"
+        userId={user?.id}
+      />
 
       {/* Form - Matching home.html structure exactly */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -312,8 +258,8 @@ const InteriorDesign: React.FC = () => {
             {/* Modern drag & drop area */}
             <div
               className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 cursor-pointer ${isDragOver
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
                 }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -354,10 +300,32 @@ const InteriorDesign: React.FC = () => {
               </div>
             </div>
 
-            <small className="text-gray-500 dark:text-gray-400 mt-1 block">
-              Upload a photo of an empty or cluttered room. HEIC files from iOS devices are supported!
-            </small>
           </div>
+
+          {/* File Preview */}
+          {selectedFile && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Selected Room Image
+              </h3>
+              <div className="relative inline-block">
+                <img
+                  src={URL.createObjectURL(selectedFile)}
+                  alt={selectedFile.name}
+                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+                />
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="w-10 h-10 absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
+              </p>
+            </div>
+          )}
 
           {/* Room Type - EXACTLY as in home.html */}
           <div className="form-group">
@@ -545,30 +513,7 @@ const InteriorDesign: React.FC = () => {
         </form>
       </div>
 
-      {/* File Preview */}
-      {selectedFile && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Selected Room Image
-          </h3>
-          <div className="relative inline-block">
-            <img
-              src={URL.createObjectURL(selectedFile)}
-              alt={selectedFile.name}
-              className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-            />
-            <button
-              onClick={() => setSelectedFile(null)}
-              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-            >
-              ×
-            </button>
-          </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
-          </p>
-        </div>
-      )}
+
 
       {/* Results */}
       {results.length > 0 && (
@@ -699,6 +644,17 @@ const InteriorDesign: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Recent Generations Widget */}
+      <RecentGenerationsWidget
+        userId={user?.id}
+        title="Interior Design Generations"
+        description="View your latest interior design transformations with before/after comparisons"
+        showFilters={false}
+        maxItems={10}
+        className="mt-6"
+        modelTypeFilter="interior_design"
+      />
     </div>
   );
 };
