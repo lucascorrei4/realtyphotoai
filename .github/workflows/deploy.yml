@@ -2,7 +2,7 @@ name: Build and Deploy to Production
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master" ] # Make sure this matches your main branch, e.g., "main" or "master"
 
 jobs:
   build-and-deploy:
@@ -19,27 +19,29 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: '**/package-lock.json' # Cache for both backend and frontend
 
-    # 3. Install dependencies and build BOTH apps
-    - name: Install Dependencies & Build
+    # 3. Build BOTH applications
+    - name: Build Backend & Frontend
       run: |
         npm install
-        npm run build # Build the backend TS -> dist
+        npm run build  # Build the backend (creates ./dist)
         cd frontend
         npm install
-        CI=false npm run build # Build the frontend React -> build
+        CI=false npm run build # Build the frontend (creates ./frontend/build)
 
-    # 4. Create the deployment package (the "artifact")
+    # 4. Create the deployment package
     - name: Create Deployment Package
       run: |
-        cd ..
+        # Create a directory for the package
         mkdir deploy-package
         # Copy only the files needed for production
         cp -R dist ./deploy-package/
         cp -R frontend/build ./deploy-package/
-        cp -R node_modules ./deploy-package/
         cp package.json ./deploy-package/
         cp package-lock.json ./deploy-package/
+        cp frontend/package.json ./deploy-package/frontend/
+        cp frontend/package-lock.json ./deploy-package/frontend/
         cp ecosystem.config.js ./deploy-package/
         # Compress the package
         tar -czf deploy-package.tar.gz -C deploy-package .
@@ -53,14 +55,22 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: ${{ secrets.SSH_PORT }}
         script: |
-          # Upload the package
+          # Upload the package to a temporary location
           scp -o StrictHostKeyChecking=no deploy-package.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/deploy-package.tar.gz
           
           # On the server, extract the package and restart the app
           cd /var/www/realtyphotoai
           # Extract over the old files, replacing them
           tar -xzf /tmp/deploy-package.tar.gz
-          # Fix permissions just in case
+          
+          # Install production dependencies
+          npm ci --omit=dev
+          cd frontend
+          npm ci --omit=dev
+          cd ..
+
+          # Fix permissions
           sudo chown -R www-data:www-data .
+          
           # Reload the app with zero downtime
           pm2 reload ecosystem.config.js
