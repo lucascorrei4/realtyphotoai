@@ -19,7 +19,7 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: '**/package-lock.json' # Cache for both backend and frontend
+        cache-dependency-path: '**/package-lock.json'
 
     # 3. Build BOTH applications
     - name: Build Backend & Frontend
@@ -33,16 +33,20 @@ jobs:
     # 4. Create the deployment package
     - name: Create Deployment Package
       run: |
-        # Create a directory for the package
-        mkdir deploy-package
-        # Copy only the files needed for production
+        # Create the necessary directories for the package
+        mkdir -p deploy-package/frontend
+
+        # Copy backend files
         cp -R dist ./deploy-package/
-        cp -R frontend/build ./deploy-package/
         cp package.json ./deploy-package/
         cp package-lock.json ./deploy-package/
+        cp ecosystem.config.js ./deploy-package/
+
+        # Copy frontend files into the 'frontend' subdirectory
+        cp -R frontend/build ./deploy-package/frontend/
         cp frontend/package.json ./deploy-package/frontend/
         cp frontend/package-lock.json ./deploy-package/frontend/
-        cp ecosystem.config.js ./deploy-package/
+
         # Compress the package
         tar -czf deploy-package.tar.gz -C deploy-package .
 
@@ -60,10 +64,9 @@ jobs:
           
           # On the server, extract the package and restart the app
           cd /var/www/realtyphotoai
-          # Extract over the old files, replacing them
           tar -xzf /tmp/deploy-package.tar.gz
           
-          # Install production dependencies
+          # Install production dependencies for both backend and frontend
           npm ci --omit=dev
           cd frontend
           npm ci --omit=dev
