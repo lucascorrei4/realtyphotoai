@@ -27,7 +27,11 @@ jobs:
         npm install
         npm run build  # Build the backend (creates ./dist)
         cd frontend
-        mv .env.production .env
+        
+        # Create the .env file for the React build process from secrets
+        echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
+        echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env
+
         npm install
         CI=false npm run build # Build the frontend (creates ./frontend/build)
 
@@ -83,4 +87,4 @@ jobs:
           sudo chown -R www-data:www-data .
           
           # Reload the app with zero downtime
-          pm2 reload ecosystem.config.js
+          pm2 reload ecosystem.config.js --env production
