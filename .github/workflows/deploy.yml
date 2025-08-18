@@ -59,14 +59,17 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: ${{ secrets.SSH_PORT }}
         script: |
-          # Upload the package to a temporary location
-          scp -o StrictHostKeyChecking=no deploy-package.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/deploy-package.tar.gz
-          
-          # On the server, extract the package and restart the app
           cd /var/www/realtyphotoai
+          
+          # Remove old build folders to ensure a clean deployment
+          rm -rf ./dist
+          rm -rf ./frontend/build
+          
+          # Upload and extract the new package
+          scp -o StrictHostKeyChecking=no deploy-package.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/deploy-package.tar.gz
           tar -xzf /tmp/deploy-package.tar.gz
           
-          # Install production dependencies for both backend and frontend
+          # Install production dependencies
           npm ci --omit=dev
           cd frontend
           npm ci --omit=dev
