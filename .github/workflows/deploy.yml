@@ -28,12 +28,17 @@ jobs:
         npm run build  # Build the backend (creates ./dist)
         cd frontend
         
-        # Create the .env file for the React build process from secrets
+        echo "--- Creating .env file for frontend build ---"
         echo "REACT_APP_SUPABASE_URL=${{ secrets.REACT_APP_SUPABASE_URL }}" >> .env
         echo "REACT_APP_SUPABASE_ANON_KEY=${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}" >> .env
+        
+        echo "--- Verifying contents of the created .env file: ---"
+        # This will print the file's contents to the log. Secrets will be masked.
+        cat .env
+        echo "---------------------------------------------"
 
         npm install
-        CI=false npm run build # Build the frontend (creates ./frontend/build)
+        CI=false npm run build # Build the frontend
 
     # 4. Create the deployment package
     - name: Create Deployment Package
