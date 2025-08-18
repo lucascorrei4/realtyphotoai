@@ -43,18 +43,26 @@ jobs:
         cp frontend/package-lock.json ./deploy-package/frontend/
         tar -czf deploy-package.tar.gz -C deploy-package .
 
-    # 5. Deploy the package to your server
-    - name: Deploy to Server
+    # 5. Upload the package to your server using SCP
+    - name: Upload Deployment Package
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        source: "deploy-package.tar.gz"
+        target: "/tmp"
+
+    # 6. Extract package and restart app on the server
+    - name: Run Deployment Script
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.SSH_HOST }}
         username: ${{ secrets.SSH_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         port: ${{ secrets.SSH_PORT }}
-        source: "deploy-package.tar.gz" # <-- CORRECT: Define the source file to upload
-        target: "/tmp"                   # <-- CORRECT: Define the destination folder on the server
         script: |
-          # The script now runs AFTER the file is uploaded
           cd /var/www/realtyphotoai
           
           # Remove old build folders to ensure a clean deployment
