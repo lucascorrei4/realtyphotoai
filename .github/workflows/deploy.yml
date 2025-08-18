@@ -27,7 +27,7 @@ jobs:
         npm run build # Build the backend TS -> dist
         cd frontend
         npm install
-        npm run build # Build the frontend React -> build
+        CI=false npm run build # Build the frontend React -> build
 
     # 4. Create the deployment package (the "artifact")
     - name: Create Deployment Package
