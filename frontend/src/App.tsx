@@ -123,11 +123,11 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
       <Route path="/users" element={
-        <ProtectedRoute>
+        <AdminRoute>
           <Layout>
             <Users />
           </Layout>
-        </ProtectedRoute>
+        </AdminRoute>
       } />
       <Route path="/settings" element={
         <ProtectedRoute>
@@ -140,7 +140,17 @@ function AppRoutes() {
       {/* Admin Routes */}
       <Route path="/admin" element={
         <AdminRoute>
-          <AdminDashboard />
+          <Layout>
+            <AdminDashboard />
+          </Layout>
+        </AdminRoute>
+      } />
+      
+      <Route path="/users" element={
+        <AdminRoute>
+          <Layout>
+            <Users />
+          </Layout>
         </AdminRoute>
       } />
       

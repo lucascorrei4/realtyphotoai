@@ -18,20 +18,22 @@ export interface User {
 }
 
 interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  signIn: (email: string, code: string) => Promise<{ success: boolean; message: string }>;
-  sendCode: (email: string) => Promise<{ success: boolean; message: string }>;
-  signOut: () => Promise<void>;
-  forceSignOut: () => Promise<void>;
-  refreshUser: () => Promise<void>;
-  debugSession: () => Promise<void>;
-  manualSessionCheck: () => Promise<any>;
-  forceClearLoading: () => void;
-  refreshSupabaseClient: () => Promise<void>;
-  createUserFromLocalStorage: () => Promise<boolean>;
-  bypassSupabaseAndUseLocalStorage: () => Promise<boolean>;
-}
+   user: User | null;
+   loading: boolean;
+   signIn: (email: string, code: string) => Promise<{ success: boolean; message: string }>;
+   sendCode: (email: string) => Promise<{ success: boolean; message: string }>;
+   signOut: () => Promise<void>;
+   forceSignOut: () => Promise<void>;
+   refreshUser: () => Promise<void>;
+   syncUserProfile: () => Promise<void>;
+   forceClearCacheAndRefetch: () => Promise<void>;
+   debugSession: () => Promise<void>;
+   manualSessionCheck: () => Promise<any>;
+   forceClearLoading: () => void;
+   refreshSupabaseClient: () => Promise<void>;
+   createUserFromLocalStorage: () => Promise<boolean>;
+   refreshUserData: () => Promise<void>;
+ }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -51,261 +53,152 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check for existing session
-    const checkSession = async () => {
-      try {
-        console.log('🔍 Checking for existing session...');
-        console.log('📅 Current timestamp:', new Date().toISOString());
-        
-        // Check if Supabase is properly configured
-        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-        const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-        
-        if (!supabaseAnonKey) {
-          console.error('🚨 REACT_APP_SUPABASE_ANON_KEY is missing! Cannot authenticate.');
-          setLoading(false);
-          return;
-        }
-        
-        if (!supabaseUrl) {
-          console.error('🚨 REACT_APP_SUPABASE_URL is missing! Cannot authenticate.');
-          setLoading(false);
-          return;
-        }
-        
-        console.log('✅ Supabase configuration verified');
-        
-        // PRIORITY 1: Check localStorage for existing session data FIRST
-        console.log('🔍 Checking localStorage for existing session data...');
-        const allKeys = Object.keys(localStorage);
-        const supabaseKeys = allKeys.filter(key => key.includes('supabase') || key.includes('sb-'));
-        
-        console.log('🔍 Found Supabase-related keys:', supabaseKeys);
-        
-        for (const key of supabaseKeys) {
-          try {
-            const data = localStorage.getItem(key);
-            if (data) {
-              const parsed = JSON.parse(data);
-              console.log(`🔍 Checking ${key}:`, parsed);
-              
-              if (parsed.access_token && parsed.user) {
-                console.log(`✅ Found valid session in ${key}, creating user directly...`);
-                
-                // Create a minimal user object from localStorage data
-                const tempUser: User = {
-                  id: parsed.user.id,
-                  email: parsed.user.email,
-                  name: parsed.user.user_metadata?.name || parsed.user.email,
-                  phone: parsed.user.phone || '',
-                  role: 'user', // Default role
-                  subscription_plan: 'free', // Default plan
-                  monthly_generations_limit: 10, // Default limit
-                  total_generations: 0,
-                  successful_generations: 0,
-                  failed_generations: 0,
-                  is_active: true,
-                  created_at: parsed.user.created_at || new Date().toISOString(),
-                  updated_at: parsed.user.updated_at || new Date().toISOString()
-                };
-                
-                console.log('✅ Setting user from localStorage data:', tempUser);
-                setUser(tempUser);
-                setLoading(false);
-                return; // Exit early, don't try Supabase
-              }
-            }
-          } catch (parseError) {
-            console.log(`⚠️ Failed to parse ${key}:`, parseError);
-          }
-        }
-        
-        // PRIORITY 2: Only try Supabase if no localStorage data found
-        console.log('❌ No valid localStorage session found, trying Supabase...');
-        
-        // Debug Supabase client configuration
-        console.log('🔧 Supabase client config:', {
-          url: process.env.REACT_APP_SUPABASE_URL,
-          hasAnonKey: !!process.env.REACT_APP_SUPABASE_ANON_KEY,
-          anonKeyLength: process.env.REACT_APP_SUPABASE_ANON_KEY?.length || 0,
-          anonKeyStart: process.env.REACT_APP_SUPABASE_ANON_KEY?.substring(0, 20) + '...' || 'none'
-        });
-        
-        // Test basic Supabase connectivity first
-        try {
-          console.log('🌐 Testing Supabase connectivity...');
-          
-          // TEMPORARILY DISABLED - Skip connectivity test
-          console.log('⚠️ Connectivity test temporarily disabled for debugging');
-          
-          // Add timeout to connectivity test
-          // const connectivityTimeout = new Promise((_, reject) => {
-          //   setTimeout(() => reject(new Error('Connectivity test timeout')), 3000); // 3 second timeout
-          // });
-          
-          // const connectivityPromise = supabase
-          //   .from('user_profiles')
-          //   .select('count')
-          //   .limit(1);
-          
-          // const { data, error } = await Promise.race([connectivityPromise, connectivityTimeout]) as any;
-          
-          // if (error) {
-          //   console.log('⚠️ Supabase connectivity test result:', error.message);
-          // } else {
-          //   console.log('✅ Supabase connectivity test successful');
-          // }
-        } catch (connectError) {
-          console.log('⚠️ Supabase connectivity test failed:', connectError);
-          if (connectError instanceof Error && connectError.message === 'Connectivity test timeout') {
-            console.log('⏰ Connectivity test timed out - Supabase client may be misconfigured');
-          }
-        }
-        
-        // Add timeout to prevent infinite loading
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Session check timeout')), 2000); // Reduced to 2 seconds
-        });
-        
-        console.log('🔄 Attempting to get session...');
-        console.log('⏱️ Starting session check at:', new Date().toISOString());
-        
-        // Try to get session with timeout
-        let session;
-        let sessionCheckFailed = false;
-        
-        try {
-          const sessionPromise = supabase.auth.getSession();
-          console.log('📡 Session promise created, waiting for response...');
-          
-          const result = await Promise.race([sessionPromise, timeoutPromise]) as { data: { session: any } };
-          session = result.data.session;
-          console.log('📋 Current session:', session);
-          console.log('⏱️ Session check completed at:', new Date().toISOString());
-        } catch (sessionError) {
-          console.error('🚨 Session check failed:', sessionError);
-          sessionCheckFailed = true;
-          
-          // If session check fails, try to get user directly
-          try {
-            console.log('🔄 Trying to get user directly...');
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              console.log('✅ User found directly:', user.email);
-              await fetchUserProfile(user.id);
-              return;
-            }
-          } catch (userError) {
-            console.error('🚨 Direct user check also failed:', userError);
-          }
-          // If both fail, continue without session
-          session = null;
-        }
-        
-        // If Supabase calls are failing, try to use localStorage data
-        if (sessionCheckFailed && !session) {
-          console.log('🔄 Supabase calls failed, trying localStorage fallback...');
-          const success = await createUserFromLocalStorage();
-          if (success) {
-            console.log('✅ Successfully created user from localStorage fallback');
-            return;
-          }
-        }
-        
-        if (session?.access_token) {
-          console.log('✅ User is already authenticated:', session.user.email);
-          console.log('🔄 Fetching user profile for ID:', session.user.id);
-          await fetchUserProfile(session.user.id);
-        } else {
-          console.log('❌ No active session found');
-        }
-      } catch (error) {
-        console.error('🚨 Error checking session:', error);
-        if (error instanceof Error && error.message === 'Session check timeout') {
-          console.log('⏰ Session check timed out, clearing state...');
-          await forceSignOut();
-        } else {
-          // For any other error, also clear loading state
-          console.log('🚨 Unexpected error, clearing loading state...');
-        }
-      } finally {
-        console.log('🏁 Setting loading to false');
-        console.log('⏱️ Final timestamp:', new Date().toISOString());
-        setLoading(false);
-      }
-    };
-
-    checkSession();
-
-    // Backup timeout to ensure loading state is always cleared
-    const backupTimeout = setTimeout(() => {
-      console.log('🚨 Backup timeout triggered - forcing loading to false');
-      setLoading(false);
-    }, 4000); // 4 seconds total backup timeout
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('🔄 Auth state change:', event, session?.user?.email);
-        if (event === 'SIGNED_IN' && session?.user) {
-          console.log('🔐 User signed in, fetching profile...');
-          await fetchUserProfile(session.user.id);
-        } else if (event === 'SIGNED_OUT') {
-          console.log('🚪 User signed out');
-          setUser(null);
-        }
-      }
-    );
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(backupTimeout);
-    };
+     useEffect(() => {
+     // Check for existing session
+     const checkSession = async () => {
+       try {
+         console.log('🔍 Checking for existing session...');
+         
+         // Check if Supabase is properly configured
+         const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+         const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+         
+         if (!supabaseAnonKey || !supabaseUrl) {
+           console.error('🚨 Supabase configuration missing!');
+           setLoading(false);
+           return;
+         }
+         
+         // Simple session check from Supabase (should automatically read from localStorage)
+         const { data: { session }, error } = await supabase.auth.getSession();
+         
+         if (error) {
+           console.error('❌ Session error:', error);
+           setLoading(false);
+           return;
+         }
+         
+         if (session?.access_token) {
+           console.log('✅ User authenticated:', session.user.email);
+           await fetchUserProfile(session.user.id);
+           return;
+         }
+         
+         // No session found, allow access to auth page
+         console.log('❌ No valid session found');
+         setLoading(false);
+         
+       } catch (error) {
+         console.error('🚨 Error checking session:', error);
+         setLoading(false);
+       }
+     };
+ 
+     checkSession();
+ 
+     // Listen for auth changes
+     const { data: { subscription } } = supabase.auth.onAuthStateChange(
+       async (event, session) => {
+         console.log('🔄 Auth state change:', event, session?.user?.email);
+         if (event === 'SIGNED_IN' && session?.user) {
+           console.log('🔐 User signed in, fetching profile...');
+           await fetchUserProfile(session.user.id);
+         } else if (event === 'SIGNED_OUT') {
+           console.log('🚪 User signed out');
+           setUser(null);
+         }
+       }
+     );
+ 
+     return () => {
+       subscription.unsubscribe();
+     };
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
-    try {
-      console.log('🔍 Fetching user profile for ID:', userId);
-      
-      // First try to get profile from Supabase
-      const { data: profile, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error('❌ Error fetching user profile:', error);
-        // If profile doesn't exist, create one
-        if (error.code === 'PGRST116') {
-          console.log('📝 Profile not found, creating new profile...');
-          await createUserProfile(userId);
+           const fetchUserProfile = async (userId: string) => {
+      try {
+        console.log('🔍 Fetching user profile for ID:', userId);
+        console.log('⏱️ Profile fetch started at:', new Date().toISOString());
+        
+        // Add timeout to prevent infinite loading
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Profile fetch timeout after 5 seconds')), 5000);
+        });
+        
+        // Get profile from Supabase
+        console.log('📡 Querying user_profiles table...');
+        const profilePromise = supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        
+        const result = await Promise.race([profilePromise, timeoutPromise]);
+        const { data: profile, error } = result;
+  
+        console.log('📋 Query result:', { profile, error });
+  
+        if (error) {
+          console.error('❌ Error fetching user profile:', error);
+          console.error('Error details:', {
+            code: error.code,
+            message: error.message,
+            details: error.details
+          });
+          
+          // If profile doesn't exist, create one
+          if (error.code === 'PGRST116') {
+            console.log('📝 Profile not found, creating new profile...');
+            await createUserProfile(userId);
+          } else {
+            // For any other error, set loading to false so user can proceed
+            console.log('⚠️ Profile fetch failed, allowing access to auth page');
+            setLoading(false);
+          }
+          return;
         }
-        return;
-      }
-
-      console.log('✅ User profile fetched successfully:', profile);
-      setUser(profile);
-    } catch (error) {
-      console.error('🚨 Error in fetchUserProfile:', error);
-      
-      // If Supabase fails, try to create user from localStorage
-      console.log('🔄 Supabase failed, falling back to localStorage...');
-      const success = await createUserFromLocalStorage();
-      if (success) {
-        console.log('✅ Successfully created user from localStorage fallback');
-      } else {
-        console.log('❌ Failed to create user from localStorage fallback');
-      }
-    }
-  };
+  
+        console.log('✅ User profile fetched:', profile);
+        
+        // Middleware: Verify user is active and has valid role
+        if (!profile.is_active) {
+          console.error('❌ User account is inactive');
+          await forceSignOut();
+          return;
+        }
+        
+        if (!profile.role || !['user', 'admin', 'super_admin'].includes(profile.role)) {
+          console.error('❌ Invalid user role:', profile.role);
+          await forceSignOut();
+          return;
+        }
+        
+        console.log('✅ User validation passed, role:', profile.role);
+        console.log('👤 Setting user state and clearing loading...');
+        
+        // Set the user state with the database profile (which has the correct role)
+        setUser(profile);
+        setLoading(false);
+        
+        console.log('✅ Profile fetch completed successfully');
+        
+             } catch (error) {
+         console.error('🚨 Error in fetchUserProfile:', error);
+         if (error instanceof Error) {
+           console.error('Error stack:', error.stack);
+         }
+         console.log('⚠️ Setting loading to false due to error');
+         setLoading(false);
+       }
+    };
 
   const createUserProfile = async (userId: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      console.log('🔍 Creating user profile for:', user.email);
+      
       // Use the Supabase function to create profile (bypasses RLS)
       const { error } = await supabase.rpc('create_user_profile', {
         user_id: userId,
@@ -331,9 +224,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
+      console.log('✅ New profile created and fetched:', profile);
       setUser(profile);
+      setLoading(false);
     } catch (error) {
       console.error('Error creating user profile:', error);
+      setLoading(false);
     }
   };
 
@@ -441,6 +337,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Function to force clear all cached user data and refetch
+  const forceClearCacheAndRefetch = async () => {
+    try {
+      console.log('🧹 Force clearing cache and refetching user profile...');
+      
+      // Clear current user state
+      setUser(null);
+      
+      // Clear all Supabase-related localStorage
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('supabase'))) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        console.log('🗑️ Removing cached key:', key);
+        localStorage.removeItem(key);
+      });
+      
+      // Force a fresh session check
+      console.log('🔄 Forcing fresh session check...');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        console.log('✅ Session found, fetching fresh profile...');
+        await fetchUserProfile(session.user.id);
+      } else {
+        console.log('❌ No active session found');
+      }
+      
+      console.log('✅ Cache clear and refetch completed');
+    } catch (error) {
+      console.error('🚨 Error clearing cache and refetching:', error);
+    }
+  };
+
   const refreshUser = async (): Promise<void> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -449,6 +384,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Error refreshing user:', error);
+    }
+  };
+
+  // Function to manually sync user profile with database
+  const syncUserProfile = async () => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        console.log('❌ No authenticated user found');
+        return;
+      }
+
+      console.log('🔄 Syncing user profile for:', authUser.email);
+      
+      // Just fetch the profile by ID
+      await fetchUserProfile(authUser.id);
+    } catch (error) {
+      console.error('🚨 Error syncing user profile:', error);
     }
   };
 
@@ -519,98 +472,70 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const createUserFromLocalStorage = async () => {
-    try {
-      console.log('🔍 Manually creating user from localStorage...');
-      
-      // Check all possible localStorage keys
-      const allKeys = Object.keys(localStorage);
-      const supabaseKeys = allKeys.filter(key => key.includes('supabase') || key.includes('sb-'));
-      
-      console.log('🔍 Found Supabase-related keys:', supabaseKeys);
-      
-      for (const key of supabaseKeys) {
+           // Simple localStorage fallback (only used if Supabase completely fails)
+      const createUserFromLocalStorage = async () => {
         try {
-          const data = localStorage.getItem(key);
-          if (data) {
-            const parsed = JSON.parse(data);
-            console.log(`🔍 Checking ${key}:`, parsed);
-            
-            if (parsed.access_token && parsed.user) {
-              console.log(`✅ Found valid session in ${key}, creating user...`);
-              
-              // Create a minimal user object from localStorage data
-              const tempUser: User = {
-                id: parsed.user.id,
-                email: parsed.user.email,
-                name: parsed.user.user_metadata?.name || parsed.user.email,
-                phone: parsed.user.phone || '',
-                role: 'user', // Default role
-                subscription_plan: 'free', // Default plan
-                monthly_generations_limit: 10, // Default limit
-                total_generations: 0,
-                successful_generations: 0,
-                failed_generations: 0,
-                is_active: true,
-                created_at: parsed.user.created_at || new Date().toISOString(),
-                updated_at: parsed.user.updated_at || new Date().toISOString()
-              };
-              
-              console.log('✅ Setting user from localStorage data:', tempUser);
-              setUser(tempUser);
-              setLoading(false);
-              return true;
-            }
+          console.log('🔍 Creating user from localStorage fallback...');
+          
+          // Check for Supabase session key
+          const sessionKey = Object.keys(localStorage).find(key => key.includes('sb-'));
+          if (!sessionKey) {
+            console.log('❌ No Supabase session found in localStorage');
+            return false;
           }
-        } catch (parseError) {
-          console.log(`⚠️ Failed to parse ${key}:`, parseError);
+          
+          const data = localStorage.getItem(sessionKey);
+          if (!data) return false;
+          
+          const parsed = JSON.parse(data);
+          if (!parsed.access_token || !parsed.user) return false;
+          
+          // Check if token is expired
+          if (parsed.expires_at && Date.now() / 1000 > parsed.expires_at) {
+            console.log('⚠️ Token expired, removing...');
+            localStorage.removeItem(sessionKey);
+            return false;
+          }
+          
+          console.log('✅ Found valid session in localStorage, fetching profile...');
+          await fetchUserProfile(parsed.user.id);
+          return true;
+          
+        } catch (error) {
+          console.error('🚨 Error in localStorage fallback:', error);
+          return false;
         }
-      }
-      
-      console.log('❌ No valid session data found in localStorage');
-      return false;
-    } catch (error) {
-      console.error('🚨 Error creating user from localStorage:', error);
-      return false;
-    }
-  };
+      };
 
-  const bypassSupabaseAndUseLocalStorage = async () => {
-    try {
-      console.log('🚀 Bypassing Supabase entirely, using localStorage only...');
-      setLoading(true);
-      
-      const success = await createUserFromLocalStorage();
-      if (success) {
-        console.log('✅ Successfully bypassed Supabase and created user from localStorage');
-        return true;
-      } else {
-        console.log('❌ Failed to create user from localStorage');
-        setLoading(false);
-        return false;
-      }
-    } catch (error) {
-      console.error('🚨 Error in bypass function:', error);
-      setLoading(false);
-      return false;
-    }
-  };
+     // Simple function to manually refresh user data
+   const refreshUserData = async () => {
+     try {
+       const { data: { user } } = await supabase.auth.getUser();
+       if (user) {
+         await fetchUserProfile(user.id);
+       }
+     } catch (error) {
+       console.error('🚨 Error refreshing user data:', error);
+     }
+   };
 
-  const value: AuthContextType = {
-    user,
-    loading,
-    signIn,
-    sendCode,
-    signOut,
-    forceSignOut,
-    refreshUser,
-    debugSession,
-    manualSessionCheck,
-    forceClearLoading,
-    refreshSupabaseClient,
-    createUserFromLocalStorage,
-    bypassSupabaseAndUseLocalStorage,
-  };
+     const value: AuthContextType = {
+     user,
+     loading,
+     signIn,
+     sendCode,
+     signOut,
+     forceSignOut,
+     refreshUser,
+     syncUserProfile,
+     forceClearCacheAndRefetch,
+     debugSession,
+     manualSessionCheck,
+     forceClearLoading,
+     refreshSupabaseClient,
+     createUserFromLocalStorage,
+     refreshUserData,
+   };
 
   return (
     <AuthContext.Provider value={value}>

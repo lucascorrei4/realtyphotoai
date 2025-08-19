@@ -47,6 +47,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  
+  // Debug logging for admin access
+  console.log('🔍 Admin Access Debug:', {
+    userEmail: user?.email,
+    userRole: user?.role,
+    isAdmin,
+    adminNavigation: adminNavigation.map(item => ({ path: item.path, label: item.label }))
+  });
 
   // Debug logging
   console.log('🔍 Layout Debug:', {
