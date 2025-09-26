@@ -13,9 +13,6 @@ RUN npm install
 # Copy all source files
 COPY . ./
 
-# Debug: List files to verify they were copied
-RUN ls -la src/
-
 # Build the application
 RUN npm run build
 
@@ -28,9 +25,8 @@ COPY --from=builder /app/build /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx-frontend.conf /etc/nginx/conf.d/default.conf
 
-# Create non-root user
-RUN addgroup -g 1001 -S nginx && \
-    adduser -S nginx -u 1001
+# Use existing nginx user (already exists in nginx:alpine)
+# No need to create user as nginx user already exists
 
 # Change ownership of nginx directories
 RUN chown -R nginx:nginx /usr/share/nginx/html && \
