@@ -3,7 +3,7 @@
 
 export const ENV_CONFIG = {
   // Backend Configuration
-  BACKEND_URL: 'http://localhost:8000', // Change this to your backend URL
+  BACKEND_URL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000', // Change this to your backend URL
   
   // API Configuration
   API_TIMEOUT: 300000, // 5 minutes in milliseconds
