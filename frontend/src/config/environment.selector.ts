@@ -11,8 +11,18 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 // Select the appropriate configuration
 export const ENV_CONFIG = isProduction ? PROD_CONFIG : DEV_CONFIG;
 
-// Export the selected configuration
-export * from './environment';
+// Export the selected configuration functions
+export const getBackendUrl = (): string => {
+  return ENV_CONFIG.BACKEND_URL;
+};
+
+export const getApiTimeout = (): number => {
+  return ENV_CONFIG.API_TIMEOUT;
+};
+
+export const isDebugMode = (): boolean => {
+  return ENV_CONFIG.DEBUG_MODE;
+};
 
 // Helper function to get the current environment name
 export const getCurrentEnvironment = (): string => {
