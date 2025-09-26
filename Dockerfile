@@ -1,10 +1,10 @@
 # Backend Dockerfile for RealVisionAI
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies for image processing
 RUN apk add --no-cache \
     python3 \
     make \
@@ -17,13 +17,14 @@ RUN apk add --no-cache \
     pixman-dev \
     pangomm-dev \
     libjpeg-turbo-dev \
-    freetype-dev
+    freetype-dev \
+    libc6-compat
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install dependencies (including devDependencies for TypeScript build)
+RUN npm install && npm cache clean --force
 
 # Copy source code
 COPY src/ ./src/
