@@ -23,6 +23,7 @@ FROM nginx:alpine
 COPY --from=builder /app/build /usr/share/nginx/html
 
 # Copy nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 COPY nginx-frontend.conf /etc/nginx/conf.d/default.conf
 
 # Use existing nginx user (already exists in nginx:alpine)
@@ -34,11 +35,12 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
     chown -R nginx:nginx /var/log/nginx && \
     chown -R nginx:nginx /etc/nginx/conf.d
 
-# Create nginx pid directory
+# Create nginx pid directory and set permissions
 RUN mkdir -p /var/run/nginx && \
-    chown -R nginx:nginx /var/run/nginx
+    chown -R nginx:nginx /var/run/nginx && \
+    chmod 755 /var/run/nginx
 
-# Switch to non-root user
+# Switch to nginx user
 USER nginx
 
 # Expose port
