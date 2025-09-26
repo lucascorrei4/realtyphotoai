@@ -23,7 +23,7 @@
     "nodejs",
     "replicate-api"
   ],
-  "author": "RealtyPhotoAI Lab Team",
+  "author": "RealVisionAI Lab Team",
   "license": "MIT",
   "dependencies": {
     "@eslint/js": "^9.33.0",
@@ -44,6 +44,7 @@
     "node-fetch": "^2.7.0",
     "replicate": "^0.22.0",
     "sharp": "^0.33.0",
+    "stripe": "^14.21.0",
     "uuid": "^9.0.1",
     "winston": "^3.11.0"
   },

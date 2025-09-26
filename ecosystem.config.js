@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'realtyphotoai-backend',
+      name: 'RealVisionai-backend',
       script: 'dist/app.js',
       instances: 'max',
       exec_mode: 'cluster',

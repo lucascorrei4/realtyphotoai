@@ -228,4 +228,4 @@ When modifying the widget:
 
 ## License
 
-This component is part of the RealtyPhotoAI project and follows the same licensing terms.
+This component is part of the RealVisionAI project and follows the same licensing terms.

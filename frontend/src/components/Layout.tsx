@@ -104,7 +104,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            🏠 RealtyPhotoAI
+            🏠 RealVisionAI
           </h1>
           <button
             onClick={() => setSidebarOpen(false)}

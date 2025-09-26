@@ -3,7 +3,7 @@
 
 export const ENV_CONFIG = {
   // Backend Configuration
-  BACKEND_URL: 'https://api.realtyphotoai.com', // Production backend URL
+  BACKEND_URL: 'https://api.realvisionai.com', // Production backend URL
   
   // API Configuration
   API_TIMEOUT: 600000, // 10 minutes in milliseconds (longer for production)

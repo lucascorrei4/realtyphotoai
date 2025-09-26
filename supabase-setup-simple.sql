@@ -1,4 +1,4 @@
--- Simplified Supabase Setup Script for RealtyPhotoAI Admin Integration
+-- Simplified Supabase Setup Script for RealVisionAI Admin Integration
 -- Run this in your Supabase SQL editor
 
 -- Enable necessary extensions

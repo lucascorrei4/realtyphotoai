@@ -260,6 +260,36 @@ router.get('/plans', requireSuperAdmin, async (_req, res) => {
 });
 
 /**
+ * Create new plan rule (super admin only)
+ * POST /admin/plans
+ */
+router.post('/plans', requireSuperAdmin, async (req, res) => {
+  try {
+    const planData = req.body;
+
+    // Validate required fields
+    if (!planData.plan_name || !planData.monthly_generations_limit || !planData.price_per_month) {
+      return res.status(400).json({ error: 'plan_name, monthly_generations_limit, and price_per_month are required' });
+    }
+
+    const newPlan = await adminService.createPlanRule(planData);
+    
+    if (newPlan) {
+      return res.json({
+        success: true,
+        message: 'Plan rule created successfully',
+        plan: newPlan
+      });
+    } else {
+      return res.status(500).json({ error: 'Failed to create plan rule' });
+    }
+  } catch (error) {
+    logger.error('Error in admin create plan route:', error as Error);
+    return res.status(500).json({ error: 'Failed to create plan rule' });
+  }
+});
+
+/**
  * Update plan rule (super admin only)
  * PUT /admin/plans/:planId
  */
@@ -286,6 +316,69 @@ router.put('/plans/:planId', requireSuperAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Error in admin update plan route:', error as Error);
     return res.status(500).json({ error: 'Failed to update plan rule' });
+  }
+});
+
+/**
+ * Delete plan rule (super admin only)
+ * DELETE /admin/plans/:planId
+ */
+router.delete('/plans/:planId', requireSuperAdmin, async (req, res) => {
+  try {
+    const { planId } = req.params;
+
+    const success = await adminService.deletePlanRule(planId);
+    
+    if (success) {
+      return res.json({
+        success: true,
+        message: 'Plan rule deleted successfully'
+      });
+    } else {
+      return res.status(500).json({ error: 'Failed to delete plan rule' });
+    }
+  } catch (error) {
+    logger.error('Error in admin delete plan route:', error as Error);
+    return res.status(500).json({ error: 'Failed to delete plan rule' });
+  }
+});
+
+/**
+ * Get Stripe products and prices (super admin only)
+ * GET /admin/stripe/products
+ */
+router.get('/stripe/products', requireSuperAdmin, async (_req, res) => {
+  try {
+    const stripeData = await adminService.getStripeProducts();
+    return res.json({
+      success: true,
+      ...stripeData
+    });
+  } catch (error) {
+    logger.error('Error in admin Stripe products route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe products' });
+  }
+});
+
+/**
+ * Sync Stripe plans with database (super admin only)
+ * POST /admin/stripe/sync
+ */
+router.post('/stripe/sync', requireSuperAdmin, async (_req, res) => {
+  try {
+    const result = await adminService.syncStripePlans();
+    
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: result.message
+      });
+    } else {
+      return res.status(500).json({ error: result.message });
+    }
+  } catch (error) {
+    logger.error('Error in admin Stripe sync route:', error as Error);
+    return res.status(500).json({ error: 'Failed to sync Stripe plans' });
   }
 });
 

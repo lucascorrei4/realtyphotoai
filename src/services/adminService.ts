@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
 import { UserProfile } from './authService';
+import stripeService, { StripeProduct, StripePrice } from './stripeService';
 
 export interface AdminSettings {
   id: string;
@@ -20,8 +21,20 @@ export interface PlanRule {
   price_per_month: number;
   features: any;
   is_active: boolean;
+  stripe_product_id?: string;
+  stripe_price_id?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface StripePlanData {
+  plan_name: string;
+  monthly_generations_limit: number;
+  concurrent_generations: number;
+  allowed_models: string[];
+  price_per_month: number;
+  features: any;
+  stripe_metadata?: Record<string, string>;
 }
 
 export interface GenerationStats {
@@ -253,6 +266,159 @@ export class AdminService {
     } catch (error) {
       logger.error('Error in updatePlanRule:', error as Error);
       return false;
+    }
+  }
+
+  /**
+   * Create new plan rule with Stripe integration
+   */
+  async createPlanRule(planData: StripePlanData): Promise<PlanRule | null> {
+    try {
+      // Create Stripe product
+      const stripeProduct = await stripeService.createProduct({
+        name: `${planData.plan_name.charAt(0).toUpperCase() + planData.plan_name.slice(1)} Plan`,
+        description: `${planData.monthly_generations_limit} generations per month`,
+        metadata: {
+          plan_name: planData.plan_name,
+          monthly_limit: planData.monthly_generations_limit.toString(),
+          concurrent_limit: planData.concurrent_generations.toString(),
+          ...planData.stripe_metadata,
+        },
+      });
+
+      // Create Stripe price (monthly)
+      const stripePrice = await stripeService.createPrice({
+        product_id: stripeProduct.id,
+        unit_amount: Math.round(planData.price_per_month * 100), // Convert to cents
+        currency: 'usd',
+        recurring: {
+          interval: 'month',
+          interval_count: 1,
+        },
+        metadata: {
+          plan_name: planData.plan_name,
+          monthly_limit: planData.monthly_generations_limit.toString(),
+        },
+      });
+
+      // Create plan rule in database
+      const { data: planRule, error } = await supabase
+        .from('plan_rules')
+        .insert({
+          plan_name: planData.plan_name,
+          monthly_generations_limit: planData.monthly_generations_limit,
+          concurrent_generations: planData.concurrent_generations,
+          allowed_models: planData.allowed_models,
+          price_per_month: planData.price_per_month,
+          features: planData.features,
+          stripe_product_id: stripeProduct.id,
+          stripe_price_id: stripePrice.id,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        logger.error('Error creating plan rule:', error);
+        // Clean up Stripe resources if database insert fails
+        try {
+          await stripeService.archiveProduct(stripeProduct.id);
+        } catch (cleanupError: any) {
+          logger.error('Error cleaning up Stripe product after database failure:', cleanupError);
+        }
+        return null;
+      }
+
+      return planRule;
+    } catch (error) {
+      logger.error('Error in createPlanRule:', error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete plan rule and archive Stripe product
+   */
+  async deletePlanRule(planId: string): Promise<boolean> {
+    try {
+      // Get plan rule to find Stripe IDs
+      const { data: planRule } = await supabase
+        .from('plan_rules')
+        .select('stripe_product_id, stripe_price_id')
+        .eq('id', planId)
+        .single();
+
+      if (planRule?.stripe_product_id) {
+        // Archive Stripe product
+        await stripeService.archiveProduct(planRule.stripe_product_id);
+      }
+
+      // Delete from database
+      const { error } = await supabase
+        .from('plan_rules')
+        .delete()
+        .eq('id', planId);
+
+      if (error) {
+        logger.error('Error deleting plan rule:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.error('Error in deletePlanRule:', error as Error);
+      return false;
+    }
+  }
+
+  /**
+   * Get Stripe products and prices
+   */
+  async getStripeProducts(): Promise<{ products: StripeProduct[]; prices: StripePrice[] }> {
+    try {
+      return await stripeService.syncProductsWithDatabase();
+    } catch (error) {
+      logger.error('Error in getStripeProducts:', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync Stripe plans with database
+   */
+  async syncStripePlans(): Promise<{ success: boolean; message: string }> {
+    try {
+      const { products, prices } = await stripeService.syncProductsWithDatabase();
+      
+      // Update existing plan rules with Stripe IDs if they don't have them
+      for (const product of products) {
+        const planName = product.metadata.plan_name;
+        if (planName) {
+          const { error } = await supabase
+            .from('plan_rules')
+            .update({
+              stripe_product_id: product.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('plan_name', planName)
+            .is('stripe_product_id', null);
+
+          if (error) {
+            logger.error(`Error updating plan rule for ${planName}:`, error);
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: `Synced ${products.length} products and ${prices.length} prices`,
+      };
+    } catch (error) {
+      logger.error('Error in syncStripePlans:', error as Error);
+      return {
+        success: false,
+        message: 'Failed to sync Stripe plans',
+      };
     }
   }
 

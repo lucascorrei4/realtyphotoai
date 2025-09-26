@@ -18,7 +18,7 @@ class ConfigManager {
     return {
       port: parseInt(process.env.PORT || '8000', 10),
       nodeEnv: process.env.NODE_ENV || 'development',
-      appName: process.env.APP_NAME || 'RealtyPhotoAI Lab Backend',
+      appName: process.env.APP_NAME || 'RealVisionAI Lab Backend',
       appVersion: process.env.APP_VERSION || '1.0.0',
       apiPrefix: process.env.API_PREFIX || '/api/v1',
       maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10), // 10MB

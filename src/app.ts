@@ -9,6 +9,7 @@ import { logger } from './utils/logger';
 import { FileUtils } from './utils/fileUtils';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
+import webhookRoutes from './routes/webhooks';
 
 class App {
   public app: express.Application;
@@ -176,6 +177,9 @@ class App {
 
     // API routes
     this.app.use(config.apiPrefix, routes);
+    
+    // Webhook routes (no auth required)
+    this.app.use('/webhooks', webhookRoutes);
 
     logger.info('Routes initialized successfully');
   }

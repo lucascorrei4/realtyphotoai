@@ -58,18 +58,21 @@ interface PlanRule {
   price_per_month: number;
   features: any;
   is_active: boolean;
+  stripe_product_id?: string;
+  stripe_price_id?: string;
 }
 
 const AdminDashboard: React.FC = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'plans' | 'settings' | 'dashboard'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'dashboard'>('overview');
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [plans, setPlans] = useState<PlanRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editingPlan, setEditingPlan] = useState<PlanRule | null>(null);
+  const [showCreatePlan, setShowCreatePlan] = useState(false);
 
   // Mock data for admin dashboard stats
   const adminStats = [
@@ -255,6 +258,54 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const syncStripePlans = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch('/api/admin/stripe/sync', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await fetchPlans();
+        alert('Stripe plans synced successfully!');
+      } else {
+        alert('Failed to sync Stripe plans');
+      }
+    } catch (error) {
+      console.error('Error syncing Stripe plans:', error);
+      alert('Error syncing Stripe plans');
+    }
+  };
+
+  const deletePlan = async (planId: string) => {
+    if (!window.confirm('Are you sure you want to delete this plan? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`/api/admin/plans/${planId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await fetchPlans();
+        alert('Plan deleted successfully!');
+      } else {
+        alert('Failed to delete plan');
+      }
+    } catch (error) {
+      console.error('Error deleting plan:', error);
+      alert('Error deleting plan');
+    }
+  };
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
@@ -315,11 +366,12 @@ const AdminDashboard: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8">
             {[
-              { id: 'overview', label: 'Overview', icon: BarChart3 },
-              { id: 'dashboard', label: 'Admin Dashboard', icon: Shield },
-              { id: 'users', label: 'Users', icon: Users },
-              { id: 'plans', label: 'Plans', icon: Crown },
-              { id: 'settings', label: 'Settings', icon: Settings }
+                          { id: 'overview', label: 'Overview', icon: BarChart3 },
+            { id: 'dashboard', label: 'Admin Dashboard', icon: Shield },
+            { id: 'users', label: 'Users', icon: Users },
+            { id: 'plans', label: 'Plans', icon: Crown },
+            { id: 'stripe', label: 'Stripe', icon: Crown },
+            { id: 'settings', label: 'Settings', icon: Settings }
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -452,7 +504,7 @@ const AdminDashboard: React.FC = () => {
                     Admin Dashboard
                   </h1>
                   <p className="text-gray-600 dark:text-gray-400 mt-2">
-                    Welcome to your RealtyPhotoAI admin dashboard
+                    Welcome to your RealVisionAI admin dashboard
                   </p>
                 </div>
 
@@ -685,7 +737,25 @@ const AdminDashboard: React.FC = () => {
             {/* Plans Tab */}
             {activeTab === 'plans' && (
               <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Plan Management</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Plan Management</h2>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setShowCreatePlan(true)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Create Plan</span>
+                    </button>
+                    <button
+                      onClick={syncStripePlans}
+                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      <span>Sync Stripe</span>
+                    </button>
+                  </div>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   {plans.map((plan) => (
@@ -714,6 +784,14 @@ const AdminDashboard: React.FC = () => {
                           <span className="text-sm text-gray-600 dark:text-gray-400">Price:</span>
                           <span className="text-sm font-medium text-gray-900 dark:text-white">${plan.price_per_month}/month</span>
                         </div>
+                        {plan.stripe_product_id && (
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Stripe ID:</span>
+                            <span className="text-sm font-medium text-gray-900 dark:text-white truncate ml-2">
+                              {plan.stripe_product_id.substring(0, 8)}...
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -729,8 +807,105 @@ const AdminDashboard: React.FC = () => {
                           ))}
                         </div>
                       </div>
+
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => setEditingPlan(plan)}
+                            className="flex-1 px-3 py-2 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                          >
+                            <Edit className="h-4 w-4 inline mr-1" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deletePlan(plan.id)}
+                            className="px-3 py-2 text-sm bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-800 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stripe Tab */}
+            {activeTab === 'stripe' && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Stripe Integration</h2>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Stripe Products</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Total Products</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {plans.filter(p => p.stripe_product_id).length}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Synced Plans</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {plans.filter(p => p.stripe_product_id && p.stripe_price_id).length}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={syncStripePlans}
+                      className="w-full mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      Sync with Stripe
+                    </button>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Webhook Status</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Endpoint</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          /api/webhooks/stripe
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                        <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 rounded-full">
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Stripe Configuration</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Publishable Key
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="pk_test_..."
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Webhook Secret
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="whsec_..."
+                        readOnly
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

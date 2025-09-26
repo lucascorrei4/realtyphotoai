@@ -1,4 +1,4 @@
-# Deployment Guide - RealtyPhotoAI
+# Deployment Guide - RealVisionAI
 
 This guide will walk you through setting up CI/CD deployment from GitHub to your Hostinger machine.
 
@@ -27,7 +27,7 @@ chmod +x server-setup.sh
 
 ### 1.3 Configure environment variables
 ```bash
-cd /var/www/realtyphotoai
+cd /var/www/RealVisionai
 cp .env.example .env
 nano .env
 ```
@@ -92,14 +92,14 @@ git push origin main
 pm2 status
 
 # Check PM2 logs
-pm2 logs realtyphotoai
+pm2 logs RealVisionai
 
 # Check nginx status
 systemctl status nginx
 
 # Check nginx logs
-tail -f /var/log/nginx/realtyphotoai_access.log
-tail -f /var/log/nginx/realtyphotoai_error.log
+tail -f /var/log/nginx/RealVisionai_access.log
+tail -f /var/log/nginx/RealVisionai_error.log
 ```
 
 ### 4.2 Test endpoints
@@ -128,13 +128,13 @@ pm2 monit
 pm2 logs
 
 # Restart application
-pm2 restart realtyphotoai
+pm2 restart RealVisionai
 
 # Stop application
-pm2 stop realtyphotoai
+pm2 stop RealVisionai
 
 # Delete application
-pm2 delete realtyphotoai
+pm2 delete RealVisionai
 ```
 
 ### 5.2 Nginx commands
@@ -155,10 +155,10 @@ systemctl status nginx
 ### 5.3 Log management
 ```bash
 # Application logs
-tail -f /var/www/realtyphotoai/logs/*.log
+tail -f /var/www/RealVisionai/logs/*.log
 
 # Nginx logs
-tail -f /var/log/nginx/realtyphotoai_*.log
+tail -f /var/log/nginx/RealVisionai_*.log
 
 # System logs
 journalctl -u nginx -f
@@ -172,8 +172,8 @@ journalctl -u pm2-root -f
 #### 1. Permission denied errors
 ```bash
 # Fix permissions
-chown -R www-data:www-data /var/www/realtyphotoai
-chmod -R 755 /var/www/realtyphotoai
+chown -R www-data:www-data /var/www/RealVisionai
+chmod -R 755 /var/www/RealVisionai
 ```
 
 #### 2. Port already in use
@@ -197,10 +197,10 @@ tail -f /var/log/nginx/error.log
 #### 4. PM2 process not starting
 ```bash
 # Check PM2 logs
-pm2 logs realtyphotoai
+pm2 logs RealVisionai
 
 # Check application logs
-tail -f /var/www/realtyphotoai/logs/*.log
+tail -f /var/www/RealVisionai/logs/*.log
 ```
 
 ### Rollback Procedure
@@ -209,15 +209,15 @@ If deployment fails, you can rollback:
 
 ```bash
 # Stop current deployment
-pm2 stop realtyphotoai
+pm2 stop RealVisionai
 
 # Restore from backup
 cd /var/www
-rm -rf realtyphotoai
-cp -r realtyphotoai.backup.<timestamp> realtyphotoai
+rm -rf RealVisionai
+cp -r RealVisionai.backup.<timestamp> RealVisionai
 
 # Restart application
-cd realtyphotoai
+cd RealVisionai
 pm2 start ecosystem.config.js --env production
 ```
 

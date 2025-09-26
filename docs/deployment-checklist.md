@@ -1,4 +1,4 @@
-# Deployment Checklist - RealtyPhotoAI
+# Deployment Checklist - RealVisionAI
 
 ## ✅ Pre-deployment Setup
 
@@ -14,7 +14,7 @@
 - [ ] Verify Node.js 18.x installed: `node --version`
 - [ ] Verify PM2 installed: `pm2 --version`
 - [ ] Verify nginx installed: `nginx -v`
-- [ ] Check application directory: `ls -la /var/www/realtyphotoai`
+- [ ] Check application directory: `ls -la /var/www/RealVisionai`
 
 ## 🔐 GitHub Configuration
 
@@ -32,7 +32,7 @@
 - [ ] Set `PORT=3000`
 - [ ] Configure `REPLICATE_API_TOKEN`
 - [ ] Set file paths for uploads/outputs
-- [ ] Verify file permissions: `chown -R www-data:www-data /var/www/realtyphotoai`
+- [ ] Verify file permissions: `chown -R www-data:www-data /var/www/RealVisionai`
 
 ## 🚀 First Deployment
 
@@ -57,7 +57,7 @@
 
 - [ ] PM2 monitoring: `pm2 monit`
 - [ ] Nginx status: `systemctl status nginx`
-- [ ] Log monitoring: `tail -f /var/www/realtyphotoai/logs/*.log`
+- [ ] Log monitoring: `tail -f /var/www/RealVisionai/logs/*.log`
 - [ ] System resource monitoring
 - [ ] Error alerting configured
 
@@ -93,18 +93,18 @@
 ```bash
 # Check application status
 pm2 status
-pm2 logs realtyphotoai
+pm2 logs RealVisionai
 
 # Check nginx
 systemctl status nginx
 nginx -t
 
 # View logs
-tail -f /var/www/realtyphotoai/logs/*.log
-tail -f /var/log/nginx/realtyphotoai_*.log
+tail -f /var/www/RealVisionai/logs/*.log
+tail -f /var/log/nginx/RealVisionai_*.log
 
 # Restart services
-pm2 restart realtyphotoai
+pm2 restart RealVisionai
 systemctl restart nginx
 
 # Health check

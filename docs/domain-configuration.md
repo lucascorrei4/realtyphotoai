@@ -1,24 +1,24 @@
-# Domain Configuration - RealtyPhotoAI
+# Domain Configuration - RealVisionAI
 
 ## 🌐 Domain Structure
 
 Your application is now configured to run on two separate domains with different ports:
 
 ### 1. **Backend API Server**
-- **Domain**: `api.realtyphotoai.com`
+- **Domain**: `api.RealVisionai.com`
 - **Port**: `8000`
 - **Purpose**: Handles all API requests, image processing, AI operations
-- **Process**: `realtyphotoai-backend` (PM2)
+- **Process**: `RealVisionai-backend` (PM2)
 
 ### 2. **Frontend Application**
-- **Domain**: `app.realtyphotoai.com`
+- **Domain**: `app.RealVisionai.com`
 - **Port**: `3000`
 - **Purpose**: Serves the React frontend application
-- **Process**: `realtyphotoai-frontend` (PM2)
+- **Process**: `RealVisionai-frontend` (PM2)
 
 ### 3. **IP Fallback**
 - **IP**: `31.97.147.23`
-- **Behavior**: Redirects to `app.realtyphotoai.com`
+- **Behavior**: Redirects to `app.RealVisionai.com`
 
 ## 🔧 Configuration Files Updated
 
@@ -58,10 +58,10 @@ Your application is now configured to run on two separate domains with different
 pm2 status
 
 # Backend logs
-pm2 logs realtyphotoai-backend
+pm2 logs RealVisionai-backend
 
 # Frontend logs
-pm2 logs realtyphotoai-frontend
+pm2 logs RealVisionai-frontend
 
 # Monitor processes
 pm2 monit
@@ -70,26 +70,26 @@ pm2 monit
 ### Nginx Logs
 ```bash
 # API logs
-tail -f /var/log/nginx/api_realtyphotoai_access.log
-tail -f /var/log/nginx/api_realtyphotoai_error.log
+tail -f /var/log/nginx/api_RealVisionai_access.log
+tail -f /var/log/nginx/api_RealVisionai_error.log
 
 # Frontend logs
-tail -f /var/log/nginx/app_realtyphotoai_access.log
-tail -f /var/log/nginx/app_realtyphotoai_error.log
+tail -f /var/log/nginx/app_RealVisionai_access.log
+tail -f /var/log/nginx/app_RealVisionai_error.log
 ```
 
 ## 🔍 Health Checks
 
 ### Backend Health
 ```bash
-curl http://api.realtyphotoai.com/health
+curl http://api.RealVisionai.com/health
 # or
 curl http://31.97.147.23:8000/health
 ```
 
 ### Frontend Health
 ```bash
-curl http://app.realtyphotoai.com/
+curl http://app.RealVisionai.com/
 # or
 curl http://31.97.147.23:3000/
 ```
@@ -99,12 +99,12 @@ curl http://31.97.147.23:3000/
 To use the domains, you need to configure DNS records:
 
 ### A Records
-- `api.realtyphotoai.com` → `31.97.147.23`
-- `app.realtyphotoai.com` → `31.97.147.23`
+- `api.RealVisionai.com` → `31.97.147.23`
+- `app.RealVisionai.com` → `31.97.147.23`
 
 ### CNAME Records (if using subdomain)
-- `api` → `realtyphotoai.com`
-- `app` → `realtyphotoai.com`
+- `api` → `RealVisionai.com`
+- `app` → `RealVisionai.com`
 
 ## 🔒 Security Features
 
@@ -139,12 +139,12 @@ netstat -tulpn | grep :3000
 ### Process Issues
 ```bash
 # Restart specific process
-pm2 restart realtyphotoai-backend
-pm2 restart realtyphotoai-frontend
+pm2 restart RealVisionai-backend
+pm2 restart RealVisionai-frontend
 
 # View process details
-pm2 show realtyphotoai-backend
-pm2 show realtyphotoai-frontend
+pm2 show RealVisionai-backend
+pm2 show RealVisionai-frontend
 ```
 
 ### Nginx Issues

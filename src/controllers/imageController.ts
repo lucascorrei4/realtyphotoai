@@ -636,7 +636,7 @@ export class ImageController {
   public test = async (_: Request, res: Response): Promise<void> => {
     res.json({
       success: true,
-      message: 'RealtyPhotoAI Lab Backend is running!',
+      message: 'RealVisionAI Lab Backend is running!',
       data: {
         version: config.appVersion,
         model: config.stableDiffusionModel,
@@ -868,6 +868,43 @@ export class ImageController {
         message: 'Batch image enhancement failed',
         error: error instanceof Error ? error.message : 'Unknown error',
         processingTime,
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    }
+  };
+
+  /**
+   * Get image enhancement information and configuration
+   */
+  public getImageEnhancementInfo = async (_: Request, res: Response): Promise<void> => {
+    try {
+      res.json({
+        success: true,
+        message: 'Image enhancement information retrieved successfully',
+        data: {
+          endpoint: '/api/v1/image-enhancement',
+          method: 'POST',
+          description: 'Enhance multiple images with AI-powered luminosity and color improvements',
+          features: {
+            batchProcessing: 'Process up to 20 images simultaneously',
+            enhancementTypes: ['luminosity', 'color', 'resolution'],
+            enhancementStrengths: ['subtle', 'moderate', 'strong'],
+            supportedFormats: ['JPG', 'PNG', 'WebP', 'HEIC'],
+            maxFileSize: '10MB per image',
+            referenceImage: 'Optional reference image for color matching'
+          },
+          model: 'Bria Increase Resolution Model (bria/increase-resolution)',
+          authentication: 'Required (Bearer token)',
+          rateLimit: '10 requests per 15 minutes'
+        },
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    } catch (error) {
+      logger.error('Failed to get image enhancement info', { error });
+      res.status(500).json({
+        success: false,
+        message: 'Failed to retrieve image enhancement information',
+        error: 'INFO_FAILED',
         timestamp: new Date().toISOString(),
       } as ApiResponse);
     }

@@ -187,7 +187,7 @@ const Dashboard: React.FC = () => {
           Welcome back, {user?.name || user?.email?.split('@')[0] || 'User'}! 👋
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Here's what's happening with your RealtyPhotoAI account
+          Here's what's happening with your RealVisionAI account
         </p>
       </div>
 

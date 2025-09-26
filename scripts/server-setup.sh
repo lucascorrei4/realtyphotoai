@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🚀 Setting up Hostinger server for RealtyPhotoAI deployment..."
+echo "🚀 Setting up Hostinger server for RealVisionAI deployment..."
 
 # Update system packages
 echo "📦 Updating system packages..."
@@ -30,21 +30,21 @@ apt install -y curl wget git unzip build-essential
 
 # Create application directory
 echo "📁 Creating application directory..."
-mkdir -p /var/www/realtyphotoai
-mkdir -p /var/www/realtyphotoai/logs
-mkdir -p /var/www/realtyphotoai/uploads
-mkdir -p /var/www/realtyphotoai/outputs
-mkdir -p /var/www/realtyphotoai/temp
+mkdir -p /var/www/RealVisionai
+mkdir -p /var/www/RealVisionai/logs
+mkdir -p /var/www/RealVisionai/uploads
+mkdir -p /var/www/RealVisionai/outputs
+mkdir -p /var/www/RealVisionai/temp
 
 # Set proper permissions
 echo "🔐 Setting permissions..."
-chown -R www-data:www-data /var/www/realtyphotoai
-chmod -R 755 /var/www/realtyphotoai
+chown -R www-data:www-data /var/www/RealVisionai
+chmod -R 755 /var/www/RealVisionai
 
 # Configure nginx
 echo "🌐 Configuring nginx..."
-cp nginx.conf /etc/nginx/sites-available/realtyphotoai
-ln -sf /etc/nginx/sites-available/realtyphotoai /etc/nginx/sites-enabled/
+cp nginx.conf /etc/nginx/sites-available/RealVisionai
+ln -sf /etc/nginx/sites-available/RealVisionai /etc/nginx/sites-enabled/
 
 # Remove default nginx site
 rm -f /etc/nginx/sites-enabled/default
@@ -69,16 +69,16 @@ echo "✅ Server setup completed successfully!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Create the nginx.conf for your sites (see recommended config)."
-echo "2. Deploy your code to /var/www/realtyphotoai/"
+echo "2. Deploy your code to /var/www/RealVisionai/"
 echo "3. Build the frontend: cd frontend && npm install && npm run build"
-echo "4. Start the backend with PM2: pm2 start your-api-file.js --name realtyphotoai-api"
+echo "4. Start the backend with PM2: pm2 start your-api-file.js --name RealVisionai-api"
 echo "5. Save the PM2 process: pm2 save"
 echo "6. Reload Nginx: sudo systemctl reload nginx"
-echo "7. Set up SSL with Certbot: sudo certbot --nginx -d api.realtyphotoai.com -d app.realtyphotoai.com"
+echo "7. Set up SSL with Certbot: sudo certbot --nginx -d api.RealVisionai.com -d app.RealVisionai.com"
 echo ""
 echo "🔍 To monitor your application:"
 echo "   - PM2 status: pm2 status"
-echo "   - Backend logs: pm2 logs realtyphotoai-api"
+echo "   - Backend logs: pm2 logs RealVisionai-api"
 echo "   - Nginx status: systemctl status nginx"
-echo "   - Nginx API logs: tail -f /var/log/nginx/api_realtyphotoai_*.log"
-echo "   - Nginx App logs: tail -f /var/log/nginx/app_realtyphotoai_*.log"
+echo "   - Nginx API logs: tail -f /var/log/nginx/api_RealVisionai_*.log"
+echo "   - Nginx App logs: tail -f /var/log/nginx/app_RealVisionai_*.log"

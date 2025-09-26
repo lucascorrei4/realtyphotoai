@@ -81,6 +81,11 @@ router.post('/interior-design',
 );
 
 // Image enhancement endpoint
+router.get('/image-enhancement', 
+  generalRateLimit,
+  asyncHandler(imageController.getImageEnhancementInfo)
+);
+
 router.post('/image-enhancement', 
   authenticateToken,
   processingRateLimit,

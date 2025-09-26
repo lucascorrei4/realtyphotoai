@@ -1,4 +1,4 @@
-# 🏠 RealtyPhotoAI Lab - Enhanced Interior Design
+# 🏠 RealVisionAI Lab - Enhanced Interior Design
 
 Professional Node.js backend for AI-powered real estate photo enhancement that **preserves original room structure** while adding beautiful furniture and decor.
 

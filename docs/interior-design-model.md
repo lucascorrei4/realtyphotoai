@@ -1,6 +1,6 @@
 # Interior Design Model Integration
 
-This document describes how to use the new Interior Design model integration in your RealtyPhotoAI Lab backend.
+This document describes how to use the new Interior Design model integration in your RealVisionAI Lab backend.
 
 ## Overview
 
