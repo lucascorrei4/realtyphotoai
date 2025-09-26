@@ -199,7 +199,7 @@ class App {
       // Initialize directories first
       await this.initializeDirectories();
 
-      const server = this.app.listen(config.port, () => {
+      const server = this.app.listen(config.port, '0.0.0.0', () => {
         logger.info(`🚀 ${config.appName} started successfully!`, {
           port: config.port,
           nodeEnv: config.nodeEnv,
