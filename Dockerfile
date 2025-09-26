@@ -18,7 +18,8 @@ RUN apk add --no-cache \
     pangomm-dev \
     libjpeg-turbo-dev \
     freetype-dev \
-    libc6-compat
+    libc6-compat \
+    curl
 
 # Copy package files
 COPY package*.json ./
@@ -51,7 +52,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:8000/api/v1/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]

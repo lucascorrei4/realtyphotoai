@@ -4,6 +4,16 @@ FROM node:20-alpine AS builder
 # Set working directory
 WORKDIR /app
 
+# Accept build arguments for React environment variables
+ARG REACT_APP_SUPABASE_ANON_KEY
+ARG REACT_APP_SUPABASE_URL
+ARG REACT_APP_API_BASE_URL
+
+# Set environment variables for the build
+ENV REACT_APP_SUPABASE_ANON_KEY=$REACT_APP_SUPABASE_ANON_KEY
+ENV REACT_APP_SUPABASE_URL=$REACT_APP_SUPABASE_URL
+ENV REACT_APP_API_BASE_URL=$REACT_APP_API_BASE_URL
+
 # Copy package files
 COPY package*.json ./
 
