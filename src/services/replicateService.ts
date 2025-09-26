@@ -544,8 +544,8 @@ export class ReplicateService {
    */
   public async validateConfiguration(): Promise<boolean> {
     try {
-      // Try to get account info to validate API token
-      await (this.replicate as any).accounts.current();
+      // Try to list models to validate API token
+      await this.replicate.models.list();
       logger.info('Replicate configuration validated successfully');
       return true;
     } catch (error) {
