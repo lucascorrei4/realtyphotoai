@@ -75,7 +75,6 @@ docker-compose*
 .dockerignore
 
 # Backend (not needed for frontend)
-src/
 dist/
 uploads/
 outputs/

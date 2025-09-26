@@ -1,5 +1,5 @@
 # Frontend Dockerfile for RealVisionAI
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -7,11 +7,14 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (including devDependencies for build)
+RUN npm install
 
 # Copy all source files
 COPY . ./
+
+# Debug: List files to verify they were copied
+RUN ls -la src/
 
 # Build the application
 RUN npm run build
