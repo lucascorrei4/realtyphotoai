@@ -436,7 +436,6 @@ export class ImageController {
         await FileUtils.resizeImageIfNeeded(req.file.path, resizedImagePath, 1024, 1024);
         tempFiles.push(resizedImagePath);
       } catch (resizeError) {
-        console.log('❌ [IMAGE CONTROLLER] Image resize failed:', resizeError);
         const resizeErr = resizeError as Error;
         logger.warn('Image resize failed, checking if it\'s a HEIC file that can be processed directly', {
           error: resizeErr.message,
@@ -526,7 +525,6 @@ export class ImageController {
         await FileUtils.cleanupTempFiles(filesToCleanup);
 
       } catch (processingError) {
-        console.log('❌ [IMAGE CONTROLLER] Interior design processing failed:', processingError);
         const processingTime = Date.now() - startTime;
         
         // Update generation record with failure
@@ -558,7 +556,6 @@ export class ImageController {
       }
 
     } catch (error) {
-      console.log('❌ [IMAGE CONTROLLER] Overall interior design processing failed:', error);
       const processingTime = Date.now() - startTime;
       
       logger.error('Interior design processing failed', {
@@ -676,17 +673,10 @@ export class ImageController {
     const tempFiles: string[] = [];
 
     try {
-      // Debug logging
-      console.log('🔍 [DEBUG] Request body:', req.body);
-      console.log('🔍 [DEBUG] Request files:', req.files);
-      console.log('🔍 [DEBUG] Request headers:', req.headers);
-      
       // Check if files were uploaded - use type assertion for req.files
       const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-      console.log('🔍 [DEBUG] Files after type assertion:', files);
       
       if (!files || !files.image || !files.image[0]) {
-        console.log('❌ [DEBUG] No image file found in request');
         res.status(400).json({
           success: false,
           message: 'No image file uploaded',
@@ -919,16 +909,10 @@ export class ImageController {
     let generationId: string | undefined;
 
     try {
-      // Debug logging
-      console.log('🔍 [DEBUG] Replace Elements Request body:', req.body);
-      console.log('🔍 [DEBUG] Replace Elements Request files:', req.files);
-      
       // Check if files were uploaded - use type assertion for req.files
       const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-      console.log('🔍 [DEBUG] Replace Elements Files after type assertion:', files);
       
       if (!files || !files.image || !files.image[0]) {
-        console.log('❌ [DEBUG] No image file found in replace elements request');
         res.status(400).json({
           success: false,
           message: 'No image file uploaded',

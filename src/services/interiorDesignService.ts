@@ -46,7 +46,6 @@ export class InteriorDesignService {
       // Validate image file exists
       const fs = require('fs');
       if (!fs.existsSync(imagePath)) {
-        console.log('❌ [INTERIOR DESIGN SERVICE] Image file not found:', imagePath);
         throw new Error(`Image file not found: ${imagePath}`);
       }
       
@@ -79,7 +78,6 @@ export class InteriorDesignService {
             throw new Error('Invalid HEIC dimensions');
           }
         } catch (heicValidationError) {
-          console.log('❌ [INTERIOR DESIGN SERVICE] HEIC validation failed:', heicValidationError);
           throw new Error(`HEIC file validation failed: ${heicValidationError instanceof Error ? heicValidationError.message : String(heicValidationError)}`);
         }
       }
@@ -95,7 +93,6 @@ export class InteriorDesignService {
           base64Length: base64Image.length 
         });
       } catch (base64Error) {
-        console.log('❌ [INTERIOR DESIGN SERVICE] Base64 conversion failed:', base64Error);
         logger.error('❌ Base64 conversion failed', {
           requestId,
           error: base64Error instanceof Error ? base64Error.message : String(base64Error),
@@ -173,7 +170,6 @@ export class InteriorDesignService {
         };
 
       } catch (replicateError) {
-        console.log('❌ [INTERIOR DESIGN SERVICE] Replicate API call failed:', replicateError);
         const processingTime = Date.now() - startTime;
         
         logger.error('❌ Interior design processing failed', {
@@ -189,7 +185,6 @@ export class InteriorDesignService {
       }
 
     } catch (error) {
-      console.log('❌ [INTERIOR DESIGN SERVICE] Overall processing failed:', error);
       const processingTime = Date.now() - startTime;
       
       logger.error('❌ Interior design processing failed', {

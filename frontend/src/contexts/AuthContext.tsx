@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
         if (!supabaseAnonKey || !supabaseUrl) {
-          console.error('🚨 Supabase configuration missing!');
+          console.warn('⚠️ Supabase configuration missing - running in demo mode');
           setLoading(false);
           return;
         }
@@ -82,7 +82,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return;
         }
 
-        // No session found, allow access to auth page
+        // No session found, allow access to landing page
         setLoading(false);
 
       } catch (error) {
@@ -211,6 +211,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const sendCode = async (email: string): Promise<{ success: boolean; message: string }> => {
     try {
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (!supabaseAnonKey || !supabaseUrl) {
+        // Demo mode - simulate successful code sending
+        console.log('Demo mode: Simulating OTP code sent to:', email);
+        return { success: true, message: '6-digit code sent to your email! (Demo mode)' };
+      }
+
       // First check if user is already authenticated
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
@@ -240,6 +250,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (email: string, code: string): Promise<{ success: boolean; message: string }> => {
     try {
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+      
+      if (!supabaseAnonKey || !supabaseUrl) {
+        // Demo mode - simulate successful login
+        console.log('Demo mode: Simulating login for:', email);
+        const demoUser = {
+          id: 'demo-user-123',
+          email: email,
+          name: 'Demo User',
+          role: 'user' as const,
+          subscription_plan: 'free' as const,
+          monthly_generations_limit: 10,
+          total_generations: 0,
+          successful_generations: 0,
+          failed_generations: 0,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        setUser(demoUser);
+        return { success: true, message: 'Successfully signed in! (Demo mode)' };
+      }
+
       const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,

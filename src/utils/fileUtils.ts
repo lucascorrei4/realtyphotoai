@@ -171,7 +171,6 @@ export class FileUtils {
       
       logger.info(`Successfully converted HEIC/HEIF to JPEG: ${inputPath} -> ${outputPath}`);
     } catch (error) {
-      console.log('❌ [FILE UTILS] HEIC to JPEG conversion failed:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error('HEIC to JPEG conversion failed', { 
         error: errorMessage, 
@@ -238,7 +237,6 @@ export class FileUtils {
         logger.info(`Successfully converted HEIC/HEIF to WebP using Sharp: ${inputPath} -> ${outputPath}`);
         return;
       } catch (sharpError) {
-        console.log('❌ [FILE UTILS] Sharp WebP conversion failed:', sharpError);
         logger.warn('Sharp WebP conversion failed, trying JPEG fallback', { 
           error: sharpError instanceof Error ? sharpError.message : String(sharpError),
           inputPath,
@@ -262,7 +260,6 @@ export class FileUtils {
           logger.info(`Successfully converted HEIC/HEIF to WebP using JPEG fallback: ${inputPath} -> ${outputPath}`);
           return;
         } catch (jpegFallbackError) {
-          console.log('❌ [FILE UTILS] JPEG fallback conversion failed:', jpegFallbackError);
           logger.warn('JPEG fallback conversion failed, trying PNG fallback', { 
             error: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError),
             inputPath,
@@ -286,7 +283,6 @@ export class FileUtils {
             logger.info(`Successfully converted HEIC/HEIF to WebP using PNG fallback: ${inputPath} -> ${outputPath}`);
             return;
           } catch (pngFallbackError) {
-            console.log('❌ [FILE UTILS] PNG fallback conversion failed:', pngFallbackError);
             logger.error('PNG fallback conversion failed', { 
               error: pngFallbackError instanceof Error ? pngFallbackError.message : String(pngFallbackError),
               inputPath,
@@ -313,7 +309,6 @@ export class FileUtils {
                 logger.info(`Successfully converted HEIC/HEIF to WebP using heic-convert plugin: ${inputPath} -> ${outputPath}`);
                 return;
               } catch (pluginError) {
-                console.log('❌ [FILE UTILS] heic-convert plugin fallback also failed:', pluginError);
                 logger.warn('heic-convert plugin fallback also failed', { 
                   error: pluginError instanceof Error ? pluginError.message : String(pluginError), 
                   inputPath, 
@@ -328,7 +323,6 @@ export class FileUtils {
         }
       }
     } catch (error) {
-      console.log('❌ [FILE UTILS] All HEIC to WebP conversion methods failed:', error);
       logger.error('All HEIC to WebP conversion methods failed', { 
         error: error instanceof Error ? error.message : String(error),
         inputPath,

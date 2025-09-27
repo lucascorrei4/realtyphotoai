@@ -191,7 +191,6 @@ export const validateUploadedFile = async (
             hasAlpha: metadata.hasAlpha
           });
         } catch (metadataError) {
-          console.log('❌ [UPLOAD MIDDLEWARE] HEIC file cannot be read:', metadataError);
           // This HEIC file is fundamentally incompatible
           throw new Error(`This HEIC file uses an unsupported compression format that cannot be processed. Please convert it to JPEG or PNG using another tool first. Technical details: ${metadataError instanceof Error ? metadataError.message : String(metadataError)}`);
         }
@@ -214,7 +213,6 @@ export const validateUploadedFile = async (
         });
         
       } catch (conversionError) {
-        console.log('❌ [UPLOAD MIDDLEWARE] HEIC conversion failed:', conversionError);
         logger.error('Failed to convert HEIC file', {
           error: conversionError,
           filePath: req.file.path,
@@ -253,7 +251,6 @@ export const validateUploadedFile = async (
           });
           
         } catch (jpegFallbackError) {
-          console.log('❌ [UPLOAD MIDDLEWARE] JPEG fallback also failed:', jpegFallbackError);
           logger.error('JPEG fallback also failed', {
             error: jpegFallbackError,
             filePath: req.file.path,

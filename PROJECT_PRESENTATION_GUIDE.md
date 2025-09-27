@@ -299,7 +299,7 @@ Partner with Real Vision AI to offer cutting-edge virtual staging services to yo
 
 **Real Vision AI Team**
 - **Website**: [Your Website URL]
-- **Email**: contact@realvisionai.com
+- **Email**: contact@realvisionaire.com
 - **Phone**: [Your Phone Number]
 - **LinkedIn**: [Your LinkedIn Profile]
 

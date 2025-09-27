@@ -5,20 +5,20 @@
 Your application is now configured to run on two separate domains with different ports:
 
 ### 1. **Backend API Server**
-- **Domain**: `api.RealVisionai.com`
+- **Domain**: `api.realvisionaire.com`
 - **Port**: `8000`
 - **Purpose**: Handles all API requests, image processing, AI operations
 - **Process**: `RealVisionai-backend` (PM2)
 
 ### 2. **Frontend Application**
-- **Domain**: `app.RealVisionai.com`
+- **Domain**: `app.realvisionaire.com`
 - **Port**: `3000`
 - **Purpose**: Serves the React frontend application
 - **Process**: `RealVisionai-frontend` (PM2)
 
 ### 3. **IP Fallback**
 - **IP**: `31.97.147.23`
-- **Behavior**: Redirects to `app.RealVisionai.com`
+- **Behavior**: Redirects to `app.realvisionaire.com`
 
 ## 🔧 Configuration Files Updated
 
@@ -82,14 +82,14 @@ tail -f /var/log/nginx/app_RealVisionai_error.log
 
 ### Backend Health
 ```bash
-curl http://api.RealVisionai.com/health
+curl http://api.realvisionaire.com/health
 # or
 curl http://31.97.147.23:8000/health
 ```
 
 ### Frontend Health
 ```bash
-curl http://app.RealVisionai.com/
+curl http://app.realvisionaire.com/
 # or
 curl http://31.97.147.23:3000/
 ```
@@ -99,12 +99,12 @@ curl http://31.97.147.23:3000/
 To use the domains, you need to configure DNS records:
 
 ### A Records
-- `api.RealVisionai.com` → `31.97.147.23`
-- `app.RealVisionai.com` → `31.97.147.23`
+- `api.realvisionaire.com` → `31.97.147.23`
+- `app.realvisionaire.com` → `31.97.147.23`
 
 ### CNAME Records (if using subdomain)
-- `api` → `RealVisionai.com`
-- `app` → `RealVisionai.com`
+- `api` → `realvisionaire.com`
+- `app` → `realvisionaire.com`
 
 ## 🔒 Security Features
 

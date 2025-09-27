@@ -307,9 +307,6 @@ document.getElementById('enhancementForm').addEventListener('submit', async func
         const result = await response.json();
         const endTime = Date.now();
         
-        // Debug logging
-        console.log('🔍 Image Enhancement Response:', result);
-        
         loadingDiv.style.display = 'none';
         
         if (result.success) {
@@ -439,9 +436,6 @@ document.getElementById('replaceElementsForm').addEventListener('submit', async 
         
         const result = await response.json();
         const endTime = Date.now();
-        
-        // Debug logging
-        console.log('🔍 Replace Elements Response:', result);
         
         loadingDiv.style.display = 'none';
         
