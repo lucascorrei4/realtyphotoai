@@ -88,7 +88,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       const result = await response.json();
       
       if (result.success) {
-        console.log('Fetched generations:', result.data);
         setGenerations(result.data.generations || []);
         setTotalPages(result.data.totalPages || 1);
         setTotalCount(result.data.totalCount || 0);
@@ -169,7 +168,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       // Remove leading slash if present to avoid double slashes
       const cleanPath = path.startsWith('/') ? path.slice(1) : path;
       const fullUrl = `${getBackendUrl()}/${cleanPath}`;
-      console.log('Constructing image URL:', { original: path, clean: cleanPath, full: fullUrl });
       return fullUrl;
     };
 
@@ -185,7 +183,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 alt="Before"
                 className="w-full h-32 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                 onLoad={(e) => {
-                  console.log('Input image loaded successfully:', generation.input_image_url);
                   // Hide loading indicator
                   const loadingIndicator = e.currentTarget.nextElementSibling;
                   if (loadingIndicator) {
@@ -231,7 +228,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 alt="After"
                 className="w-full h-32 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                 onLoad={(e) => {
-                  console.log('Output image loaded successfully:', generation.output_image_url);
                   // Hide loading indicator
                   const loadingIndicator = e.currentTarget.nextElementSibling;
                   if (loadingIndicator) {

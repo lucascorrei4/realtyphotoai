@@ -56,9 +56,6 @@ const Dashboard: React.FC = () => {
 
     setStatsLoading(true);
     try {
-      console.log('🔍 Fetching user stats for user ID:', user.id);
-      console.log('🔍 User email:', user.email);
-
       // First try to fetch by user ID
       let { data: generations, error } = await supabase
         .from('generations')
@@ -68,7 +65,6 @@ const Dashboard: React.FC = () => {
 
       // If no generations found by ID, try by email as fallback
       if (!generations || generations.length === 0) {
-        console.log('🔄 No generations found by ID, trying by email...');
         const { data: generationsByEmail, error: emailError } = await supabase
           .from('generations')
           .select('*')
@@ -77,7 +73,6 @@ const Dashboard: React.FC = () => {
 
         if (generationsByEmail && !emailError) {
           generations = generationsByEmail;
-          console.log('✅ Found generations by email:', generationsByEmail.length);
         }
       }
 
@@ -87,8 +82,6 @@ const Dashboard: React.FC = () => {
       }
 
       const userGenerations = generations || [];
-      console.log('📊 Total generations found:', userGenerations.length);
-
       // Calculate statistics
       const totalGenerations = userGenerations.length;
       const successfulGenerations = userGenerations.filter(g => g.status === 'completed').length;

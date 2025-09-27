@@ -54,15 +54,3 @@ export const getEnvironmentConfig = () => {
     enableAnalytics: ENV_CONFIG.ENABLE_ANALYTICS,
   };
 };
-
-// Log the current environment configuration (only in development)
-if (isDevelopment) {
-  console.log('🌍 Environment Configuration:', {
-    environment: ENV_CONFIG.ENVIRONMENT,
-    backendUrl: ENV_CONFIG.BACKEND_URL,
-    apiTimeout: ENV_CONFIG.API_TIMEOUT,
-    maxFileSize: `${ENV_CONFIG.MAX_FILE_SIZE / 1024 / 1024}MB`,
-    maxFileCount: ENV_CONFIG.MAX_FILE_COUNT,
-    debugMode: ENV_CONFIG.DEBUG_MODE,
-  });
-}

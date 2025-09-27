@@ -5,7 +5,7 @@
 The application automatically selects the appropriate configuration based on the current environment:
 
 - **Development**: `src/config/environment.ts` (localhost:8000)
-- **Production**: `src/config/environment.prod.ts` (api.RealVisionai.com)
+- **Production**: `src/config/environment.prod.ts` (api.realvisionaire.com)
 
 ### Automatic Environment Selection
 
@@ -36,7 +36,7 @@ Edit `src/config/environment.prod.ts`:
 ```typescript
 export const ENV_CONFIG = {
   // Backend Configuration
-  BACKEND_URL: 'https://api.RealVisionai.com', // Production backend
+  BACKEND_URL: 'https://api.realvisionaire.com', // Production backend
   // ... other config
 };
 ```
@@ -50,8 +50,8 @@ export const ENV_CONFIG = {
 ### Common Backend URLs
 
 - **Local Development**: `http://localhost:8000`
-- **Production**: `https://api.RealVisionai.com`
-- **Staging**: `https://staging-api.RealVisionai.com`
+- **Production**: `https://api.realvisionaire.com`
+- **Staging**: `https://staging-api.realvisionaire.com`
 - **Docker**: `http://localhost:3000` (if using different port)
 
 ## Environment-Specific Settings
@@ -73,7 +73,7 @@ export const ENV_CONFIG = {
 ### Production (`environment.prod.ts`)
 ```typescript
 export const ENV_CONFIG = {
-  BACKEND_URL: 'https://api.RealVisionai.com',
+  BACKEND_URL: 'https://api.realvisionaire.com',
   API_TIMEOUT: 600000,        // 10 minutes
   MAX_FILE_SIZE: 20971520,    // 20MB
   MAX_FILE_COUNT: 50,         // 50 files
@@ -166,7 +166,7 @@ npm start
 ### Production Build
 ```bash
 npm run build
-# Uses environment.prod.ts (api.RealVisionai.com)
+# Uses environment.prod.ts (api.realvisionaire.com)
 ```
 
 ### Environment Variables
@@ -190,7 +190,7 @@ npm run build
 
 ### Connection Refused
 - **Development**: Verify backend is running on port 8000
-- **Production**: Verify `api.RealVisionai.com` is accessible
+- **Production**: Verify `api.realvisionaire.com` is accessible
 
 ### API Timeout
 - **Development**: 5 minutes (300000ms)
@@ -206,7 +206,7 @@ npm run build
 Create `src/config/environment.staging.ts`:
 ```typescript
 export const ENV_CONFIG = {
-  BACKEND_URL: 'https://staging-api.RealVisionai.com',
+  BACKEND_URL: 'https://staging-api.realvisionaire.com',
   API_TIMEOUT: 450000,        // 7.5 minutes
   MAX_FILE_SIZE: 15728640,    // 15MB
   MAX_FILE_COUNT: 35,         // 35 files

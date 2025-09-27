@@ -58,12 +58,10 @@ const InteriorDesign: React.FC = () => {
     setIsDragOver(false);
 
     const files = Array.from(e.dataTransfer.files);
-    console.log('Files dropped:', files.length, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
 
     if (files.length === 0) return;
 
     const file = files[0]; // Take first file for interior design
-    console.log('Processing dropped file:', file.name, 'Type:', file.type, 'Size:', file.size);
 
     // Validate file type and size
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -80,7 +78,6 @@ const InteriorDesign: React.FC = () => {
     }
 
     setSelectedFile(file);
-    console.log('Dropped file set successfully:', file.name);
   }, []);
 
   const openFileDialog = () => {

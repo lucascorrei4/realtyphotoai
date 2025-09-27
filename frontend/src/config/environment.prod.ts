@@ -3,7 +3,7 @@
 
 export const ENV_CONFIG = {
   // Backend Configuration
-  BACKEND_URL: process.env.REACT_APP_API_BASE_URL || 'https://api.realvisionai.com', // Production backend URL
+  BACKEND_URL: process.env.REACT_APP_API_BASE_URL || 'https://api.realvisionaire.com', // Production backend URL
   
   // API Configuration
   API_TIMEOUT: 600000, // 10 minutes in milliseconds (longer for production)

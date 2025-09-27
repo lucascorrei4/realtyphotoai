@@ -76,7 +76,6 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
         
         if (isNetworkError) {
           // If it's a network error, just set stats to zero without showing error
-          console.log('Backend unavailable, showing zero statistics');
           setStats({
             totalRequests: 0,
             completed: 0,

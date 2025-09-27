@@ -67,7 +67,6 @@ const Users: React.FC = () => {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        console.log('🔍 Fetching users from Supabase...');
         
         const { data, error } = await supabase
           .from('user_profiles')
@@ -79,7 +78,6 @@ const Users: React.FC = () => {
           return;
         }
 
-        console.log('✅ Users fetched successfully:', data?.length || 0);
         setUsers(data || []);
         setFilteredUsers(data || []);
         
@@ -156,7 +154,6 @@ const Users: React.FC = () => {
         u.id === userId ? { ...u, is_active: isActive } : u
       ));
       
-      console.log('✅ User status updated successfully');
     } catch (error) {
       console.error('🚨 Error updating user status:', error);
     }
@@ -180,7 +177,6 @@ const Users: React.FC = () => {
         u.id === userId ? { ...u, role: newRole } : u
       ));
       
-      console.log('✅ User role updated successfully');
     } catch (error) {
       console.error('🚨 Error updating user role:', error);
     }
@@ -204,7 +200,6 @@ const Users: React.FC = () => {
         u.id === userId ? { ...u, subscription_plan: newPlan } : u
       ));
       
-      console.log('✅ Subscription plan updated successfully');
     } catch (error) {
       console.error('🚨 Error updating subscription plan:', error);
     }
@@ -301,7 +296,6 @@ const Users: React.FC = () => {
                       return;
                     }
                     
-                    console.log('✅ Promoted to admin successfully!');
                     window.location.reload(); // Refresh to show admin menu
                   } catch (error) {
                     console.error('Error promoting to admin:', error);

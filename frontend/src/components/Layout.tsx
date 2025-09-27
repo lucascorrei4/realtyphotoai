@@ -13,7 +13,8 @@ import {
   Sun, 
   Moon, 
   Menu, 
-  X 
+  X,
+  LogOut
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -22,7 +23,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { theme, toggleTheme } = useTheme();
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -48,24 +49,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   
-  // Debug logging for admin access
-  console.log('🔍 Admin Access Debug:', {
-    userEmail: user?.email,
-    userRole: user?.role,
-    isAdmin,
-    adminNavigation: adminNavigation.map(item => ({ path: item.path, label: item.label }))
-  });
-
-  // Debug logging
-  console.log('🔍 Layout Debug:', {
-    user: user?.email,
-    role: user?.role,
-    isAdmin,
-    currentPath: location.pathname,
-    loading,
-    mounted
-  });
-
   // Don't render theme-dependent content until mounted
   if (!mounted) {
     return null;
@@ -103,9 +86,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            🏠 RealVisionAI
-          </h1>
+          <div className="flex items-center space-x-3">
+            <img 
+              src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'} 
+              alt="RealVision AI" 
+              className="h-16 w-auto"
+            />
+          </div>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -166,8 +153,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </nav>
 
-        {/* Theme toggle */}
-        <div className="absolute bottom-6 left-6 right-6">
+        {/* Theme toggle and Logout */}
+        <div className="absolute bottom-6 left-6 right-6 space-y-3">
           <button
             onClick={toggleTheme}
             className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
@@ -183,6 +170,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 Dark Mode
               </>
             )}
+          </button>
+          
+          <button
+            onClick={signOut}
+            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 dark:text-red-300 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors"
+          >
+            <LogOut size={20} className="mr-2" />
+            Logout
           </button>
         </div>
       </div>

@@ -34,10 +34,7 @@ const ImageEnhancement: React.FC = () => {
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
 
-    console.log('Files selected:', files.length, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
-
     if (files.length === 0) {
-      console.log('No files selected');
       return;
     }
 
@@ -51,7 +48,6 @@ const ImageEnhancement: React.FC = () => {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
     for (const file of files) {
-      console.log('Validating file:', file.name, 'Type:', file.type, 'Size:', file.size);
 
       if (!validTypes.includes(file.type)) {
         alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
@@ -72,7 +68,6 @@ const ImageEnhancement: React.FC = () => {
 
       setSelectedFiles(files);
       setFilePreviews(previews);
-      console.log('Files set successfully:', files.length);
     } catch (error) {
       console.error('Error creating file previews:', error);
       alert('Error processing files. Please try again.');
@@ -82,12 +77,10 @@ const ImageEnhancement: React.FC = () => {
   const handleReferenceFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      console.log('Reference file selected:', file.name, 'Type:', file.type, 'Size:', file.size);
       try {
         const preview = URL.createObjectURL(file);
         setReferenceFile(file);
         setReferencePreview(preview);
-        console.log('Reference file preview created:', preview);
       } catch (error) {
         console.error('Error creating reference file preview:', error);
         alert('Error processing reference file. Please try again.');
@@ -111,7 +104,6 @@ const ImageEnhancement: React.FC = () => {
     setIsDragOver(false);
 
     const files = Array.from(e.dataTransfer.files);
-    console.log('Files dropped:', files.length, files.map(f => ({ name: f.name, type: f.type, size: f.size })));
 
     if (files.length === 0) return;
 
@@ -151,7 +143,6 @@ const ImageEnhancement: React.FC = () => {
           fileInputRef.current.files = dataTransfer.files;
         }
 
-        console.log('Dropped files processed successfully:', validFiles.length);
       } catch (error) {
         console.error('Error processing dropped files:', error);
         alert('Error processing dropped files. Please try again.');
@@ -187,17 +178,11 @@ const ImageEnhancement: React.FC = () => {
     try {
       const formData = new FormData();
 
-      // Debug: Log what we're about to send
-      console.log('Submitting form with files:', selectedFiles.map(f => ({ name: f.name, type: f.type, size: f.size })));
-      console.log('Hidden input files:', fileInputRef.current?.files);
-      console.log('Selected files are File instances:', selectedFiles.every(f => f instanceof File));
-
       // Append all selected images - use the actual File objects from selectedFiles
       selectedFiles.forEach((file, index) => {
         // Ensure we're using the actual File object, not a preview
         if (file instanceof File) {
           formData.append('image', file);
-          console.log(`Appending file ${index + 1} to FormData:`, file.name, file.type, file.size);
         } else {
           console.error(`File ${index + 1} is not a File instance:`, file);
         }
@@ -207,7 +192,6 @@ const ImageEnhancement: React.FC = () => {
       if (referenceFile) {
         if (referenceFile instanceof File) {
           formData.append('referenceImage', referenceFile);
-          console.log('Appending reference file:', referenceFile.name, referenceFile.type, referenceFile.size);
         } else {
           console.error('Reference file is not a File instance:', referenceFile);
         }
@@ -216,23 +200,6 @@ const ImageEnhancement: React.FC = () => {
       // Append enhancement settings
       formData.append('enhancementType', 'luminosity');
       formData.append('enhancementStrength', 'moderate');
-
-      // Debug: Log FormData contents
-      console.log('FormData entries:');
-      Array.from(formData.entries()).forEach(([key, value]) => {
-        console.log(`${key}:`, value instanceof File ? `${value.name} (${value.type}, ${value.size} bytes)` : value);
-      });
-
-      // Verify files are actually in FormData
-      const imageEntries = Array.from(formData.getAll('image'));
-      console.log('Image entries in FormData:', imageEntries.length);
-      imageEntries.forEach((entry, index) => {
-        if (entry instanceof File) {
-          console.log(`Image ${index + 1}:`, entry.name, entry.type, entry.size);
-        } else {
-          console.log(`Image ${index + 1}: Not a File instance:`, entry);
-        }
-      });
 
       const response = await authenticatedFormDataFetch('/api/v1/image-enhancement', formData);
 

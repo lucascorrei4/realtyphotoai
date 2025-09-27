@@ -81,7 +81,6 @@ const Settings: React.FC = () => {
       // For now, just update local state
       // In a real implementation, you'd make an API call
       setEditing(false);
-      console.log('Profile updated:', editForm);
     } catch (error) {
       console.error('Error updating profile:', error);
     }
