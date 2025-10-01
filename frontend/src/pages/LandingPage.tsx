@@ -2,17 +2,17 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Mail, 
-  Lock, 
-  ArrowRight, 
-  CheckCircle, 
-  AlertCircle, 
-  Sun, 
-  Moon, 
-  Sparkles, 
-  Camera, 
-  Home, 
+import {
+  Mail,
+  Lock,
+  ArrowRight,
+  CheckCircle,
+  AlertCircle,
+  Sun,
+  Moon,
+  Sparkles,
+  Camera,
+  Home,
   Palette,
   Wand2,
   Star,
@@ -23,6 +23,7 @@ import {
   Users,
   Award
 } from 'lucide-react';
+import packageJson from '../../package.json';
 
 const LandingPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -113,9 +114,9 @@ const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-3">
-              <img 
-                src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'} 
-                alt="RealVision AI" 
+              <img
+                src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
+                alt="RealVision AI"
                 className="h-16 w-auto"
               />
             </div>
@@ -146,7 +147,7 @@ const LandingPage: React.FC = () => {
               <span className="hidden sm:inline">AI-Powered Real Estate Photography</span>
               <span className="sm:hidden">AI Real Estate Photography</span>
             </div>
-            
+
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6 leading-tight">
               Transform Your
               <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent"> Property Photos</span>
@@ -154,9 +155,9 @@ const LandingPage: React.FC = () => {
               <span className="sm:hidden"> </span>
               with AI Magic
             </h1>
-            
+
             <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-gray-600 dark:text-gray-300 mb-8 sm:mb-12 max-w-3xl mx-auto leading-relaxed px-4 sm:px-0">
-              Professional-grade real estate photography enhancement powered by cutting-edge AI. 
+              Professional-grade real estate photography enhancement powered by cutting-edge AI.
               Turn ordinary property photos into stunning, market-ready visuals that sell faster.
             </p>
 
@@ -275,15 +276,15 @@ const LandingPage: React.FC = () => {
                 </div>
                 <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">Transform empty rooms into beautifully furnished spaces with AI-generated furniture and decor</p>
               </div>
-              
+
               <div className="p-4 sm:p-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {/* Interior Design Example 1 */}
                   <div className="space-y-4">
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_before_1.jpg" 
-                        alt="Empty room before interior design" 
+                      <img
+                        src="/interior_design_before_1.jpg"
+                        alt="Empty room before interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -291,9 +292,9 @@ const LandingPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_after_1.jpg" 
-                        alt="Beautifully furnished room after AI interior design" 
+                      <img
+                        src="/interior_design_after_1.jpg"
+                        alt="Beautifully furnished room after AI interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -305,9 +306,9 @@ const LandingPage: React.FC = () => {
                   {/* Interior Design Example 2 */}
                   <div className="space-y-4">
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_before_2.jpg" 
-                        alt="Empty room before interior design" 
+                      <img
+                        src="/interior_design_before_2.jpg"
+                        alt="Empty room before interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -315,9 +316,9 @@ const LandingPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_after_2.jpg" 
-                        alt="Beautifully furnished room after AI interior design" 
+                      <img
+                        src="/interior_design_after_2.jpg"
+                        alt="Beautifully furnished room after AI interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -329,9 +330,9 @@ const LandingPage: React.FC = () => {
                   {/* Interior Design Example 3 */}
                   <div className="space-y-4">
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_before_3.jpg" 
-                        alt="Empty room before interior design" 
+                      <img
+                        src="/interior_design_before_3.jpg"
+                        alt="Empty room before interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -339,9 +340,9 @@ const LandingPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="relative group">
-                      <img 
-                        src="/interior_design_after_3.jpg" 
-                        alt="Beautifully furnished room after AI interior design" 
+                      <img
+                        src="/interior_design_after_3.jpg"
+                        alt="Beautifully furnished room after AI interior design"
                         className="w-full h-40 sm:h-48 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -364,15 +365,15 @@ const LandingPage: React.FC = () => {
                 </div>
                 <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">Replace or remove unwanted elements from your photos while maintaining natural, realistic results</p>
               </div>
-              
+
               <div className="p-4 sm:p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
                   {/* Before */}
                   <div className="space-y-4">
                     <div className="relative group">
-                      <img 
-                        src="/element_replacement_before_1.jpg" 
-                        alt="Original image before element replacement" 
+                      <img
+                        src="/element_replacement_before_1.jpg"
+                        alt="Original image before element replacement"
                         className="w-full h-56 sm:h-64 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -387,9 +388,9 @@ const LandingPage: React.FC = () => {
                   {/* After */}
                   <div className="space-y-4">
                     <div className="relative group">
-                      <img 
-                        src="/element_replacement_after_1.jpg" 
-                        alt="Enhanced image after element replacement" 
+                      <img
+                        src="/element_replacement_after_1.jpg"
+                        alt="Enhanced image after element replacement"
                         className="w-full h-56 sm:h-64 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
                       />
                       <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs font-medium">
@@ -466,7 +467,7 @@ const LandingPage: React.FC = () => {
               {step === 'email' ? 'Get Started Today' : 'Enter Code'}
             </h2>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 px-4 sm:px-0">
-              {step === 'email' 
+              {step === 'email'
                 ? 'Enter your email to receive a login code'
                 : `We sent a 6-digit code to ${email}`
               }
@@ -561,11 +562,10 @@ const LandingPage: React.FC = () => {
 
             {/* Message Display */}
             {message && (
-              <div className={`p-4 rounded-lg flex items-center space-x-3 ${
-                messageType === 'success' 
-                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800' 
+              <div className={`p-4 rounded-lg flex items-center space-x-3 ${messageType === 'success'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800'
                   : 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
-              }`}>
+                }`}>
                 {messageType === 'success' ? (
                   <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                 ) : (
@@ -627,7 +627,8 @@ const LandingPage: React.FC = () => {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-6 sm:mt-8 pt-6 sm:pt-8 text-center text-sm sm:text-base text-gray-400">
-            <p>&copy; 2024 RealVision AI. All rights reserved.</p>
+            <p>&copy; 2025 RealVision AI. All rights reserved.</p>
+            <small className="text-xs text-gray-500 dark:text-gray-400 px-3 text-center block">RealVision AI {packageJson.version}</small>
           </div>
         </div>
       </footer>

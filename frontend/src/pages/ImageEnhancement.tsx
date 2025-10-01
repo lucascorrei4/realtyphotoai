@@ -1,18 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload } from 'lucide-react';
-import { getEndpointUrl, API_CONFIG, getBackendUrl } from '../config/api';
+import React, { useState, useCallback, useRef } from 'react';
+import { Upload, Camera } from 'lucide-react';
+import { API_CONFIG, getBackendUrl } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 
-interface ImageEnhancementRequest {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  createdAt: string;
-  image?: string;
-  result?: string;
-}
 
 const ImageEnhancement: React.FC = () => {
   const { user } = useAuth();
@@ -25,7 +18,6 @@ const ImageEnhancement: React.FC = () => {
   const [showOriginals, setShowOriginals] = useState(true);
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [requests, setRequests] = useState<ImageEnhancementRequest[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
@@ -166,14 +158,6 @@ const ImageEnhancement: React.FC = () => {
     setResults([]);
     const startTime = Date.now();
 
-    // Create a new request entry
-    const newRequest: ImageEnhancementRequest = {
-      id: Date.now().toString(),
-      status: 'processing',
-      createdAt: new Date().toISOString(),
-      image: selectedFiles[0]?.name
-    };
-    setRequests(prev => [newRequest, ...prev]);
 
     try {
       const formData = new FormData();
@@ -208,10 +192,6 @@ const ImageEnhancement: React.FC = () => {
       setProcessingTime(endTime - startTime);
 
       if (result.success) {
-        // Update request status to completed
-        setRequests(prev => prev.map(req =>
-          req.id === newRequest.id ? { ...req, status: 'completed', result: 'success' } : req
-        ));
 
         // Handle the backend response format correctly
         if (result.data && result.data.enhancedImages) {
@@ -232,17 +212,9 @@ const ImageEnhancement: React.FC = () => {
           setResults(result.data.enhancedImages || [result.data.enhancedImage]);
         }
       } else {
-        // Update request status to failed
-        setRequests(prev => prev.map(req =>
-          req.id === newRequest.id ? { ...req, status: 'failed', result: result.message || result.error } : req
-        ));
         alert(`Enhancement failed: ${result.message || result.error}`);
       }
     } catch (error) {
-      // Update request status to failed
-      setRequests(prev => prev.map(req =>
-        req.id === newRequest.id ? { ...req, status: 'failed', result: 'Network error' } : req
-      ));
       console.error('Enhancement error:', error);
       alert('Enhancement failed. Please try again.');
     } finally {
@@ -429,7 +401,7 @@ const ImageEnhancement: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="subtle">Subtle</option>
-              <option value="moderate" selected>Moderate</option>
+              <option value="moderate">Moderate</option>
               <option value="strong">Strong</option>
             </select>
             <small className="text-gray-500 dark:text-gray-400 mt-1 block">
@@ -485,67 +457,7 @@ const ImageEnhancement: React.FC = () => {
 
 
 
-      {/* Results */}
-      {results.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              🎉 Enhancement Complete!
-            </h3>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setShowOriginals(!showOriginals)}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                {showOriginals ? 'Hide' : 'Show'} Originals
-              </button>
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                ⏱️ {processingTime / 1000}s
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            {results.map((result, index) => (
-              <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                  📸 {selectedFiles[index]?.name || `Image ${index + 1}`}
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {showOriginals && (
-                    <div className="text-center">
-                      <span className="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs font-medium rounded mb-2">
-                        BEFORE
-                      </span>
-                      <img
-                        src={result.originalImage ? `${getBackendUrl()}${result.originalImage}` : filePreviews[index]}
-                        alt="Original"
-                        className="w-full rounded-lg shadow-md"
-                      />
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <span className="inline-block px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs font-medium rounded mb-2">
-                      AFTER
-                    </span>
-                    <img
-                      src={result.enhancedImage ? `${getBackendUrl()}${result.enhancedImage}` : result}
-                      alt="Enhanced"
-                      className="w-full rounded-lg shadow-md"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-blue-800 dark:text-blue-200 text-sm">
-              <strong>💡 Pro Tip:</strong> Right-click on images to save them to your computer!
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Results will be shown in RecentGenerationsWidget */}
 
       {/* Recent Generations Widget */}
       <RecentGenerationsWidget

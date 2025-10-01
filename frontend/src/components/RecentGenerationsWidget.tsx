@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Maximize2, Download, Share2, X } from 'lucide-react';
 import { getBackendUrl } from '../config/api';
 
 export interface Generation {
@@ -31,7 +31,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   showFilters = true,
   maxItems = 10,
   className = "",
-  modelTypeFilter
+  modelTypeFilter = "all"
 }) => {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,13 +80,13 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/user/generations?${params}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch generations');
       }
 
       const result = await response.json();
-      
+
       if (result.success) {
         setGenerations(result.data.generations || []);
         setTotalPages(result.data.totalPages || 1);
@@ -149,6 +149,204 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     }
   };
 
+  const getModelTypeIcon = (modelType: string) => {
+    switch (modelType) {
+      case 'interior_design':
+        return <Palette className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+      case 'image_enhancement':
+        return <Camera className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+      case 'element_replacement':
+        return <Wand2 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+      default:
+        return <Image className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+    }
+  };
+
+  const getModelTypeIconBg = (modelType: string) => {
+    switch (modelType) {
+      case 'interior_design':
+        return 'from-purple-500 to-purple-600';
+      case 'image_enhancement':
+        return 'from-blue-500 to-blue-600';
+      case 'element_replacement':
+        return 'from-green-500 to-green-600';
+      default:
+        return 'from-gray-500 to-gray-600';
+    }
+  };
+
+  // Lightbox Modal Component
+  const LightboxModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    imageSrc: string;
+    alt: string;
+  }> = ({ isOpen, onClose, imageSrc, alt }) => {
+    if (!isOpen) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="relative max-w-7xl max-h-full w-full h-full flex items-center justify-center">
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 z-10 w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white transition-all duration-200 group"
+          >
+            <X className="h-5 w-5 group-hover:scale-110 transition-transform" />
+          </button>
+          
+          {/* Image */}
+          <img
+            src={imageSrc}
+            alt={alt}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
+          
+          {/* Background click to close */}
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={onClose}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const ImageWithLoading: React.FC<{
+    src: string;
+    alt: string;
+    label: string;
+    labelColor: string;
+    onError?: (error: any) => void;
+    showActions?: boolean;
+  }> = ({ src, alt, label, labelColor, onError, showActions = false }) => {
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const [showLightbox, setShowLightbox] = useState(false);
+
+
+    const handleLoad = () => {
+      setLoading(false);
+    };
+
+    const handleError = (e: any) => {
+      console.error('Failed to load image:', src);
+      setLoading(false);
+      setError(true);
+      if (onError) onError(e);
+    };
+
+    const handleMaximize = () => {
+      setShowLightbox(true);
+    };
+
+    const handleDownload = async () => {
+      try {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `image-${Date.now()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Failed to download image:', error);
+      }
+    };
+
+    const handleShare = async () => {
+      try {
+        if (navigator.share) {
+          // Use Web Share API if available
+          await navigator.share({
+            title: 'AI Enhanced Image',
+            text: 'Check out this AI-enhanced image!',
+            url: src
+          });
+        } else {
+          // Fallback: copy URL to clipboard
+          await navigator.clipboard.writeText(src);
+          console.log('Image URL copied to clipboard');
+          // You could add a toast notification here
+        }
+      } catch (error) {
+        console.error('Failed to share image:', error);
+        // Fallback: copy URL to clipboard
+        try {
+          await navigator.clipboard.writeText(src);
+          console.log('Image URL copied to clipboard as fallback');
+        } catch (fallbackError) {
+          console.error('Failed to copy URL to clipboard:', fallbackError);
+        }
+      }
+    };
+
+    return (
+      <div className="relative group">
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-40 sm:h-48 lg:h-56 object-cover rounded-lg shadow-md group-hover:shadow-lg transition-shadow"
+          onLoad={handleLoad}
+          onError={handleError}
+        />
+        <div className={`absolute top-2 left-2 ${labelColor} text-white px-2 py-1 rounded text-xs font-medium`}>
+          {label}
+        </div>
+        
+        {/* Modern Floating Action Buttons - only show on "After" images */}
+        {showActions && !loading && !error && (
+          <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex flex-row space-x-3 z-50">
+            <button
+              onClick={handleMaximize}
+              className="group w-10 h-10 bg-white/90 hover:bg-white backdrop-blur-sm rounded-xl flex items-center justify-center transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border border-white/20"
+              title="View full size"
+            >
+              <Maximize2 className="h-4 w-4 text-gray-700 group-hover:text-gray-900 transition-colors" />
+            </button>
+            <button
+              onClick={handleDownload}
+              className="group w-10 h-10 bg-white/90 hover:bg-white backdrop-blur-sm rounded-xl flex items-center justify-center transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border border-white/20"
+              title="Download image"
+            >
+              <Download className="h-4 w-4 text-gray-700 group-hover:text-gray-900 transition-colors" />
+            </button>
+            <button
+              onClick={handleShare}
+              className="group w-10 h-10 bg-white/90 hover:bg-white backdrop-blur-sm rounded-xl flex items-center justify-center transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border border-white/20"
+              title="Share image"
+            >
+              <Share2 className="h-4 w-4 text-gray-700 group-hover:text-gray-900 transition-colors" />
+            </button>
+          </div>
+        )}
+
+        {/* Lightbox Modal */}
+        <LightboxModal
+          isOpen={showLightbox}
+          onClose={() => setShowLightbox(false)}
+          imageSrc={src}
+          alt={alt}
+        />
+
+        {loading && (
+          <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600 dark:border-gray-400"></div>
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
+            <span className="text-xs text-gray-500 dark:text-gray-400 text-center px-2">Image failed to load</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderImageComparison = (generation: Generation) => {
     if (!generation.input_image_url && !generation.output_image_url) {
       return (
@@ -160,8 +358,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     }
 
     // Helper function to construct absolute URLs
-    const getAbsoluteUrl = (path: string) => {
-      if (!path) return '';
+    const getAbsoluteUrl = (path: string | undefined) => {
+      if (!path || path.trim() === '') return '';
       if (path.startsWith('http://') || path.startsWith('https://')) {
         return path;
       }
@@ -171,97 +369,41 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       return fullUrl;
     };
 
+    const inputImageUrl = getAbsoluteUrl(generation.input_image_url);
+    const outputImageUrl = getAbsoluteUrl(generation.output_image_url);
+
     return (
-      <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-4">
         {/* Before Image */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">BEFORE</h4>
-          {generation.input_image_url ? (
-            <div className="relative">
-              <img
-                src={getAbsoluteUrl(generation.input_image_url)}
-                alt="Before"
-                className="w-full h-32 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
-                onLoad={(e) => {
-                  // Hide loading indicator
-                  const loadingIndicator = e.currentTarget.nextElementSibling;
-                  if (loadingIndicator) {
-                    loadingIndicator.classList.add('hidden');
-                  }
-                }}
-                onError={(e) => {
-                  console.error('Failed to load input image:', generation.input_image_url);
-                  // Hide loading indicator and show error
-                  const loadingIndicator = e.currentTarget.nextElementSibling;
-                  const errorIndicator = loadingIndicator?.nextElementSibling;
-                  if (loadingIndicator) {
-                    loadingIndicator.classList.add('hidden');
-                  }
-                  if (errorIndicator) {
-                    errorIndicator.classList.remove('hidden');
-                  }
-                }}
-              />
-              {/* Loading indicator */}
-              <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600 dark:border-gray-400"></div>
-              </div>
-              {/* Fallback for failed images */}
-              <div className="hidden absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-                <span className="text-xs text-gray-500 dark:text-gray-400 text-center px-2">Image failed to load</span>
-              </div>
-            </div>
-          ) : (
-            <div className="w-full h-32 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-              <span className="text-xs text-gray-500 dark:text-gray-400">No input image</span>
-            </div>
-          )}
-        </div>
+        {inputImageUrl ? (
+          <ImageWithLoading
+            src={inputImageUrl}
+            alt="Before"
+            label="Before"
+            labelColor="bg-red-500"
+            onError={() => console.error('Failed to load input image:', generation.input_image_url)}
+          />
+        ) : (
+          <div className="w-full h-40 sm:h-48 lg:h-56 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
+            <span className="text-xs text-gray-500 dark:text-gray-400">No input image</span>
+          </div>
+        )}
 
         {/* After Image */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">AFTER</h4>
-          {generation.output_image_url ? (
-            <div className="relative">
-              <img
-                src={getAbsoluteUrl(generation.output_image_url)}
-                alt="After"
-                className="w-full h-32 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
-                onLoad={(e) => {
-                  // Hide loading indicator
-                  const loadingIndicator = e.currentTarget.nextElementSibling;
-                  if (loadingIndicator) {
-                    loadingIndicator.classList.add('hidden');
-                  }
-                }}
-                onError={(e) => {
-                  console.error('Failed to load output image:', generation.output_image_url);
-                  // Hide loading indicator and show error
-                  const loadingIndicator = e.currentTarget.nextElementSibling;
-                  const errorIndicator = loadingIndicator?.nextElementSibling;
-                  if (loadingIndicator) {
-                    loadingIndicator.classList.add('hidden');
-                  }
-                  if (errorIndicator) {
-                    errorIndicator.classList.remove('hidden');
-                  }
-                }}
-              />
-              {/* Loading indicator */}
-              <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-600 dark:border-gray-400"></div>
-              </div>
-              {/* Fallback for failed images */}
-              <div className="hidden absolute inset-0 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-                <span className="text-xs text-gray-500 dark:text-gray-400 text-center px-2">Image failed to load</span>
-              </div>
-            </div>
-          ) : (
-            <div className="w-full h-32 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-              <span className="text-xs text-gray-500 dark:text-gray-400">No output image</span>
-            </div>
-          )}
-        </div>
+        {outputImageUrl ? (
+          <ImageWithLoading
+            src={outputImageUrl}
+            alt="After"
+            label="After"
+            labelColor="bg-green-500"
+            showActions={true}
+            onError={() => console.error('Failed to load output image:', generation.output_image_url)}
+          />
+        ) : (
+          <div className="w-full h-40 sm:h-48 lg:h-56 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
+            <span className="text-xs text-gray-500 dark:text-gray-400">No output image</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -278,7 +420,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               )}
             </div>
           </div>
-          
+
           {/* Loading skeleton */}
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
@@ -298,13 +440,18 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+          <div className="flex items-center space-x-3 mb-2">
+            <div className={`w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-r ${getModelTypeIconBg(modelTypeFilter)} rounded-lg flex items-center justify-center`}>
+              {getModelTypeIcon(modelTypeFilter)}
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+              {title}
             {description && (
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{description}</p>
             )}
+            </h3>
           </div>
-          
+
           <button
             onClick={fetchGenerations}
             disabled={loading}
@@ -389,25 +536,32 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
         {/* Generations List */}
         {generations.length > 0 ? (
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-8">
             {generations.map((generation) => (
-              <div key={generation.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                {/* Generation Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(generation.status)}`}>
-                      {generation.status}
-                    </span>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {getModelTypeLabel(generation.model_type)}
+              <div key={generation.id} className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
+                {/* Header Section */}
+                <div className="p-4 border-b border-gray-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(generation.status)}`}>
+                        {generation.status}
+                      </span>
+                      {generation.processing_time_ms && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {generation.processing_time_ms}ms
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {formatDate(generation.created_at)}
                     </span>
                   </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {formatDate(generation.created_at)}
-                  </span>
                 </div>
 
-                {/* Prompt */}
+                {/* Content Section */}
+                <div className="p-4">
+
+                  {/* Prompt 
                 {generation.prompt && (
                   <div className="mb-4">
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">PROMPT</h4>
@@ -416,25 +570,20 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                     </p>
                   </div>
                 )}
+                  */}
 
-                {/* Image Comparison */}
-                {renderImageComparison(generation)}
+                  {/* Image Comparison */}
+                  {renderImageComparison(generation)}
 
-                {/* Processing Info */}
-                {generation.processing_time_ms && (
-                  <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                    Processing time: {generation.processing_time_ms}ms
-                  </div>
-                )}
-
-                {/* Error Message */}
-                {generation.error_message && (
-                  <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-                    <p className="text-sm text-red-800 dark:text-red-200">
-                      Error: {generation.error_message}
-                    </p>
-                  </div>
-                )}
+                  {/* Error Message */}
+                  {generation.error_message && (
+                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                      <p className="text-sm text-red-800 dark:text-red-200">
+                        Error: {generation.error_message}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -453,7 +602,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             <div className="text-sm text-gray-700 dark:text-gray-300">
               Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} results
             </div>
-            
+
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => handlePageChange(currentPage - 1)}
@@ -462,11 +611,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              
+
               <span className="text-sm text-gray-700 dark:text-gray-300">
                 Page {currentPage} of {totalPages}
               </span>
-              
+
               <button
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}

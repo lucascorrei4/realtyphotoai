@@ -2,20 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  Home, 
-  Image, 
-  Palette, 
-  Replace, 
-  Users, 
+import {
+  Home,
+  Image,
+  Palette,
+  Replace,
+  Users,
   Settings,
   Shield,
-  Sun, 
-  Moon, 
-  Menu, 
+  Sun,
+  Moon,
+  Menu,
   X,
   LogOut
 } from 'lucide-react';
+import packageJson from '../../package.json';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -48,7 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  
+
   // Don't render theme-dependent content until mounted
   if (!mounted) {
     return null;
@@ -75,21 +76,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center space-x-3">
-            <img 
-              src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'} 
-              alt="RealVision AI" 
+            <img
+              src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
+              alt="RealVision AI"
               className="h-16 w-auto"
             />
           </div>
@@ -109,11 +109,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isActive(item.path)
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-                  }`}
+                  className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive(item.path)
+                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                    }`}
                   onClick={() => setSidebarOpen(false)}
                 >
                   <Icon size={20} className="mr-3" />
@@ -121,10 +120,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </Link>
               );
             })}
-            
+
             {/* Separator line */}
             <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
-            
+
             {isAdmin && (
               <>
                 <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-3">
@@ -136,11 +135,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <Link
                       key={item.path}
                       to={item.path}
-                      className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                        isActive(item.path)
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-                      }`}
+                      className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive(item.path)
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                        }`}
                       onClick={() => setSidebarOpen(false)}
                     >
                       <Icon size={20} className="mr-3" />
@@ -171,7 +169,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </>
             )}
           </button>
-          
+
           <button
             onClick={signOut}
             className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 dark:text-red-300 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors"
@@ -179,6 +177,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <LogOut size={20} className="mr-2" />
             Logout
           </button>
+           <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
+           <small className="text-xs text-gray-500 dark:text-gray-400 px-3 text-center block">RealVision AI {packageJson.version}</small>
         </div>
       </div>
 
@@ -193,7 +193,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             >
               <Menu size={20} />
             </button>
-            
+
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => setSidebarOpen(true)}
@@ -201,11 +201,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               >
                 <Menu size={20} />
               </button>
-              
+
               <div className="flex-1" /> {/* Spacer to push user profile to right */}
-              
+
               {user && (
-                <div className="flex items-center space-x-2">
+                <Link
+                  to="/settings"
+                  className="flex items-center space-x-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg px-2 py-1 transition-colors"
+                >
                   <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center">
                     <span className="text-sm font-medium text-white">
                       {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
@@ -219,7 +222,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                       {user.role.replace('_', ' ')}
                     </p>
                   </div>
-                </div>
+                </Link>
               )}
             </div>
           </div>
