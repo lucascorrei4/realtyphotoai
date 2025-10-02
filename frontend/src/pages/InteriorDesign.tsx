@@ -34,6 +34,7 @@ const InteriorDesign: React.FC = () => {
   const [results, setResults] = useState<any[]>([]);
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [requests, setRequests] = useState<InteriorDesignRequest[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Auto-generate prompt when room type or style changes
   useEffect(() => {
@@ -198,8 +199,17 @@ const InteriorDesign: React.FC = () => {
         };
         setRequests(prev => [newRequest, ...prev]);
 
-        // Reset form
+        // Trigger refresh of RecentGenerationsWidget
+        setRefreshTrigger(prev => prev + 1);
+
+        // Reset form after successful generation
         setSelectedFile(null);
+        
+        // Clear file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        
         setIsProcessing(false);
       } else {
         alert(`Transformation failed: ${result.message || result.error}`);
@@ -519,6 +529,7 @@ const InteriorDesign: React.FC = () => {
         maxItems={10}
         className="mt-6"
         modelTypeFilter="interior_design"
+        refreshTrigger={refreshTrigger}
       />
     </div>
   );

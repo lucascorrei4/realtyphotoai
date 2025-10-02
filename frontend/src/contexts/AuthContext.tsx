@@ -52,8 +52,16 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchAttempts, setFetchAttempts] = useState(0);
+  const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
+    // Safety timeout to ensure loading state is always cleared
+    const safetyTimeout = setTimeout(() => {
+      console.warn('⚠️ Safety timeout reached - forcing loading to false');
+      setLoading(false);
+    }, 5000); // 5 second safety timeout
+
     // Check for existing session
     const checkSession = async () => {
       try {
@@ -65,6 +73,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!supabaseAnonKey || !supabaseUrl) {
           console.warn('⚠️ Supabase configuration missing - running in demo mode');
           setLoading(false);
+          clearTimeout(safetyTimeout);
           return;
         }
 
@@ -74,20 +83,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) {
           console.error('❌ Session error:', error);
           setLoading(false);
+          clearTimeout(safetyTimeout);
           return;
         }
 
         if (session?.access_token) {
           await fetchUserProfile(session.user.id);
+          clearTimeout(safetyTimeout);
           return;
         }
 
         // No session found, allow access to landing page
+        console.log('🔓 No session found - allowing access to landing page');
         setLoading(false);
+        clearTimeout(safetyTimeout);
 
       } catch (error) {
         console.error('🚨 Error checking session:', error);
         setLoading(false);
+        clearTimeout(safetyTimeout);
       }
     };
 
@@ -111,20 +125,54 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const fetchUserProfile = async (userId: string) => {
     try {
-      // Add timeout to prevent infinite loading
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout after 5 seconds')), 5000);
-      });
+      // Prevent multiple simultaneous calls
+      if (isFetching) {
+        console.log('⏳ Profile fetch already in progress, skipping...');
+        return;
+      }
 
-      // Get profile from Supabase
-      const profilePromise = supabase
+      setIsFetching(true);
+      
+      // Check if Supabase is properly configured first
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+      if (!supabaseAnonKey || !supabaseUrl) {
+        console.warn('⚠️ Supabase configuration missing - skipping profile fetch');
+        setLoading(false);
+        setIsFetching(false);
+        return;
+      }
+
+      // Prevent infinite retry loops
+
+      setFetchAttempts(prev => prev + 1);
+      if (fetchAttempts >= 3) {
+        console.warn('⚠️ Maximum fetch attempts reached - stopping retries');
+        setLoading(false);
+        setIsFetching(false);
+        return;
+      }
+
+      const supabaseTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Supabase query timeout after 3 seconds')), 3000);
+      });
+      
+      const supabaseQuery = supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single();
-
-      const result = await Promise.race([profilePromise, timeoutPromise]);
-      const { data: profile, error } = result;
+      
+      const result = await Promise.race([supabaseQuery, supabaseTimeout]);
+      const { data: profile, error } = result as { data: any; error: any };
+      
+      // If we have data, proceed; if error, handle it
+      if (profile && !error) {
+        console.log('✅ Profile data received, processing...');
+      } else if (error) {
+        console.log('❌ Profile fetch error, handling...');
+      }
 
 
       if (error) {
@@ -158,16 +206,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // Set the user state with the database profile (which has the correct role)
       setUser(profile);
       setLoading(false);
+      setFetchAttempts(0); // Reset attempts on success
+      setIsFetching(false);
 
     } catch (error) {
       console.error('🚨 Error in fetchUserProfile:', error);
-      if (error instanceof Error) {
+      
+      // Don't spam the console with timeout errors
+      if (error instanceof Error && error.message.includes('timeout')) {
+        console.warn('⚠️ Profile fetch timed out - creating fallback user profile');
+        
+        // Create a fallback user profile to allow access
+        const fallbackUser: User = {
+          id: userId,
+          email: 'user@example.com',
+          name: 'User',
+          role: 'user',
+          subscription_plan: 'free',
+          monthly_generations_limit: 10,
+          total_generations: 0,
+          successful_generations: 0,
+          failed_generations: 0,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        console.log('🆘 Using fallback user profile to allow access');
+        setUser(fallbackUser);
+        setLoading(false);
+        setIsFetching(false);
+        return;
+        
+      } else if (error instanceof Error) {
         console.error('Error stack:', error.stack);
       }
+      
       setLoading(false);
+      setIsFetching(false);
     }
   };
 

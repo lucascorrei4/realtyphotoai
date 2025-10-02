@@ -27,6 +27,7 @@ const ReplaceElements: React.FC = () => {
   const [results, setResults] = useState<any[]>([]);
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [requests, setRequests] = useState<ElementReplacementRequest[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -119,8 +120,17 @@ const ReplaceElements: React.FC = () => {
         };
         setRequests(prev => [newRequest, ...prev]);
 
-        // Reset form
+        // Trigger refresh of RecentGenerationsWidget
+        setRefreshTrigger(prev => prev + 1);
+
+        // Reset form after successful generation
         setSelectedFile(null);
+        
+        // Clear file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        
         setIsProcessing(false);
       } else {
         alert(`Transformation failed: ${result.message || result.error}`);
@@ -330,6 +340,7 @@ const ReplaceElements: React.FC = () => {
         maxItems={10}
         className="mt-6"
         modelTypeFilter="element_replacement"
+        refreshTrigger={refreshTrigger}
       />
     </div>
   );

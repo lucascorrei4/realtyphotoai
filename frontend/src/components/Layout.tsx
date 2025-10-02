@@ -172,7 +172,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
           <button
             onClick={signOut}
-            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 dark:text-red-300 dark:bg-red-900/20 dark:hover:bg-red-900/30 transition-colors"
+            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
           >
             <LogOut size={20} className="mr-2" />
             Logout
@@ -187,23 +187,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* Top bar */}
         <div className="sticky top-0 z-30 bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between h-16 px-6">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              <Menu size={20} />
-            </button>
-
-            <div className="flex items-center space-x-4">
+            {/* Left side - Mobile menu button */}
+            <div className="flex items-center">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="lg:hidden p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
                 <Menu size={20} />
               </button>
+            </div>
 
-              <div className="flex-1" /> {/* Spacer to push user profile to right */}
-
+            {/* Right side - User profile */}
+            <div className="flex items-center">
               {user && (
                 <Link
                   to="/settings"
@@ -216,7 +211,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </div>
                   <div className="hidden md:block">
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {user.name || 'User'}
+                      {user.name || 'Profile'}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {user.role.replace('_', ' ')}

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import supabase from '../config/supabase';
 import { 
   User, 
   Mail, 
@@ -30,11 +31,14 @@ interface UserStats {
 }
 
 const Settings: React.FC = () => {
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [editForm, setEditForm] = useState({
     name: user?.name || '',
     phone: user?.phone || ''
@@ -76,13 +80,93 @@ const Settings: React.FC = () => {
     fetchUserStats();
   }, [user, navigate, fetchUserStats]);
 
+  // Update edit form when user data changes
+  useEffect(() => {
+    if (user) {
+      setEditForm({
+        name: user.name || '',
+        phone: user.phone || ''
+      });
+    }
+  }, [user]);
+
   const handleSaveProfile = async () => {
+    if (!user) return;
+    
+    setSaving(true);
+    setSaveError(null);
+    
     try {
-      // For now, just update local state
-      // In a real implementation, you'd make an API call
+      // Get the current session from Supabase
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error('Failed to get authentication session');
+      }
+      
+      if (!session?.access_token) {
+        throw new Error('No authentication token found. Please sign in again.');
+      }
+
+      const apiUrl = `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000'}/api/v1/auth/profile`;
+      console.log('Making API call to:', apiUrl);
+      console.log('Request body:', { name: editForm.name, phone: editForm.phone });
+      
+      const response = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: editForm.name,
+          phone: editForm.phone
+        })
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        console.error('API Error:', errorData);
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to update profile`);
+      }
+
+      const updatedProfile = await response.json();
+      
+      // Update the user context with the new profile data
+      console.log('Profile updated successfully:', updatedProfile);
+      
+      // Refresh the user data in AuthContext to reflect the changes
+      try {
+        await refreshUser();
+        console.log('User context refreshed with updated profile');
+      } catch (error) {
+        console.warn('Failed to refresh user context:', error);
+        // Don't fail the save operation if context refresh fails
+      }
+      
       setEditing(false);
+      setSaveSuccess(true);
+      
+      // Hide success message after 3 seconds
+      setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+      
+      console.log('Profile saved successfully!');
+      
     } catch (error) {
       console.error('Error updating profile:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to save profile');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -145,30 +229,44 @@ const Settings: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Profile</h2>
               {!editing ? (
                 <button
-                  onClick={() => setEditing(true)}
-                  className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                  onClick={() => {
+                    setEditing(true);
+                    setSaveError(null);
+                    setSaveSuccess(false);
+                  }}
+                  className="group relative flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
-                  <Edit3 className="h-4 w-4" />
-                  <span>Edit</span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                  <Edit3 className="h-4 w-4 relative z-10" />
+                  <span className="relative z-10 font-medium">Edit Profile</span>
                 </button>
               ) : (
-                <div className="flex space-x-2">
+                <div className="flex space-x-3">
                   <button
                     onClick={handleSaveProfile}
-                    className="flex items-center space-x-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                    disabled={saving}
+                    className={`group relative flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <Save className="h-4 w-4" />
-                    <span>Save</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-green-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                    {saving ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white relative z-10"></div>
+                    ) : (
+                      <Save className="h-4 w-4 relative z-10" />
+                    )}
+                    <span className="relative z-10 font-medium">{saving ? 'Saving...' : 'Save'}</span>
                   </button>
                   <button
                     onClick={() => {
                       setEditing(false);
+                      setSaveError(null);
+                      setSaveSuccess(false);
                       setEditForm({ name: user?.name || '', phone: user?.phone || '' });
                     }}
-                    className="flex items-center space-x-2 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
+                    className="group relative flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95"
                   >
-                    <X className="h-4 w-4" />
-                    <span>Cancel</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-gray-600 to-gray-700 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                    <X className="h-4 w-4 relative z-10" />
+                    <span className="relative z-10 font-medium">Cancel</span>
                   </button>
                 </div>
               )}
@@ -182,7 +280,7 @@ const Settings: React.FC = () => {
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="flex-1 px-4 py-2 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all duration-200 shadow-sm hover:shadow-md focus:shadow-lg"
                     placeholder="Enter your name"
                   />
                 ) : (
@@ -202,7 +300,7 @@ const Settings: React.FC = () => {
                     type="tel"
                     value={editForm.phone}
                     onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    className="flex-1 px-4 py-2 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-all duration-200 shadow-sm hover:shadow-md focus:shadow-lg"
                     placeholder="Enter your phone number"
                   />
                 ) : (
@@ -217,6 +315,23 @@ const Settings: React.FC = () => {
                 </span>
               </div>
             </div>
+            
+            {/* Success Message */}
+            {saveSuccess && (
+              <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p className="text-sm text-green-600 dark:text-green-400 flex items-center">
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Profile updated successfully!
+                </p>
+              </div>
+            )}
+            
+            {/* Error Message */}
+            {saveError && (
+              <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>
+              </div>
+            )}
           </div>
         </div>
 

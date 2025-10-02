@@ -18,6 +18,7 @@ const ImageEnhancement: React.FC = () => {
   const [showOriginals, setShowOriginals] = useState(true);
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
@@ -211,6 +212,21 @@ const ImageEnhancement: React.FC = () => {
           // Fallback to the old format
           setResults(result.data.enhancedImages || [result.data.enhancedImage]);
         }
+
+        // Trigger refresh of RecentGenerationsWidget
+        setRefreshTrigger(prev => prev + 1);
+        
+        // Reset form after successful generation
+        setSelectedFiles([]);
+        setFilePreviews([]);
+        setReferenceFile(null);
+        setReferencePreview(null);
+        
+        // Clear file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        
       } else {
         alert(`Enhancement failed: ${result.message || result.error}`);
       }
@@ -468,6 +484,7 @@ const ImageEnhancement: React.FC = () => {
         maxItems={10}
         className="mt-6"
         modelTypeFilter="image_enhancement"
+        refreshTrigger={refreshTrigger}
       />
     </div>
   );

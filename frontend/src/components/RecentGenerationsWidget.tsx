@@ -22,6 +22,7 @@ export interface RecentGenerationsWidgetProps {
   maxItems?: number;
   className?: string;
   modelTypeFilter?: string; // Pre-filter by specific model type
+  refreshTrigger?: number; // Trigger to refresh the widget
 }
 
 const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
@@ -31,7 +32,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   showFilters = true,
   maxItems = 10,
   className = "",
-  modelTypeFilter = "all"
+  modelTypeFilter = "all",
+  refreshTrigger
 }) => {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,13 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   useEffect(() => {
     fetchGenerations();
   }, [userId, currentPage, filters]);
+
+  // Watch for refresh trigger changes
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      fetchGenerations();
+    }
+  }, [refreshTrigger]);
 
   const fetchGenerations = async () => {
     if (!userId) {
@@ -175,14 +184,32 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     }
   };
 
-  // Lightbox Modal Component
+  // Lightbox Modal Component with Before/After Comparison
   const LightboxModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     imageSrc: string;
     alt: string;
-  }> = ({ isOpen, onClose, imageSrc, alt }) => {
+    beforeImageSrc?: string;
+    showComparison: boolean;
+    setShowComparison: (show: boolean) => void;
+  }> = ({ isOpen, onClose, imageSrc, alt, beforeImageSrc, showComparison, setShowComparison }) => {
+    const [sliderPosition, setSliderPosition] = useState(50);
+    const [isDragging, setIsDragging] = useState(false);
+
     if (!isOpen) return null;
+
+    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      setSliderPosition(parseInt(e.target.value));
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+      if (!isDragging) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const percentage = (x / rect.width) * 100;
+      setSliderPosition(Math.max(0, Math.min(100, percentage)));
+    };
 
     return (
       <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -194,17 +221,89 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
           >
             <X className="h-5 w-5 group-hover:scale-110 transition-transform" />
           </button>
+
+          {/* Comparison Mode Toggle */}
+          {beforeImageSrc && (
+            <button
+              onClick={() => setShowComparison(!showComparison)}
+              className="absolute top-4 left-4 z-10 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center text-white transition-all duration-200 group text-sm"
+            >
+              {showComparison ? 'Single View' : 'Compare View'}
+            </button>
+          )}
           
-          {/* Image */}
-          <img
-            src={imageSrc}
-            alt={alt}
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-          />
+          {/* Image Display */}
+          {showComparison && beforeImageSrc ? (
+            <div className="relative w-full h-full max-w-5xl max-h-[80vh]">
+              {/* Before Image (Background) */}
+              <img
+                src={beforeImageSrc}
+                alt="Before"
+                className="absolute inset-0 w-full h-full object-contain rounded-lg shadow-2xl"
+              />
+              
+              {/* After Image (Overlay with clip-path) */}
+              <div 
+                className="absolute inset-0 w-full h-full overflow-hidden rounded-lg"
+                style={{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }}
+              >
+                <img
+                  src={imageSrc}
+                  alt="After"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              
+              {/* Slider Line */}
+              <div 
+                className="absolute top-0 bottom-0 w-1 bg-white shadow-lg z-10"
+                style={{ left: `${sliderPosition}%` }}
+              >
+                {/* Slider Handle */}
+                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center cursor-grab active:cursor-grabbing">
+                  <div className="w-1 h-6 bg-gray-400 rounded"></div>
+                </div>
+              </div>
+              
+              {/* Slider Input (Invisible but functional) */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sliderPosition}
+                onChange={handleSliderChange}
+                onMouseDown={() => setIsDragging(true)}
+                onMouseUp={() => setIsDragging(false)}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={() => setIsDragging(false)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-grab active:cursor-grabbing z-20"
+              />
+              
+              {/* Labels */}
+              <div className="absolute top-4 left-4 bg-red-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
+                Before
+              </div>
+              <div className="absolute top-4 right-4 bg-green-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
+                After
+              </div>
+              
+              {/* Instructions */}
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-lg text-sm">
+                Drag to compare • {Math.round(sliderPosition)}%
+              </div>
+            </div>
+          ) : (
+            /* Single Image View */
+            <img
+              src={imageSrc}
+              alt={alt}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          )}
           
           {/* Background click to close */}
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onClick={onClose}
           />
         </div>
@@ -219,10 +318,12 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     labelColor: string;
     onError?: (error: any) => void;
     showActions?: boolean;
-  }> = ({ src, alt, label, labelColor, onError, showActions = false }) => {
+    beforeImageSrc?: string;
+  }> = ({ src, alt, label, labelColor, onError, showActions = false, beforeImageSrc }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [showLightbox, setShowLightbox] = useState(false);
+    const [showComparison, setShowComparison] = useState(true);
 
 
     const handleLoad = () => {
@@ -230,7 +331,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     };
 
     const handleError = (e: any) => {
-      console.error('Failed to load image:', src);
       setLoading(false);
       setError(true);
       if (onError) onError(e);
@@ -297,7 +397,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         <div className={`absolute top-2 left-2 ${labelColor} text-white px-2 py-1 rounded text-xs font-medium`}>
           {label}
         </div>
-        
+
         {/* Modern Floating Action Buttons - only show on "After" images */}
         {showActions && !loading && !error && (
           <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex flex-row space-x-3 z-50">
@@ -331,6 +431,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
           onClose={() => setShowLightbox(false)}
           imageSrc={src}
           alt={alt}
+          beforeImageSrc={beforeImageSrc}
+          showComparison={showComparison}
+          setShowComparison={setShowComparison}
         />
 
         {loading && (
@@ -381,7 +484,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             alt="Before"
             label="Before"
             labelColor="bg-red-500"
-            onError={() => console.error('Failed to load input image:', generation.input_image_url)}
           />
         ) : (
           <div className="w-full h-40 sm:h-48 lg:h-56 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
@@ -397,7 +499,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             label="After"
             labelColor="bg-green-500"
             showActions={true}
-            onError={() => console.error('Failed to load output image:', generation.output_image_url)}
+            beforeImageSrc={inputImageUrl}
           />
         ) : (
           <div className="w-full h-40 sm:h-48 lg:h-56 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
@@ -446,9 +548,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             </div>
             <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
               {title}
-            {description && (
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{description}</p>
-            )}
+              {description && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{description}</p>
+              )}
             </h3>
           </div>
 

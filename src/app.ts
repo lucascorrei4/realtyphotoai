@@ -61,7 +61,15 @@ class App {
 
     // CORS configuration
     this.app.use(cors({
-      origin: '*',
+      origin: [
+        'http://localhost:3000',
+        'http://localhost:3001', 
+        'http://localhost:3002',
+        'https://realvisionaire.com',
+        'https://www.realvisionaire.com',
+        'https://api.realvisionaire.com',
+        'https://realvisionai-backend.qj2rlw.easypanel.host'
+      ],
       credentials: false,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With'],
