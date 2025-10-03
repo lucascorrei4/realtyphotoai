@@ -135,10 +135,10 @@ router.get('/generations', userRateLimit, asyncHandler(async (req, res) => {
       data: result
     });
   } catch (error) {
-    logger.error('Error in user recent generations route:', error as Error);
+    logger.error('Error in user recent generations route (getUserGenerationsByType):', error as Error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch recent generations',
+      message: 'Failed to fetch recent generations by type (getUserGenerationsByType)',
       error: 'INTERNAL_SERVER_ERROR'
     });
   }

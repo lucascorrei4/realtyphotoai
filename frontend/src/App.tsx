@@ -8,6 +8,8 @@ import Dashboard from './pages/Dashboard';
 import ImageEnhancement from './pages/ImageEnhancement';
 import InteriorDesign from './pages/InteriorDesign';
 import ReplaceElements from './pages/ReplaceElements';
+import AddFurnitures from './pages/AddFurnitures';
+import ExteriorDesign from './pages/ExteriorDesign';
 import Users from './pages/Users';
 import Auth from './pages/Auth';
 import Settings from './pages/Settings';
@@ -120,6 +122,20 @@ function AppRoutes() {
         <ProtectedRoute>
           <Layout>
             <ReplaceElements />
+          </Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/add-furnitures" element={
+        <ProtectedRoute>
+          <Layout>
+            <AddFurnitures />
+          </Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/exterior-design" element={
+        <ProtectedRoute>
+          <Layout>
+            <ExteriorDesign />
           </Layout>
         </ProtectedRoute>
       } />

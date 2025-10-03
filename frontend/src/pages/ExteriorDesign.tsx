@@ -1,27 +1,27 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { Home } from 'lucide-react';
+import { Upload, Building2 } from 'lucide-react';
 import { API_CONFIG } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 
-const InteriorDesign: React.FC = () => {
+const ExteriorDesign: React.FC = () => {
   const { user } = useAuth();
-  const [roomImage, setRoomImage] = useState<File | null>(null);
-  const [roomPreview, setRoomPreview] = useState<string | null>(null);
-  const [designPrompt, setDesignPrompt] = useState('Transform this room with a modern interior design');
-  const [designType, setDesignType] = useState<'modern' | 'traditional' | 'minimalist' | 'scandinavian' | 'industrial' | 'bohemian' | 'custom'>('modern');
-  const [style, setStyle] = useState<'realistic' | 'architectural' | 'lifestyle'>('realistic');
+  const [buildingImage, setBuildingImage] = useState<File | null>(null);
+  const [buildingPreview, setBuildingPreview] = useState<string | null>(null);
+  const [designPrompt, setDesignPrompt] = useState('Transform this building with a modern exterior design');
+  const [designType, setDesignType] = useState<'modern' | 'traditional' | 'minimalist' | 'industrial' | 'custom'>('modern');
+  const [style, setStyle] = useState<'isometric' | 'realistic' | 'architectural'>('architectural');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const roomInputRef = useRef<HTMLInputElement>(null);
+  const buildingInputRef = useRef<HTMLInputElement>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
   const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
-  const handleRoomFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBuildingFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       if (!validTypes.includes(file.type)) {
@@ -35,11 +35,11 @@ const InteriorDesign: React.FC = () => {
       
       try {
         const preview = URL.createObjectURL(file);
-        setRoomImage(file);
-        setRoomPreview(preview);
+        setBuildingImage(file);
+        setBuildingPreview(preview);
       } catch (error) {
-        console.error('Error creating room file preview:', error);
-        alert('Error processing room file. Please try again.');
+        console.error('Error creating building file preview:', error);
+        alert('Error processing building file. Please try again.');
       }
     }
   }, [maxFileSize, validTypes]);
@@ -76,14 +76,14 @@ const InteriorDesign: React.FC = () => {
 
     try {
       const preview = URL.createObjectURL(file);
-      setRoomImage(file);
-      setRoomPreview(preview);
+      setBuildingImage(file);
+      setBuildingPreview(preview);
       
       // Update the hidden input
-      if (roomInputRef.current) {
+      if (buildingInputRef.current) {
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
-        roomInputRef.current.files = dataTransfer.files;
+        buildingInputRef.current.files = dataTransfer.files;
       }
     } catch (error) {
       console.error('Error processing dropped file:', error);
@@ -91,23 +91,23 @@ const InteriorDesign: React.FC = () => {
     }
   }, [maxFileSize, validTypes]);
 
-  const openRoomFileDialog = () => {
-    roomInputRef.current?.click();
+  const openBuildingFileDialog = () => {
+    buildingInputRef.current?.click();
   };
 
-  const removeRoomFile = () => {
-    setRoomImage(null);
-    setRoomPreview(null);
-    if (roomInputRef.current) {
-      roomInputRef.current.value = '';
+  const removeBuildingFile = () => {
+    setBuildingImage(null);
+    setBuildingPreview(null);
+    if (buildingInputRef.current) {
+      buildingInputRef.current.value = '';
     }
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!roomImage) {
-      alert('Please select a room image.');
+    if (!buildingImage) {
+      alert('Please select a building image.');
       return;
     }
 
@@ -116,15 +116,15 @@ const InteriorDesign: React.FC = () => {
     try {
       const formData = new FormData();
       
-      // Append room image (required)
-      formData.append('image', roomImage);
+      // Append building image (required)
+      formData.append('buildingImage', buildingImage);
       
       // Append design parameters
-      formData.append('prompt', designPrompt);
+      formData.append('designPrompt', designPrompt);
       formData.append('designType', designType);
       formData.append('style', style);
 
-      const response = await authenticatedFormDataFetch('/api/v1/interior-design', formData);
+      const response = await authenticatedFormDataFetch('/api/v1/exterior-design', formData);
       const result = await response.json();
 
       if (result.success) {
@@ -132,21 +132,21 @@ const InteriorDesign: React.FC = () => {
         setRefreshTrigger(prev => prev + 1);
         
         // Reset form after successful generation
-        setRoomImage(null);
-        setRoomPreview(null);
+        setBuildingImage(null);
+        setBuildingPreview(null);
         
         // Clear file input
-        if (roomInputRef.current) {
-          roomInputRef.current.value = '';
+        if (buildingInputRef.current) {
+          buildingInputRef.current.value = '';
         }
         
-        alert('Interior design generated successfully! Check the Recent Generations widget below.');
+        alert('Exterior design generated successfully! Check the Recent Generations widget below.');
       } else {
-        alert(`Failed to generate interior design: ${result.message || result.error}`);
+        alert(`Failed to generate exterior design: ${result.message || result.error}`);
       }
     } catch (error) {
-      console.error('Error generating interior design:', error);
-      alert('Failed to generate interior design. Please try again.');
+      console.error('Error generating exterior design:', error);
+      alert('Failed to generate exterior design. Please try again.');
     } finally {
       setIsProcessing(false);
     }
@@ -156,9 +156,9 @@ const InteriorDesign: React.FC = () => {
     <div className="space-y-6">
       {/* Stats Widget */}
       <StatsWidget
-        modelType="interior_design"
-        title="🏠 Interior Design"
-        description="Transform room interiors with AI-powered design and styling"
+        modelType="exterior_design"
+        title="🏢 Exterior Design"
+        description="Transform building exteriors with AI-powered architectural design"
         userId={user?.id}
       />
 
@@ -166,19 +166,19 @@ const InteriorDesign: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Room Image Upload */}
+          {/* Building Image Upload */}
           <div className="form-group">
-            <label htmlFor="roomImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              🏠 Room Image (Required)
+            <label htmlFor="buildingImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              🏢 Building Image (Required)
             </label>
 
             {/* Hidden file input */}
             <input
-              ref={roomInputRef}
+              ref={buildingInputRef}
               type="file"
-              id="roomImage"
+              id="buildingImage"
               accept="image/jpeg,image/png,image/webp,image/heic"
-              onChange={handleRoomFileSelect}
+              onChange={handleBuildingFileSelect}
               className="hidden"
               required
             />
@@ -193,7 +193,7 @@ const InteriorDesign: React.FC = () => {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={openRoomFileDialog}
+              onClick={openBuildingFileDialog}
             >
               <div className="flex flex-col items-center space-y-4">
                 <div className={`p-3 rounded-full ${
@@ -201,7 +201,7 @@ const InteriorDesign: React.FC = () => {
                     ? 'bg-blue-100 dark:bg-blue-800' 
                     : 'bg-gray-100 dark:bg-gray-700'
                 }`}>
-                  <Home className={`h-8 w-8 ${
+                  <Building2 className={`h-8 w-8 ${
                     isDragOver
                       ? 'text-blue-600 dark:text-blue-400'
                       : 'text-gray-600 dark:text-gray-400'
@@ -210,10 +210,10 @@ const InteriorDesign: React.FC = () => {
 
                 <div>
                   <p className="text-lg font-medium text-gray-900 dark:text-white">
-                    {isDragOver ? 'Drop room image here' : 'Click to select or drag & drop room image'}
+                    {isDragOver ? 'Drop building image here' : 'Click to select or drag & drop building image'}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Upload a photo of the room you want to redesign
+                    Upload a photo of the building you want to redesign
                   </p>
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                     Supports JPG, PNG, WebP, and HEIC formats
@@ -226,37 +226,37 @@ const InteriorDesign: React.FC = () => {
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
                     onClick={(e) => {
                       e.stopPropagation();
-                      openRoomFileDialog();
+                      openBuildingFileDialog();
                     }}
                   >
-                    Choose Room Image
+                    Choose Building Image
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Room Image Preview */}
-          {roomImage && (
+          {/* Building Image Preview */}
+          {buildingImage && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Room Image Preview
+                Building Image Preview
               </h3>
               <div className="relative inline-block">
                 <img
-                  src={roomPreview || ''}
-                  alt={roomImage.name}
+                  src={buildingPreview || ''}
+                  alt={buildingImage.name}
                   className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
                 />
                 <button
-                  onClick={removeRoomFile}
+                  onClick={removeBuildingFile}
                   className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
                 >
                   ×
                 </button>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                {roomImage.name} ({(roomImage.size / 1024 / 1024).toFixed(1)}MB)
+                {buildingImage.name} ({(buildingImage.size / 1024 / 1024).toFixed(1)}MB)
               </p>
             </div>
           )}
@@ -271,18 +271,18 @@ const InteriorDesign: React.FC = () => {
               rows={3}
               value={designPrompt}
               onChange={(e) => setDesignPrompt(e.target.value)}
-              placeholder="Describe the interior design you want (e.g., 'Modern living room with cozy seating', 'Minimalist bedroom with natural light')"
+              placeholder="Describe the exterior design you want (e.g., 'Modern glass facade with vertical gardens', 'Traditional brick with contemporary elements')"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
             <small className="text-gray-500 dark:text-gray-400 mt-1 block">
-              Describe the interior design transformation you want to apply to the room.
+              Describe the exterior design transformation you want to apply to the building.
             </small>
           </div>
 
           {/* Design Type */}
           <div className="form-group">
             <label htmlFor="designType" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              🏠 Design Style
+              🏗️ Design Style
             </label>
             <select
               id="designType"
@@ -293,13 +293,11 @@ const InteriorDesign: React.FC = () => {
               <option value="modern">Modern Contemporary</option>
               <option value="traditional">Traditional</option>
               <option value="minimalist">Minimalist</option>
-              <option value="scandinavian">Scandinavian</option>
               <option value="industrial">Industrial</option>
-              <option value="bohemian">Bohemian</option>
               <option value="custom">Custom</option>
             </select>
             <small className="text-gray-500 dark:text-gray-400 mt-1 block">
-              Choose the interior design style for your room.
+              Choose the architectural style for your exterior design.
             </small>
           </div>
 
@@ -314,9 +312,9 @@ const InteriorDesign: React.FC = () => {
               onChange={(e) => setStyle(e.target.value as any)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
-              <option value="realistic">Photorealistic</option>
               <option value="architectural">Architectural Visualization</option>
-              <option value="lifestyle">Lifestyle</option>
+              <option value="isometric">Isometric View</option>
+              <option value="realistic">Photorealistic</option>
             </select>
             <small className="text-gray-500 dark:text-gray-400 mt-1 block">
               Choose how you want the design to be visualized.
@@ -326,16 +324,16 @@ const InteriorDesign: React.FC = () => {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={!roomImage || isProcessing}
-            className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            disabled={!buildingImage || isProcessing}
+            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {isProcessing ? (
               <div className="flex items-center justify-center">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Generating interior design...
+                Generating exterior design...
               </div>
             ) : (
-              '🏠 Generate Interior Design'
+              '🏢 Generate Exterior Design'
             )}
           </button>
         </form>
@@ -344,16 +342,16 @@ const InteriorDesign: React.FC = () => {
       {/* Recent Generations Widget */}
       <RecentGenerationsWidget
         userId={user?.id}
-        title="Interior Design Generations"
-        description="View your latest interior design transformations with before/after comparisons"
+        title="Exterior Design Generations"
+        description="View your latest exterior design transformations with before/after comparisons"
         showFilters={false}
         maxItems={10}
         className="mt-6"
-        modelTypeFilter="interior_design"
+        modelTypeFilter="exterior_design"
         refreshTrigger={refreshTrigger}
       />
     </div>
   );
 };
 
-export default InteriorDesign;
+export default ExteriorDesign;

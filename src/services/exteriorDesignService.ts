@@ -3,9 +3,8 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { FileUtils } from '../utils/fileUtils';
 import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
 
-export class InteriorDesignService {
+export class ExteriorDesignService {
   private replicate: Replicate;
   private readonly modelId = 'google/nano-banana:1b7b945e8f7edf7a034eba6cb2c20f2ab5dc7d090eea1c616e96da947be76aee';
 
@@ -16,87 +15,62 @@ export class InteriorDesignService {
   }
 
   /**
-   * Generate interior design using google/nano-banana model
+   * Generate exterior design using google/nano-banana model
    * 
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
-  public async generateInteriorDesign(
-    roomImagePath: string,
+  public async generateExteriorDesign(
+    buildingImagePath: string,
     designPrompt: string,
-    designType: 'modern' | 'traditional' | 'minimalist' | 'scandinavian' | 'industrial' | 'bohemian' | 'custom' = 'modern',
-    style: 'realistic' | 'architectural' | 'lifestyle' = 'realistic'
+    designType: 'modern' | 'traditional' | 'minimalist' | 'industrial' | 'custom' = 'modern',
+    style: 'isometric' | 'realistic' | 'architectural' = 'architectural'
   ): Promise<{ outputUrl: string; metadata: any }> {
-    const requestId = uuidv4();
     const startTime = Date.now();
+    const requestId = uuidv4();
 
     try {
-      logger.info('🏠 Starting interior design generation', {
+      logger.info('🏢 Starting exterior design generation', {
         requestId,
-        roomImagePath,
+        buildingImagePath,
         designPrompt,
         designType,
         style,
         model: this.modelId
       });
 
-      // Validate room image file exists
+      // Validate building image file exists
       const fs = require('fs');
-      if (!fs.existsSync(roomImagePath)) {
-        throw new Error(`Room image file not found: ${roomImagePath}`);
+      if (!fs.existsSync(buildingImagePath)) {
+        throw new Error(`Building image file not found: ${buildingImagePath}`);
       }
       
-      const roomImageStats = fs.statSync(roomImagePath);
-      logger.info('📁 Room image file details', {
+      const buildingImageStats = fs.statSync(buildingImagePath);
+      logger.info('📁 Building image file details', {
         requestId,
-        fileSize: roomImageStats.size,
+        fileSize: buildingImageStats.size,
         fileExists: true,
-        roomImagePath
+        buildingImagePath
       });
 
-      // Check if file is HEIC and provide better error handling
-      const fileExtension = path.extname(roomImagePath).toLowerCase();
-      const isHeic = fileExtension === '.heic' || fileExtension === '.heif';
-      
-      if (isHeic) {
-        logger.warn('⚠️ HEIC file detected - this may cause processing issues', {
-          requestId,
-          roomImagePath,
-          fileExtension
-        });
-        
-        // Validate HEIC file can be processed
-        try {
-          const sharp = require('sharp');
-          const metadata = await sharp(roomImagePath).metadata();
-          if (metadata.width && metadata.height) {
-            logger.info('✅ HEIC file validation successful', { requestId });
-          } else {
-            throw new Error('Invalid HEIC dimensions');
-          }
-        } catch (heicValidationError) {
-          throw new Error(`HEIC file validation failed: ${heicValidationError instanceof Error ? heicValidationError.message : String(heicValidationError)}`);
-        }
-      }
-
       // Convert image to base64
-      logger.info('🔄 Converting room image to base64', { requestId });
+      logger.info('🔄 Converting building image to base64', { requestId });
       
       try {
-        const roomImageBase64 = await FileUtils.imageToBase64(roomImagePath);
-        logger.info('✅ Room image base64 conversion completed', { 
+        const buildingImageBase64 = await FileUtils.imageToBase64(buildingImagePath);
+        logger.info('✅ Building image base64 conversion completed', { 
           requestId, 
-          roomImageBase64Length: roomImageBase64.length 
+          buildingImageBase64Length: buildingImageBase64.length 
         });
 
         // Generate design-specific prompt based on type and style
-        const enhancedPrompt = this.generateInteriorPrompt(designPrompt, designType, style);
+        const enhancedPrompt = this.generateExteriorPrompt(designPrompt, designType, style);
         
         const input = {
           prompt: enhancedPrompt,
-          image_input: [`data:image/jpeg;base64,${roomImageBase64}`]
+          image_input: [`data:image/jpeg;base64,${buildingImageBase64}`]
         };
 
-        logger.info('🚀 Running interior design generation', {
+        logger.info('🚀 Running exterior design generation', {
           requestId,
           model: this.modelId,
           originalPrompt: designPrompt,
@@ -110,7 +84,7 @@ export class InteriorDesignService {
         const output = await this.replicate.run(this.modelId, { input });
 
         const processingTime = Date.now() - startTime;
-        logger.info('✅ Interior design generation completed', {
+        logger.info('✅ Exterior design generation completed', {
           requestId,
           processingTime,
           model: this.modelId,
@@ -151,7 +125,7 @@ export class InteriorDesignService {
         logger.error('❌ Base64 conversion failed', {
           requestId,
           error: base64Error instanceof Error ? base64Error.message : String(base64Error),
-          roomImagePath
+          buildingImagePath
         });
         throw new Error(`Image conversion failed: ${base64Error instanceof Error ? base64Error.message : String(base64Error)}`);
       }
@@ -159,13 +133,13 @@ export class InteriorDesignService {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       
-      logger.error('❌ Interior design generation failed', {
+      logger.error('❌ Exterior design generation failed', {
         requestId,
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
         processingTime,
         model: this.modelId,
-        roomImagePath,
+        buildingImagePath,
         designPrompt,
         designType,
         style
@@ -178,7 +152,7 @@ export class InteriorDesignService {
   /**
    * Generate enhanced prompt based on design type and style
    */
-  private generateInteriorPrompt(
+  private generateExteriorPrompt(
     originalPrompt: string,
     designType: string,
     style: string
@@ -188,48 +162,42 @@ export class InteriorDesignService {
 
     // Style-specific prefixes
     switch (style) {
+      case 'isometric':
+        stylePrefix = 'Create an isometric architectural view of ';
+        designSuffix = '. Show clean geometric lines and technical drawing style';
+        break;
       case 'realistic':
-        stylePrefix = 'Create a photorealistic interior design of ';
-        designSuffix = '. Include realistic lighting, shadows, textures, and materials';
+        stylePrefix = 'Create a photorealistic exterior design of ';
+        designSuffix = '. Include realistic lighting, shadows, and materials';
         break;
       case 'architectural':
-        stylePrefix = 'Create an architectural interior visualization of ';
-        designSuffix = '. Focus on structural elements, spatial design, and architectural details';
-        break;
-      case 'lifestyle':
-        stylePrefix = 'Create a lifestyle interior design of ';
-        designSuffix = '. Show the space as lived-in with warm, inviting atmosphere';
+        stylePrefix = 'Create an architectural exterior visualization of ';
+        designSuffix = '. Focus on structural elements and building form';
         break;
       default:
-        stylePrefix = 'Create an interior design of ';
+        stylePrefix = 'Create an exterior design of ';
     }
 
     // Design type-specific enhancements
     switch (designType) {
       case 'modern':
-        designSuffix += '. Modern contemporary style with clean lines, neutral colors, and minimalist furniture';
+        designSuffix += '. Modern contemporary style with clean lines, large windows, and minimalist facade';
         break;
       case 'traditional':
-        designSuffix += '. Traditional style with classic furniture, rich textures, and warm color palette';
+        designSuffix += '. Traditional architectural style with classical elements and detailed facade';
         break;
       case 'minimalist':
-        designSuffix += '. Minimalist design with simple forms, neutral colors, and uncluttered spaces';
-        break;
-      case 'scandinavian':
-        designSuffix += '. Scandinavian style with light woods, white walls, cozy textiles, and hygge elements';
+        designSuffix += '. Minimalist design with simple forms, neutral colors, and clean surfaces';
         break;
       case 'industrial':
-        designSuffix += '. Industrial style with exposed brick, metal elements, concrete surfaces, and urban aesthetic';
-        break;
-      case 'bohemian':
-        designSuffix += '. Bohemian style with eclectic furniture, vibrant colors, patterns, and artistic elements';
+        designSuffix += '. Industrial style with exposed materials, metal elements, and urban aesthetic';
         break;
       case 'custom':
         // Keep original prompt as-is for custom designs
         break;
     }
 
-    return `${stylePrefix}${originalPrompt}${designSuffix}. Transform the existing room with this interior design concept.`;
+    return `${stylePrefix}${originalPrompt}${designSuffix}. Transform the existing building with this exterior design concept.`;
   }
 
   /**

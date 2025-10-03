@@ -7,6 +7,8 @@ import {
   Image,
   Palette,
   Replace,
+  Sofa,
+  Building2,
   Users,
   Settings,
   Shield,
@@ -36,8 +38,10 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navigation = [
     { path: '/dashboard', label: 'Dashboard', icon: Home },
-    { path: '/image-enhancement', label: 'Image Enhancement', icon: Image },
+    { path: '/add-furnitures', label: 'Add Furnitures', icon: Sofa },
     { path: '/interior-design', label: 'Interior Design', icon: Palette },
+    { path: '/exterior-design', label: 'Exterior Design', icon: Building2 },
+    { path: '/image-enhancement', label: 'Image Enhancement', icon: Image },
     { path: '/replace-elements', label: 'Replace Elements', icon: Replace },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];

@@ -25,6 +25,9 @@ interface UserStats {
     interiorDesign: number;
     imageEnhancement: number;
     replaceElements: number;
+    addFurnitures: number;
+    exteriorDesign: number;
+    generalFurniture: number;
   };
   monthlyData: Array<{
     month: string;
@@ -100,6 +103,9 @@ const Dashboard: React.FC = () => {
         interiorDesign: userGenerations.filter(g => g.model_type === 'interior_design').length,
         imageEnhancement: userGenerations.filter(g => g.model_type === 'image_enhancement').length,
         replaceElements: userGenerations.filter(g => g.model_type === 'element_replacement').length,
+        addFurnitures: userGenerations.filter(g => g.model_type === 'add_furnitures').length,
+        exteriorDesign: userGenerations.filter(g => g.model_type === 'exterior_design').length,
+        generalFurniture: userGenerations.filter(g => g.model_type === 'general_furniture').length,
       };
 
       // Calculate monthly data for the last 6 months
@@ -159,6 +165,9 @@ const Dashboard: React.FC = () => {
     { name: 'Interior Design', value: userStats?.generationsByType?.interiorDesign || 0, color: '#8B5CF6' },
     { name: 'Image Enhancement', value: userStats?.generationsByType?.imageEnhancement || 0, color: '#10B981' },
     { name: 'Replace Elements', value: userStats?.generationsByType?.replaceElements || 0, color: '#F59E0B' },
+    { name: 'Add Furnitures', value: userStats?.generationsByType?.addFurnitures || 0, color: '#10B981' },
+    { name: 'Exterior Design', value: userStats?.generationsByType?.exteriorDesign || 0, color: '#F59E0B' },
+    { name: 'General Furniture', value: userStats?.generationsByType?.generalFurniture || 0, color: '#10B981' },
   ];
 
   if (loading) {

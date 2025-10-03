@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Maximize2, Download, Share2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X } from 'lucide-react';
 import { getBackendUrl } from '../config/api';
 
 export interface Generation {
@@ -153,6 +153,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         return 'Image Enhancement';
       case 'element_replacement':
         return 'Element Replacement';
+      case 'add_furnitures':
+        return 'Add Furnitures';
+      case 'exterior_design':
+        return 'Exterior Design';
       default:
         return modelType;
     }
@@ -166,6 +170,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         return <Camera className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
       case 'element_replacement':
         return <Wand2 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+      case 'add_furnitures':
+        return <Sofa className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
+      case 'exterior_design':
+        return <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
       default:
         return <Image className="h-4 w-4 sm:h-5 sm:w-5 text-white" />;
     }
@@ -179,6 +187,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         return 'from-blue-500 to-blue-600';
       case 'element_replacement':
         return 'from-green-500 to-green-600';
+      case 'add_furnitures':
+        return 'from-orange-500 to-orange-600';
+      case 'exterior_design':
+        return 'from-indigo-500 to-indigo-600';
       default:
         return 'from-gray-500 to-gray-600';
     }
@@ -581,6 +593,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 <option value="interior_design">Interior Design</option>
                 <option value="image_enhancement">Image Enhancement</option>
                 <option value="element_replacement">Element Replacement</option>
+                <option value="add_furnitures">Add Furnitures</option>
+                <option value="exterior_design">Exterior Design</option>
               </select>
             </div>
 

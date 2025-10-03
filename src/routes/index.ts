@@ -108,6 +108,28 @@ router.post('/replace-elements',
   asyncHandler(imageController.replaceElements)
 );
 
+// Add furnitures endpoint
+router.post('/add-furnitures', 
+  authenticateToken,
+  processingRateLimit,
+  uploadMultipleMiddleware.fields([
+    { name: 'roomImage', maxCount: 1 },
+    { name: 'furnitureImage', maxCount: 1 }
+  ]),
+  handleUploadError,
+  asyncHandler(imageController.addFurnitures)
+);
+
+// Exterior design endpoint
+router.post('/exterior-design', 
+  authenticateToken,
+  processingRateLimit,
+  uploadMiddleware.single('buildingImage'),
+  validateUploadedFile,
+  handleUploadError,
+  asyncHandler(imageController.exteriorDesign)
+);
+
 // Authentication routes
 router.use('/auth', authRoutes);
 

@@ -11,6 +11,8 @@ export interface GenerationStats {
     interiorDesign: number;
     imageEnhancement: number;
     replaceElements: number;
+    addFurnitures: number;
+    exteriorDesign: number;
   };
 }
 
@@ -73,6 +75,8 @@ export class UserStatisticsService {
         interiorDesign: userGenerations.filter(g => g.model_type === 'interior_design').length,
         imageEnhancement: userGenerations.filter(g => g.model_type === 'image_enhancement').length,
         replaceElements: userGenerations.filter(g => g.model_type === 'element_replacement').length,
+        addFurnitures: userGenerations.filter(g => g.model_type === 'add_furnitures').length,
+        exteriorDesign: userGenerations.filter(g => g.model_type === 'exterior_design').length,
       };
 
       return {
@@ -190,13 +194,13 @@ export class UserStatisticsService {
         .limit(limit);
 
       if (error) {
-        logger.error('Error fetching recent user generations:', error);
-        throw new Error('Failed to fetch recent generations');
+        logger.error('Error fetching recent user generations by type (getRecentUserGenerations):', error);
+        throw new Error('Failed to fetch recent generations by type (getRecentUserGenerations)');
       }
 
       return generations || [];
     } catch (error) {
-      logger.error('Error in getRecentUserGenerations:', error as Error);
+      logger.error('Error in getRecentUserGenerations (getUserGenerationsByType):', error as Error);
       throw error;
     }
   }

@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE user_role AS ENUM ('user', 'admin', 'super_admin');
 CREATE TYPE subscription_plan AS ENUM ('free', 'basic', 'premium', 'enterprise');
 CREATE TYPE generation_status AS ENUM ('pending', 'processing', 'completed', 'failed');
-CREATE TYPE ai_model AS ENUM ('interior_design', 'image_enhancement', 'element_replacement');
+CREATE TYPE ai_model AS ENUM ('interior_design', 'image_enhancement', 'element_replacement', 'add_furnitures', 'exterior_design');
 
 -- Users table (extends Supabase auth.users)
 -- Note: The id field will store the UUID from auth.users when users are created
@@ -91,8 +91,8 @@ INSERT INTO public.admin_settings (setting_key, setting_value, description) VALU
 INSERT INTO public.plan_rules (plan_name, monthly_generations_limit, concurrent_generations, allowed_models, price_per_month, features) VALUES
 ('free', 10, 1, ARRAY['image_enhancement']::ai_model[], 0, '{"basic_enhancement": true, "watermark": true}'),
 ('basic', 100, 2, ARRAY['image_enhancement', 'interior_design']::ai_model[], 19.99, '{"basic_enhancement": true, "interior_design": true, "watermark": false}'),
-('premium', 500, 5, ARRAY['image_enhancement', 'interior_design', 'element_replacement']::ai_model[], 49.99, '{"all_models": true, "priority_processing": true, "api_access": true}'),
-('enterprise', 2000, 10, ARRAY['image_enhancement', 'interior_design', 'element_replacement']::ai_model[], 199.99, '{"all_models": true, "priority_processing": true, "api_access": true, "dedicated_support": true}');
+('premium', 500, 5, ARRAY['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures', 'exterior_design']::ai_model[], 49.99, '{"all_models": true, "priority_processing": true, "api_access": true}'),
+('enterprise', 2000, 10, ARRAY['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures', 'exterior_design']::ai_model[], 199.99, '{"all_models": true, "priority_processing": true, "api_access": true, "dedicated_support": true}');
 
 -- Create indexes for better performance
 CREATE INDEX idx_user_profiles_email ON public.user_profiles(email);

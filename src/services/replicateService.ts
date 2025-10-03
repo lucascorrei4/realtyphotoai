@@ -163,7 +163,7 @@ export class ReplicateService {
   public async processImageWithInteriorDesign(
     imagePath: string,
     prompt: string,
-    options: {
+    _options: {
       promptStrength?: number;
       numInferenceSteps?: number;
       guidanceScale?: number;
@@ -172,7 +172,12 @@ export class ReplicateService {
     } = {}
   ): Promise<{ outputUrl: string; metadata: any }> {
     // Delegate to specialized service
-    return this.interiorDesignService.processImage(imagePath, prompt, options);
+    return this.interiorDesignService.generateInteriorDesign(
+      imagePath, 
+      prompt, 
+      'modern', // default design type
+      'realistic' // default style
+    );
   }
 
   // TODO: Implement two-pass depth + inpainting workflow when ControlNet models are available */
@@ -650,4 +655,4 @@ export class ReplicateService {
     // Delegate to specialized service
     return this.elementReplacementService.replaceElements(imagePath, prompt, outputFormat);
   }
-} 
+}

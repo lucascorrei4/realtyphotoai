@@ -31,12 +31,12 @@ export const authenticateToken = async (
 
     // First try to verify as JWT token
     let decoded = authService.verifyToken(token);
-    
+
     if (!decoded) {
       // If JWT verification fails, try to verify as Supabase token
       try {
         const { data: { user }, error } = await supabase.auth.getUser(token);
-        
+
         if (error || !user) {
           res.status(403).json({ error: 'Invalid or expired token' });
           return;
@@ -188,7 +188,7 @@ export const checkGenerationLimit = async (
     // Check monthly generation limit
     const monthlyUsage = await authService.getUserStatistics(req.user.id);
     if (monthlyUsage && monthlyUsage.monthly_usage >= userProfile.monthly_generations_limit) {
-      res.status(429).json({ 
+      res.status(429).json({
         error: 'Monthly generation limit reached',
         limit: userProfile.monthly_generations_limit,
         usage: monthlyUsage.monthly_usage
@@ -229,16 +229,16 @@ export const checkModelAccess = (modelType: string) => {
       // This would typically check against plan_rules table
       // For now, we'll implement basic checks
       const allowedModels = {
-        'free': ['image_enhancement'],
-        'basic': ['image_enhancement', 'interior_design'],
-        'premium': ['image_enhancement', 'interior_design', 'element_replacement'],
-        'enterprise': ['image_enhancement', 'interior_design', 'element_replacement']
+        'free': ['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures'],
+        'basic': ['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures'],
+        'premium': ['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures'],
+        'enterprise': ['image_enhancement', 'interior_design', 'element_replacement', 'add_furnitures']
       };
 
       const userAllowedModels = allowedModels[userProfile.subscription_plan as keyof typeof allowedModels] || [];
-      
+
       if (!userAllowedModels.includes(modelType)) {
-        res.status(403).json({ 
+        res.status(403).json({
           error: `Model '${modelType}' not available in your current plan`,
           currentPlan: userProfile.subscription_plan,
           allowedModels: userAllowedModels

@@ -60,7 +60,8 @@ const Settings: React.FC = () => {
         model_breakdown: {
           image_enhancement: 3,
           interior_design: 1,
-          element_replacement: 1
+          element_replacement: 1,
+          add_furnitures: 1,
         }
       };
       
@@ -189,7 +190,8 @@ const Settings: React.FC = () => {
   const modelColors = {
     image_enhancement: '#3B82F6',
     interior_design: '#8B5CF6',
-    element_replacement: '#10B981'
+    element_replacement: '#10B981',
+    add_furnitures: '#F59E0B'
   };
 
   const modelBreakdownData = stats?.model_breakdown ? 

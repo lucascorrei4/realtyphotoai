@@ -12,11 +12,13 @@ interface GenerationStats {
     interiorDesign: number;
     imageEnhancement: number;
     replaceElements: number;
+    addFurnitures: number;
+    exteriorDesign: number;
   };
 }
 
 interface StatsWidgetProps {
-  modelType: 'interior_design' | 'image_enhancement' | 'element_replacement';
+  modelType: 'interior_design' | 'image_enhancement' | 'element_replacement' | 'add_furnitures' | 'exterior_design';
   title?: string;
   description?: string;
   userId?: string; // Optional user ID for fetching user-specific stats
@@ -61,7 +63,9 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
             generationsByType: {
               interiorDesign: 0,
               imageEnhancement: 0,
-              replaceElements: 0
+              replaceElements: 0,
+              addFurnitures: 0,
+              exteriorDesign: 0
             }
           });
         }
@@ -85,7 +89,9 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
             generationsByType: {
               interiorDesign: 0,
               imageEnhancement: 0,
-              replaceElements: 0
+              replaceElements: 0,
+              addFurnitures: 0,
+              exteriorDesign: 0
             }
           });
           setError(null); // Don't show error for network issues
@@ -102,7 +108,9 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
             generationsByType: {
               interiorDesign: 0,
               imageEnhancement: 0,
-              replaceElements: 0
+              replaceElements: 0,
+              addFurnitures: 0,
+              exteriorDesign: 0
             }
           });
         }
@@ -188,7 +196,9 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
     generationsByType: {
       interiorDesign: 0,
       imageEnhancement: 0,
-      replaceElements: 0
+      replaceElements: 0,
+      addFurnitures: 0,
+      exteriorDesign: 0
     }
   };
 
@@ -201,6 +211,10 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
         return currentStats.generationsByType.imageEnhancement;
       case 'element_replacement':
         return currentStats.generationsByType.replaceElements;
+      case 'add_furnitures':
+        return currentStats.generationsByType.addFurnitures;
+      case 'exterior_design':
+        return currentStats.generationsByType.exteriorDesign;
       default:
         return 0;
     }

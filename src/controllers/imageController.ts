@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import path from 'path';
 import { ReplicateService } from '../services/replicateService';
+import { InteriorDesignService } from '../services/interiorDesignService';
+import { AddFurnitureService } from '../services/addFurnitureService';
+import { ExteriorDesignService } from '../services/exteriorDesignService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -10,10 +13,16 @@ import { UserStatisticsService } from '../services/userStatisticsService';
 
 export class ImageController {
   private replicateService: ReplicateService;
+  private interiorDesignService: InteriorDesignService;
+  private addFurnitureService: AddFurnitureService;
+  private exteriorDesignService: ExteriorDesignService;
   private userStatsService: UserStatisticsService;
 
   constructor() {
     this.replicateService = new ReplicateService();
+    this.interiorDesignService = new InteriorDesignService();
+    this.addFurnitureService = new AddFurnitureService();
+    this.exteriorDesignService = new ExteriorDesignService();
     this.userStatsService = new UserStatisticsService();
   }
 
@@ -474,12 +483,13 @@ export class ImageController {
         finalImagePath = req.file.path;
       }
 
-      // Process image with Interior Design model
+      // Process image with Interior Design service
       try {
-        const { outputUrl, metadata } = await this.replicateService.processImageWithInteriorDesign(
+        const { outputUrl, metadata } = await this.interiorDesignService.generateInteriorDesign(
           finalImagePath,
           req.body.prompt,
-          options
+          req.body.designType || 'modern',
+          req.body.style || 'realistic'
         );
 
         // Download and save processed image
@@ -650,6 +660,7 @@ export class ImageController {
           interior_design: '/interior-design',
           image_enhancement: '/image-enhancement',
           replace_elements: '/replace-elements',
+          add_furnitures: '/add-furnitures',
         },
         features: {
           controlNet: 'Enhanced structure preservation using ControlNet',
@@ -1088,6 +1099,379 @@ export class ImageController {
         processingTime,
         timestamp: new Date().toISOString(),
       } as ApiResponse);
+    }
+  };
+
+  /**
+   * Add furnitures to room images
+   */
+  public addFurnitures = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    const tempFiles: string[] = [];
+    let generationId: string | undefined;
+
+    try {
+      // Check if files were uploaded
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      
+      if (!files || !files.roomImage || !files.roomImage[0]) {
+        res.status(400).json({
+          success: false,
+          message: 'Room image file is required',
+          error: 'NO_ROOM_IMAGE_FILE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      if (!req.body?.prompt) {
+        res.status(400).json({
+          success: false,
+          message: 'Prompt is required for furniture addition',
+          error: 'MISSING_PROMPT',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      // Get user ID from authenticated request
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      const roomImageFile = files.roomImage[0];
+      const furnitureImageFile = files.furnitureImage?.[0]; // Optional
+
+      // Validate room image file
+      if (!roomImageFile) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid room image file',
+          error: 'INVALID_ROOM_IMAGE_FILE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      logger.info('🪑 Starting furniture addition', {
+        roomImageFile: roomImageFile.filename,
+        furnitureImageFile: furnitureImageFile?.filename || 'none',
+        prompt: req.body.prompt,
+        furnitureType: req.body.furnitureType || 'general',
+        userId
+      });
+
+      // Create generation record in database
+      const dbGenerationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'add_furnitures',
+        status: 'processing',
+        input_image_url: `/uploads/${roomImageFile.filename}`,
+        prompt: req.body.prompt
+      });
+
+      // Process the furniture addition
+      const result = await this.addFurnitureService.addFurniture(
+        roomImageFile.path,
+        furnitureImageFile?.path || null,
+        req.body.prompt,
+        req.body.furnitureType || 'general'
+      );
+
+      if (result.outputUrl) {
+        // Generate unique filename for the output
+        const outputFilename = `furniture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+        const finalOutputPath = path.join(config.outputDir, outputFilename);
+        
+        // Download the result from URL
+        logger.info('📥 Downloading furniture result from URL', {
+          url: result.outputUrl,
+          outputPath: finalOutputPath
+        });
+        const fs = require('fs');
+        const downloadedPath = await FileUtils.downloadImage(result.outputUrl, config.outputDir);
+        fs.renameSync(downloadedPath, finalOutputPath);
+        const finalImagePath = finalOutputPath;
+        
+        // Generate public URLs
+        const roomImageUrl = `/uploads/${roomImageFile.filename}`;
+        const furnitureImageUrl = furnitureImageFile ? `/uploads/${furnitureImageFile.filename}` : null;
+        const resultImageUrl = `/outputs/${outputFilename}`;
+
+        const processingTime = Date.now() - startTime;
+        
+        // Update generation record with success
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'completed',
+          resultImageUrl,
+          undefined,
+          processingTime
+        );
+
+        generationId = dbGenerationId;
+
+        logger.info('✅ Furniture addition completed successfully', {
+          processingTime,
+          resultImagePath: finalImagePath,
+          prompt: req.body.prompt,
+          generationId: dbGenerationId
+        });
+
+        res.json({
+          success: true,
+          message: 'Furniture added successfully',
+          data: {
+            originalRoomImage: roomImageUrl,
+            originalFurnitureImage: furnitureImageUrl,
+            resultImage: resultImageUrl,
+            prompt: req.body.prompt,
+            furnitureType: req.body.furnitureType || 'general',
+            processingTime,
+            generationId: dbGenerationId
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        // Update generation record with failure
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'failed',
+          undefined,
+          'No output URL received from model',
+          Date.now() - startTime
+        );
+
+        logger.error('❌ Furniture addition failed', {
+          error: 'No output URL received from model',
+          processingTime: Date.now() - startTime
+        });
+
+        res.status(500).json({
+          success: false,
+          message: 'Furniture addition failed',
+          error: 'NO_OUTPUT_URL',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
+    } catch (error) {
+      logger.error('🚨 Error in addFurnitures:', error as Error);
+      
+      // Update generation record with failure if we have a generation ID
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            Date.now() - startTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation status:', updateError as Error);
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during furniture addition',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    } finally {
+      // Clean up temporary files
+      for (const tempFile of tempFiles) {
+        try {
+          const fs = require('fs');
+          fs.unlinkSync(tempFile);
+        } catch (error) {
+          logger.warn('Failed to clean up temp file:', { tempFile });
+        }
+      }
+    }
+  };
+
+  /**
+   * Generate exterior design for buildings
+   */
+  public exteriorDesign = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    const tempFiles: string[] = [];
+    let generationId: string | undefined;
+
+    try {
+      const buildingImageFile = req.file;
+      
+      if (!buildingImageFile) {
+        res.status(400).json({
+          success: false,
+          message: 'Building image file is required',
+          error: 'NO_BUILDING_IMAGE_FILE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      if (!req.body?.designPrompt) {
+        res.status(400).json({
+          success: false,
+          message: 'Design prompt is required for exterior design',
+          error: 'MISSING_DESIGN_PROMPT',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      logger.info('🏢 Starting exterior design generation', {
+        buildingImageFile: buildingImageFile.filename,
+        designPrompt: req.body.designPrompt,
+        designType: req.body.designType || 'modern',
+        style: req.body.style || 'architectural',
+        userId
+      });
+
+      // Create generation record in database
+      const dbGenerationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'exterior_design',
+        status: 'processing',
+        input_image_url: `/uploads/${buildingImageFile.filename}`,
+        prompt: req.body.designPrompt
+      });
+      generationId = dbGenerationId;
+
+      // Process the exterior design
+      const result = await this.exteriorDesignService.generateExteriorDesign(
+        buildingImageFile.path,
+        req.body.designPrompt,
+        req.body.designType || 'modern',
+        req.body.style || 'architectural'
+      );
+
+      if (result.outputUrl) {
+        // Generate unique filename for the output
+        const outputFilename = `exterior_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+        const finalOutputPath = path.join(config.outputDir, outputFilename);
+        
+        // Download the result from URL
+        logger.info('📥 Downloading exterior design result from URL', {
+          url: result.outputUrl,
+          outputPath: finalOutputPath
+        });
+        const fs = require('fs');
+        const downloadedPath = await FileUtils.downloadImage(result.outputUrl, config.outputDir);
+        fs.renameSync(downloadedPath, finalOutputPath);
+        const finalImagePath = finalOutputPath;
+        
+        // Generate public URLs
+        const buildingImageUrl = `/uploads/${buildingImageFile.filename}`;
+        const resultImageUrl = `/outputs/${outputFilename}`;
+
+        const processingTime = Date.now() - startTime;
+        
+        // Update generation record with success
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'completed',
+          resultImageUrl,
+          undefined,
+          processingTime
+        );
+
+        logger.info('✅ Exterior design generation completed successfully', {
+          processingTime,
+          resultImagePath: finalImagePath,
+          designPrompt: req.body.designPrompt,
+          generationId: dbGenerationId
+        });
+
+        res.json({
+          success: true,
+          message: 'Exterior design generated successfully',
+          data: {
+            originalBuildingImage: buildingImageUrl,
+            resultImage: resultImageUrl,
+            designPrompt: req.body.designPrompt,
+            designType: req.body.designType || 'modern',
+            style: req.body.style || 'architectural',
+            processingTime,
+            generationId: dbGenerationId
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        // Update generation record with failure
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'failed',
+          undefined,
+          'No output URL received from model',
+          Date.now() - startTime
+        );
+
+        logger.error('❌ Exterior design generation failed', {
+          error: 'No output URL received from model',
+          processingTime: Date.now() - startTime
+        });
+
+        res.status(500).json({
+          success: false,
+          message: 'Exterior design generation failed',
+          error: 'NO_OUTPUT_URL',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
+    } catch (error) {
+      logger.error('🚨 Error in exteriorDesign:', error as Error);
+      
+      // Update generation record with failure if we have a generation ID
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            Date.now() - startTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation status:', updateError as Error);
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during exterior design generation',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    } finally {
+      // Clean up temporary files
+      for (const tempFile of tempFiles) {
+        try {
+          const fs = require('fs');
+          fs.unlinkSync(tempFile);
+        } catch (error) {
+          logger.warn('Failed to clean up temp file:', { tempFile });
+        }
+      }
     }
   };
 } 
