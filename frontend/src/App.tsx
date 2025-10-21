@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
+import ToastProvider from './components/ToastProvider';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import ImageEnhancement from './pages/ImageEnhancement';
@@ -14,6 +15,7 @@ import Users from './pages/Users';
 import Auth from './pages/Auth';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
+import Pricing from './pages/Pricing';
 import './App.css';
 
 // Protected Route Component
@@ -93,6 +95,7 @@ function AppRoutes() {
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<LandingPage />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <Auth />} />
       <Route path="/auth/callback" element={<AuthCallbackHandler />} />
       
@@ -183,6 +186,7 @@ function App() {
       <AuthProvider>
         <Router>
           <AppRoutes />
+          <ToastProvider />
         </Router>
       </AuthProvider>
     </ThemeProvider>

@@ -5,6 +5,7 @@ import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 interface ElementReplacementRequest {
   id: string;
@@ -18,6 +19,7 @@ interface ElementReplacementRequest {
 
 const ReplaceElements: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('Replace the floor for a modern black mirror floor');
   const [outputFormat, setOutputFormat] = useState('jpg');
@@ -62,12 +64,12 @@ const ReplaceElements: React.FC = () => {
     const maxFileSize = 10 * 1024 * 1024; // 10MB
 
     if (!validTypes.includes(file.type)) {
-      alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
       return;
     }
 
     if (file.size > maxFileSize) {
-      alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 10MB.`);
+      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 10MB.`);
       return;
     }
 
@@ -82,7 +84,7 @@ const ReplaceElements: React.FC = () => {
     event.preventDefault();
 
     if (!selectedFile) {
-      alert('Please select an image to transform.');
+      showWarning('Please select an image to transform.');
       return;
     }
 
@@ -133,12 +135,12 @@ const ReplaceElements: React.FC = () => {
         
         setIsProcessing(false);
       } else {
-        alert(`Transformation failed: ${result.message || result.error}`);
+        showError(`Transformation failed: ${result.message || result.error}`);
         setIsProcessing(false);
       }
     } catch (error) {
       console.error('Transformation error:', error);
-      alert('Transformation failed. Please try again.');
+      showError('Transformation failed. Please try again.');
       setIsProcessing(false);
     }
   };

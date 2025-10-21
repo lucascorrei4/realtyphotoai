@@ -5,9 +5,11 @@ import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 const ExteriorDesign: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
   const [buildingImage, setBuildingImage] = useState<File | null>(null);
   const [buildingPreview, setBuildingPreview] = useState<string | null>(null);
   const [designPrompt, setDesignPrompt] = useState('Transform this building with a modern exterior design');
@@ -25,11 +27,11 @@ const ExteriorDesign: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return;
       }
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return;
       }
       
@@ -39,10 +41,10 @@ const ExteriorDesign: React.FC = () => {
         setBuildingPreview(preview);
       } catch (error) {
         console.error('Error creating building file preview:', error);
-        alert('Error processing building file. Please try again.');
+        showError('Error processing building file. Please try again.');
       }
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -65,12 +67,12 @@ const ExteriorDesign: React.FC = () => {
     const file = files[0];
     
     if (!validTypes.includes(file.type)) {
-      alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
       return;
     }
 
     if (file.size > maxFileSize) {
-      alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
       return;
     }
 
@@ -87,9 +89,9 @@ const ExteriorDesign: React.FC = () => {
       }
     } catch (error) {
       console.error('Error processing dropped file:', error);
-      alert('Error processing dropped file. Please try again.');
+      showError('Error processing dropped file. Please try again.');
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   const openBuildingFileDialog = () => {
     buildingInputRef.current?.click();
@@ -107,7 +109,7 @@ const ExteriorDesign: React.FC = () => {
     event.preventDefault();
 
     if (!buildingImage) {
-      alert('Please select a building image.');
+      showWarning('Please select a building image.');
       return;
     }
 
@@ -140,13 +142,13 @@ const ExteriorDesign: React.FC = () => {
           buildingInputRef.current.value = '';
         }
         
-        alert('Exterior design generated successfully! Check the Recent Generations widget below.');
+        showSuccess('Exterior design generated successfully! Check the Recent Generations widget below.');
       } else {
-        alert(`Failed to generate exterior design: ${result.message || result.error}`);
+        showError(`Failed to generate exterior design: ${result.message || result.error}`);
       }
     } catch (error) {
       console.error('Error generating exterior design:', error);
-      alert('Failed to generate exterior design. Please try again.');
+      showError('Failed to generate exterior design. Please try again.');
     } finally {
       setIsProcessing(false);
     }

@@ -10,6 +10,7 @@ import { FileUtils } from './utils/fileUtils';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
 import webhookRoutes from './routes/webhooks';
+import stripeRoutes from './routes/stripe';
 
 class App {
   public app: express.Application;
@@ -185,6 +186,9 @@ class App {
 
     // API routes
     this.app.use(config.apiPrefix, routes);
+    
+    // Stripe routes
+    this.app.use(config.apiPrefix + '/stripe', stripeRoutes);
     
     // Webhook routes (no auth required)
     this.app.use('/webhooks', webhookRoutes);

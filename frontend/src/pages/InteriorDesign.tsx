@@ -5,9 +5,11 @@ import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 const InteriorDesign: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [roomPreview, setRoomPreview] = useState<string | null>(null);
   const [designPrompt, setDesignPrompt] = useState('Transform this room with a modern interior design');
@@ -25,11 +27,11 @@ const InteriorDesign: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return;
       }
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return;
       }
       
@@ -39,10 +41,10 @@ const InteriorDesign: React.FC = () => {
         setRoomPreview(preview);
       } catch (error) {
         console.error('Error creating room file preview:', error);
-        alert('Error processing room file. Please try again.');
+        showError('Error processing room file. Please try again.');
       }
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -65,12 +67,12 @@ const InteriorDesign: React.FC = () => {
     const file = files[0];
     
     if (!validTypes.includes(file.type)) {
-      alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
       return;
     }
 
     if (file.size > maxFileSize) {
-      alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
       return;
     }
 
@@ -87,9 +89,9 @@ const InteriorDesign: React.FC = () => {
       }
     } catch (error) {
       console.error('Error processing dropped file:', error);
-      alert('Error processing dropped file. Please try again.');
+      showError('Error processing dropped file. Please try again.');
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   const openRoomFileDialog = () => {
     roomInputRef.current?.click();
@@ -107,7 +109,7 @@ const InteriorDesign: React.FC = () => {
     event.preventDefault();
 
     if (!roomImage) {
-      alert('Please select a room image.');
+      showWarning('Please select a room image.');
       return;
     }
 
@@ -140,13 +142,13 @@ const InteriorDesign: React.FC = () => {
           roomInputRef.current.value = '';
         }
         
-        alert('Interior design generated successfully! Check the Recent Generations widget below.');
+        showSuccess('Interior design generated successfully! Check the Recent Generations widget below.');
       } else {
-        alert(`Failed to generate interior design: ${result.message || result.error}`);
+        showError(`Failed to generate interior design: ${result.message || result.error}`);
       }
     } catch (error) {
       console.error('Error generating interior design:', error);
-      alert('Failed to generate interior design. Please try again.');
+      showError('Failed to generate interior design. Please try again.');
     } finally {
       setIsProcessing(false);
     }

@@ -11,7 +11,9 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import { RecentGenerationsWidget, QuickActions } from '../components';
+import StripeCheckout from '../components/StripeCheckout';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
+import { SUBSCRIPTION_PLANS } from '../config/subscriptionPlans';
 
 
 interface UserStats {
@@ -47,6 +49,7 @@ const Dashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [showPricing, setShowPricing] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -195,19 +198,90 @@ const Dashboard: React.FC = () => {
 
       {/* Subscription Upgrade Prompt */}
       {user?.subscription_plan === 'free' && (
-        <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+        <div className="bg-gradient-to-r from-red-500 to-pink-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold mb-2">🚀 Upgrade Your Plan</h2>
-              <p className="text-yellow-100 mb-4">
+              <p className="text-red-100 mb-4">
                 Get more generations, faster processing, and access to premium features
               </p>
-              <button className="bg-white text-orange-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors">
-                View Plans
+              <div className="flex space-x-3">
+                <button 
+                  onClick={() => setShowPricing(true)}
+                  className="bg-white text-red-600 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+                >
+                  View Plans
+                </button>
+                <button 
+                  onClick={() => window.open('/pricing', '_blank')}
+                  className="bg-transparent border-2 border-white text-white px-6 py-2 rounded-lg font-medium hover:bg-white hover:text-red-600 transition-colors"
+                >
+                  Full Pricing Page
+                </button>
+              </div>
+            </div>
+            <Crown className="h-16 w-16 text-red-200" />
+          </div>
+        </div>
+      )}
+
+      {/* Subscription Status for Paid Users */}
+      {user?.subscription_plan && user.subscription_plan !== 'free' && (
+        <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold mb-2">✨ {SUBSCRIPTION_PLANS[user.subscription_plan]?.displayName || 'Premium'} Plan</h2>
+              <p className="text-green-100 mb-4">
+                You're enjoying premium features with {SUBSCRIPTION_PLANS[user.subscription_plan]?.features.aiPhotos?.toLocaleString() || 'unlimited'} AI photos per month
+              </p>
+              <button 
+                onClick={() => setShowPricing(true)}
+                className="bg-white text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+              >
+                Manage Subscription
               </button>
             </div>
-            <Crown className="h-16 w-16 text-yellow-200" />
+            <Crown className="h-16 w-16 text-green-200" />
           </div>
+        </div>
+      )}
+
+      {/* Usage Progress Bar */}
+      {userStats && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Monthly Usage</h3>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {userStats.monthlyUsage} / {userStats.monthlyLimit} generations
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+            <div
+              className={`h-3 rounded-full transition-all duration-300 ${
+                (userStats.monthlyUsage / userStats.monthlyLimit) > 0.9
+                  ? 'bg-red-500'
+                  : (userStats.monthlyUsage / userStats.monthlyLimit) > 0.7
+                  ? 'bg-yellow-500'
+                  : 'bg-green-500'
+              }`}
+              style={{
+                width: `${Math.min(100, (userStats.monthlyUsage / userStats.monthlyLimit) * 100)}%`
+              }}
+            ></div>
+          </div>
+          {(userStats.monthlyUsage / userStats.monthlyLimit) > 0.8 && (
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-sm text-orange-600 dark:text-orange-400">
+                ⚠️ You're approaching your monthly limit. Consider upgrading for more generations!
+              </p>
+              <button
+                onClick={() => setShowPricing(true)}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Upgrade Now
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -446,7 +520,17 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-
+      {/* Stripe Checkout Modal */}
+      {showPricing && (
+        <StripeCheckout
+          onClose={() => setShowPricing(false)}
+          onSuccess={(planId) => {
+            setShowPricing(false);
+            // Refresh user data or show success message
+            fetchUserStats();
+          }}
+        />
+      )}
 
     </div>
   );

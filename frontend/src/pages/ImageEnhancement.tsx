@@ -5,10 +5,12 @@ import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 
 const ImageEnhancement: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -32,7 +34,7 @@ const ImageEnhancement: React.FC = () => {
     }
 
     if (files.length > maxFileCount) {
-      alert(`⚠️ Maximum ${maxFileCount} files allowed. Please select fewer files.`);
+      showWarning(`Maximum ${maxFileCount} files allowed. Please select fewer files.`);
       event.target.value = '';
       return;
     }
@@ -43,13 +45,13 @@ const ImageEnhancement: React.FC = () => {
     for (const file of files) {
 
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         event.target.value = '';
         return;
       }
 
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         event.target.value = '';
         return;
       }
@@ -63,7 +65,7 @@ const ImageEnhancement: React.FC = () => {
       setFilePreviews(previews);
     } catch (error) {
       console.error('Error creating file previews:', error);
-      alert('Error processing files. Please try again.');
+      showError('Error processing files. Please try again.');
     }
   }, [maxFileCount, maxFileSize]);
 
@@ -76,7 +78,7 @@ const ImageEnhancement: React.FC = () => {
         setReferencePreview(preview);
       } catch (error) {
         console.error('Error creating reference file preview:', error);
-        alert('Error processing reference file. Please try again.');
+        showError('Error processing reference file. Please try again.');
       }
     }
   };
@@ -101,7 +103,7 @@ const ImageEnhancement: React.FC = () => {
     if (files.length === 0) return;
 
     if (files.length > maxFileCount) {
-      alert(`⚠️ Maximum ${maxFileCount} files allowed. Please select fewer files.`);
+      showWarning(`Maximum ${maxFileCount} files allowed. Please select fewer files.`);
       return;
     }
 
@@ -109,12 +111,12 @@ const ImageEnhancement: React.FC = () => {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
     const validFiles = files.filter(file => {
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return false;
       }
 
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return false;
       }
 
@@ -138,7 +140,7 @@ const ImageEnhancement: React.FC = () => {
 
       } catch (error) {
         console.error('Error processing dropped files:', error);
-        alert('Error processing dropped files. Please try again.');
+        showError('Error processing dropped files. Please try again.');
       }
     }
   }, [maxFileCount, maxFileSize]);
@@ -151,7 +153,7 @@ const ImageEnhancement: React.FC = () => {
     event.preventDefault();
 
     if (selectedFiles.length === 0) {
-      alert('Please select at least one image to enhance.');
+      showWarning('Please select at least one image to enhance.');
       return;
     }
 
@@ -228,11 +230,11 @@ const ImageEnhancement: React.FC = () => {
         }
         
       } else {
-        alert(`Enhancement failed: ${result.message || result.error}`);
+        showError(`Enhancement failed: ${result.message || result.error}`);
       }
     } catch (error) {
       console.error('Enhancement error:', error);
-      alert('Enhancement failed. Please try again.');
+      showError('Enhancement failed. Please try again.');
     } finally {
       setIsProcessing(false);
     }

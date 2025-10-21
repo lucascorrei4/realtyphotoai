@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, 
@@ -64,6 +65,7 @@ interface PlanRule {
 
 const AdminDashboard: React.FC = () => {
   const { user, signOut } = useAuth();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'dashboard'>('overview');
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
@@ -270,13 +272,13 @@ const AdminDashboard: React.FC = () => {
 
       if (response.ok) {
         await fetchPlans();
-        alert('Stripe plans synced successfully!');
+        showSuccess('Stripe plans synced successfully!');
       } else {
-        alert('Failed to sync Stripe plans');
+        showError('Failed to sync Stripe plans');
       }
     } catch (error) {
       console.error('Error syncing Stripe plans:', error);
-      alert('Error syncing Stripe plans');
+      showError('Error syncing Stripe plans');
     }
   };
 
@@ -296,13 +298,13 @@ const AdminDashboard: React.FC = () => {
 
       if (response.ok) {
         await fetchPlans();
-        alert('Plan deleted successfully!');
+        showSuccess('Plan deleted successfully!');
       } else {
-        alert('Failed to delete plan');
+        showError('Failed to delete plan');
       }
     } catch (error) {
       console.error('Error deleting plan:', error);
-      alert('Error deleting plan');
+      showError('Error deleting plan');
     }
   };
 

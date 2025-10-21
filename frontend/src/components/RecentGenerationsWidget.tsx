@@ -691,14 +691,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   {/* Image Comparison */}
                   {renderImageComparison(generation)}
 
-                  {/* Error Message */}
-                  {generation.error_message && (
-                    <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-                      <p className="text-sm text-red-800 dark:text-red-200">
-                        Error: {generation.error_message}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             ))}

@@ -2,6 +2,7 @@ import express from 'express';
 import Stripe from 'stripe';
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
+import stripeCheckoutService from '../services/stripeCheckoutService';
 
 const router = express.Router();
 
@@ -64,6 +65,10 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req, re
       
       case 'invoice.payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.Invoice);
+        break;
+      
+      case 'checkout.session.completed':
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
         break;
       
       default:
@@ -232,7 +237,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 /**
- * Handle successful payment
+ * Handle successful payment and process split payments
  */
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
   try {
@@ -245,6 +250,15 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
           updated_at: new Date().toISOString(),
         })
         .eq('stripe_subscription_id', invoice.subscription as string);
+
+      // Process split payment for partners
+      try {
+        await stripeCheckoutService.processSplitPayment(invoice.subscription as string);
+        logger.info(`Split payment processed for subscription: ${invoice.subscription}`);
+      } catch (splitError) {
+        logger.error('Error processing split payment:', splitError as Error);
+        // Don't fail the webhook if split payment fails
+      }
     }
 
     logger.info(`Payment succeeded for invoice: ${invoice.id}`);
@@ -272,6 +286,36 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     logger.info(`Payment failed for invoice: ${invoice.id}`);
   } catch (error) {
     logger.error('Error handling payment failure:', error as Error);
+  }
+}
+
+/**
+ * Handle checkout session completion
+ */
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  try {
+    const userId = session.metadata?.user_id;
+    const planId = session.metadata?.plan_id;
+    const billingCycle = session.metadata?.billing_cycle;
+
+    if (!userId || !planId) {
+      logger.error('Missing metadata in checkout session:', { userId, planId });
+      return;
+    }
+
+    // Log successful checkout
+    await supabase
+      .from('stripe_webhook_events')
+      .insert({
+        stripe_event_id: session.id,
+        event_type: 'checkout.session.completed',
+        event_data: session,
+        processed: true,
+      });
+
+    logger.info(`Checkout completed for user ${userId}, plan ${planId}, billing ${billingCycle}`);
+  } catch (error) {
+    logger.error('Error handling checkout completion:', error as Error);
   }
 }
 

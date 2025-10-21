@@ -5,9 +5,11 @@ import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
 
 const AddFurnitures: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [furnitureImage, setFurnitureImage] = useState<File | null>(null);
   const [roomPreview, setRoomPreview] = useState<string | null>(null);
@@ -27,11 +29,11 @@ const AddFurnitures: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return;
       }
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return;
       }
       
@@ -41,20 +43,20 @@ const AddFurnitures: React.FC = () => {
         setRoomPreview(preview);
       } catch (error) {
         console.error('Error creating room file preview:', error);
-        alert('Error processing room file. Please try again.');
+        showError('Error processing room file. Please try again.');
       }
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   const handleFurnitureFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       if (!validTypes.includes(file.type)) {
-        alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
         return;
       }
       if (file.size > maxFileSize) {
-        alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
         return;
       }
       
@@ -64,10 +66,10 @@ const AddFurnitures: React.FC = () => {
         setFurniturePreview(preview);
       } catch (error) {
         console.error('Error creating furniture file preview:', error);
-        alert('Error processing furniture file. Please try again.');
+        showError('Error processing furniture file. Please try again.');
       }
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent, target: 'room' | 'furniture') => {
@@ -93,12 +95,12 @@ const AddFurnitures: React.FC = () => {
     const file = files[0];
     
     if (!validTypes.includes(file.type)) {
-      alert(`⚠️ Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
       return;
     }
 
     if (file.size > maxFileSize) {
-      alert(`⚠️ File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
       return;
     }
 
@@ -126,9 +128,9 @@ const AddFurnitures: React.FC = () => {
       }
     } catch (error) {
       console.error('Error processing dropped file:', error);
-      alert('Error processing dropped file. Please try again.');
+      showError('Error processing dropped file. Please try again.');
     }
-  }, [maxFileSize, validTypes]);
+  }, [maxFileSize, validTypes, showWarning, showError]);
 
   const openRoomFileDialog = () => {
     roomInputRef.current?.click();
@@ -158,7 +160,7 @@ const AddFurnitures: React.FC = () => {
     event.preventDefault();
 
     if (!roomImage) {
-      alert('Please select a room image.');
+      showWarning('Please select a room image.');
       return;
     }
 
@@ -200,13 +202,13 @@ const AddFurnitures: React.FC = () => {
           furnitureInputRef.current.value = '';
         }
         
-        alert('Furniture added successfully! Check the Recent Generations widget below.');
+        showSuccess('Furniture added successfully! Check the Recent Generations widget below.');
       } else {
-        alert(`Failed to add furniture: ${result.message || result.error}`);
+        showError(`Failed to add furniture: ${result.message || result.error}`);
       }
     } catch (error) {
       console.error('Error adding furniture:', error);
-      alert('Failed to add furniture. Please try again.');
+      showError('Failed to add furniture. Please try again.');
     } finally {
       setIsProcessing(false);
     }
