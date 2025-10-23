@@ -326,7 +326,7 @@ const AddFurnitures: React.FC = () => {
           {/* Furniture Image Upload (Optional) */}
           <div className="form-group">
             <label htmlFor="furnitureImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              🪑 Specific Furniture Image (Optional)
+              🪑 Furniture Style Reference (Optional)
             </label>
 
             {/* Hidden file input */}
@@ -369,10 +369,10 @@ const AddFurnitures: React.FC = () => {
                     {isDragOver && dragTarget === 'furniture' ? 'Drop furniture image here' : 'Click to select or drag & drop specific furniture'}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Upload a specific furniture item you want to add to the room (optional)
+                    Upload a furniture image to use as style reference (optional)
                   </p>
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                    If not provided, AI will add modern furniture based on the prompt
+                    AI will create similar furniture matching the style, not copy the exact item
                   </p>
                 </div>
 
@@ -396,7 +396,7 @@ const AddFurnitures: React.FC = () => {
           {furnitureImage && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Furniture Image Preview
+                Furniture Style Reference Preview
               </h3>
               <div className="relative inline-block">
                 <img

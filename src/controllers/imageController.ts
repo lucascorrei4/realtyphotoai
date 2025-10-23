@@ -5,6 +5,7 @@ import { ReplicateService } from '../services/replicateService';
 import { InteriorDesignService } from '../services/interiorDesignService';
 import { AddFurnitureService } from '../services/addFurnitureService';
 import { ExteriorDesignService } from '../services/exteriorDesignService';
+import { HybridStorageService } from '../services/hybridStorageService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -17,6 +18,7 @@ export class ImageController {
   private addFurnitureService: AddFurnitureService;
   private exteriorDesignService: ExteriorDesignService;
   private userStatsService: UserStatisticsService;
+  private storageService: HybridStorageService;
 
   constructor() {
     this.replicateService = new ReplicateService();
@@ -24,6 +26,19 @@ export class ImageController {
     this.addFurnitureService = new AddFurnitureService();
     this.exteriorDesignService = new ExteriorDesignService();
     this.userStatsService = new UserStatisticsService();
+    this.storageService = new HybridStorageService();
+  }
+
+  /**
+   * Helper method to clean up temp files including validation temp files (disk storage only)
+   */
+  private async cleanupTempFiles(req: AuthenticatedRequest, tempFiles: string[]): Promise<void> {
+    const allTempFiles = [...tempFiles];
+    // Only add validation temp file if it exists (disk storage mode)
+    if ((req as any).validationTempFile) {
+      allTempFiles.push((req as any).validationTempFile);
+    }
+    await FileUtils.cleanupTempFiles(allTempFiles);
   }
 
   /**
@@ -200,12 +215,50 @@ export class ImageController {
         userId,
       });
 
-      // Create generation record in database
+      // Upload original image to hybrid storage first
+      let processImageOriginalStorageResult;
+      let processImageProcessingImagePath = req.file.path; // Default to disk path
+      
+      if (req.file.buffer) {
+        // File is in memory (R2 mode)
+        processImageOriginalStorageResult = await this.storageService.uploadBuffer(
+          req.file.buffer,
+          this.storageService.generateKey(req.file.originalname),
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        // Save buffer to temporary file for processing
+        const tempFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
+        const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+        await FileUtils.ensureDirectoryExists(config.tempDir);
+        await require('fs/promises').writeFile(tempPath, req.file.buffer);
+        processImageProcessingImagePath = tempPath;
+        tempFiles.push(tempPath);
+      } else {
+        // File is on disk (local mode)
+        processImageOriginalStorageResult = await this.storageService.uploadFile(
+          req.file.path,
+          undefined, // Let storage service generate key
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Create generation record in database with actual image URL
       generationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'interior_design', // This method is used for general decoration, so we'll use interior_design
         status: 'processing',
-        input_image_url: `/uploads/${req.file.filename}`,
+        input_image_url: processImageOriginalStorageResult.url,
         prompt: req.body?.prompt || 'General AI decoration'
       });
 
@@ -224,11 +277,13 @@ export class ImageController {
       if (req.body?.controlNetStrength) processRequest.controlNetStrength = parseFloat(req.body.controlNetStrength);
       if (req.body?.qualityPreset) processRequest.qualityPreset = req.body.qualityPreset;
 
+      // Duplicate section removed - upload logic is handled above
+
       // Resize image if needed to optimize processing
       const resizedImagePath = path.join(config.tempDir, `resized_${req.file.filename}`);
       
       try {
-        await FileUtils.resizeImageIfNeeded(req.file.path, resizedImagePath, 1024, 1024);
+        await FileUtils.resizeImageIfNeeded(processImageProcessingImagePath, resizedImagePath, 1024, 1024);
         tempFiles.push(resizedImagePath);
       } catch (resizeError) {
         const resizeErr = resizeError as Error;
@@ -282,11 +337,16 @@ export class ImageController {
         processRequest
       );
 
-      // Download and save processed image
-      const processedImagePath = await this.replicateService.downloadAndSaveImage(
+      // Download and save processed image to hybrid storage
+      const storageResult = await this.replicateService.downloadAndSaveToHybridStorage(
         outputUrl,
-        config.outputDir,
-        `processed_${req.file.filename}`
+        `processed_${req.file.filename}`,
+        {
+          requestId: metadata.requestId,
+          userId: req.user?.id || 'anonymous',
+          generationId,
+          originalFile: req.file.filename,
+        }
       );
 
       const processingTime = Date.now() - startTime;
@@ -295,35 +355,34 @@ export class ImageController {
       await this.userStatsService.updateGenerationStatus(
         generationId,
         'completed',
-        `/outputs/${path.basename(processedImagePath)}`,
+        storageResult.url,
         undefined,
         processingTime
       );
       
       logger.info('Image processing completed successfully', {
         originalFile: req.file.filename,
-        processedFile: path.basename(processedImagePath),
+        processedFile: storageResult.storageKey,
         processingTime,
         requestId: metadata.requestId,
         generationId,
+        storageType: storageResult.storageType,
       });
-
-      // Get file info for response (not currently used but available for future enhancements)
 
       const response: ProcessImageResponse = {
         success: true,
         message: 'Image processed successfully',
-        originalImage: `/uploads/${req.file.filename}`,
-        processedImage: `/outputs/${path.basename(processedImagePath)}`,
+        originalImage: processImageOriginalStorageResult.url,
+        processedImage: storageResult.url,
         processingTime,
         timestamp: new Date().toISOString(),
       };
 
       res.json(response);
 
-      // Clean up temp files (keep original and processed)
+      // Clean up temp files (keep original and processed) including validation temp file
       const filesToCleanup = tempFiles.filter(f => f !== req.file!.path);
-      await FileUtils.cleanupTempFiles(filesToCleanup);
+      await this.cleanupTempFiles(req, filesToCleanup);
 
     } catch (error) {
       const processingTime = Date.now() - startTime;
@@ -351,7 +410,7 @@ export class ImageController {
       });
 
       // Clean up all temp files on error
-      await FileUtils.cleanupTempFiles(tempFiles);
+      await this.cleanupTempFiles(req, tempFiles);
 
       res.status(500).json({
         success: false,
@@ -413,12 +472,50 @@ export class ImageController {
         userId,
       });
 
-      // Create generation record in database
+      // Upload original image to hybrid storage first
+      let interiorDesignOriginalStorageResult;
+      let interiorDesignProcessingImagePath = req.file.path; // Default to disk path
+      
+      if (req.file.buffer) {
+        // File is in memory (R2 mode)
+        interiorDesignOriginalStorageResult = await this.storageService.uploadBuffer(
+          req.file.buffer,
+          this.storageService.generateKey(req.file.originalname),
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        // Save buffer to temporary file for processing
+        const tempFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
+        const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+        await FileUtils.ensureDirectoryExists(config.tempDir);
+        await require('fs/promises').writeFile(tempPath, req.file.buffer);
+        interiorDesignProcessingImagePath = tempPath;
+        tempFiles.push(tempPath);
+      } else {
+        // File is on disk (local mode)
+        interiorDesignOriginalStorageResult = await this.storageService.uploadFile(
+          req.file.path,
+          undefined, // Let storage service generate key
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Create generation record in database with actual image URL
       generationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'interior_design',
         status: 'processing',
-        input_image_url: `/uploads/${req.file.filename}`,
+        input_image_url: interiorDesignOriginalStorageResult.url,
         prompt: req.body.prompt
       });
 
@@ -442,7 +539,7 @@ export class ImageController {
       let finalImagePath = resizedImagePath;
       
       try {
-        await FileUtils.resizeImageIfNeeded(req.file.path, resizedImagePath, 1024, 1024);
+        await FileUtils.resizeImageIfNeeded(interiorDesignProcessingImagePath, resizedImagePath, 1024, 1024);
         tempFiles.push(resizedImagePath);
       } catch (resizeError) {
         const resizeErr = resizeError as Error;
@@ -462,7 +559,7 @@ export class ImageController {
               errorMessage.includes('compression format')) {
             
             // Clean up any temp files
-            await FileUtils.cleanupTempFiles(tempFiles);
+            await this.cleanupTempFiles(req, tempFiles);
             
             // Set response and return early
             res.status(400).json({
@@ -483,6 +580,15 @@ export class ImageController {
         finalImagePath = req.file.path;
       }
 
+      // Upload original image to hybrid storage first
+      // let interiorOriginalStorageResult;
+      if (req.file.buffer) {
+        // File is in memory (R2 mode)
+        // Upload logic handled above
+      } else {
+        // Upload logic handled above
+      }
+
       // Process image with Interior Design service
       try {
         const { outputUrl, metadata } = await this.interiorDesignService.generateInteriorDesign(
@@ -492,11 +598,18 @@ export class ImageController {
           req.body.style || 'realistic'
         );
 
-        // Download and save processed image
-        const processedImagePath = await this.replicateService.downloadAndSaveImage(
+        // Download and save processed image to hybrid storage
+        const storageResult = await this.replicateService.downloadAndSaveToHybridStorage(
           outputUrl,
-          config.outputDir,
-          `interior_design_${req.file.filename}`
+          `interior_design_${req.file.filename}`,
+          {
+            requestId: metadata.requestId,
+            userId: req.user?.id || 'anonymous',
+            generationId,
+            originalFile: req.file.filename,
+            designType: req.body.designType,
+            prompt: req.body.prompt,
+          }
         );
 
         const processingTime = Date.now() - startTime;
@@ -505,25 +618,26 @@ export class ImageController {
         await this.userStatsService.updateGenerationStatus(
           generationId,
           'completed',
-          `/outputs/${path.basename(processedImagePath)}`,
+          storageResult.url,
           undefined,
           processingTime
         );
         
         logger.info('Interior design processing completed successfully', {
           originalFile: req.file.filename,
-          processedFile: path.basename(processedImagePath),
+          processedFile: storageResult.storageKey,
           processingTime,
           requestId: metadata.requestId,
           prompt: req.body.prompt,
           generationId,
+          storageType: storageResult.storageType,
         });
 
         const response: ProcessImageResponse = {
           success: true,
           message: 'Interior design processing completed successfully',
-          originalImage: `/uploads/${req.file.filename}`,
-          processedImage: `/outputs/${path.basename(processedImagePath)}`,
+          originalImage: interiorDesignOriginalStorageResult.url,
+          processedImage: storageResult.url,
           processingTime,
           timestamp: new Date().toISOString(),
         };
@@ -555,7 +669,7 @@ export class ImageController {
         });
 
         // Clean up all temp files on error
-        await FileUtils.cleanupTempFiles(tempFiles);
+        await this.cleanupTempFiles(req, tempFiles);
 
         res.status(500).json({
           success: false,
@@ -576,7 +690,7 @@ export class ImageController {
       });
 
       // Clean up all temp files on error
-      await FileUtils.cleanupTempFiles(tempFiles);
+      await this.cleanupTempFiles(req, tempFiles);
 
       res.status(500).json({
         success: false,
@@ -602,23 +716,53 @@ export class ImageController {
         return;
       }
 
-      const fileInfo = await FileUtils.getFileInfo(req.file.path);
+      // Upload to hybrid storage (R2 or local)
+      let storageResult;
+      if (req.file.buffer) {
+        // File is in memory (R2 mode)
+        storageResult = await this.storageService.uploadBuffer(
+          req.file.buffer,
+          this.storageService.generateKey(req.file.originalname),
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+          }
+        );
+      } else {
+        // File is on disk (local mode)
+        storageResult = await this.storageService.uploadFile(
+          req.file.path,
+          undefined, // Let storage service generate key
+          req.file.mimetype,
+          {
+            originalName: req.file.originalname,
+            uploadedAt: new Date().toISOString(),
+          }
+        );
+      }
+
+      const fileInfo = await FileUtils.getFileInfo(req.file.path || 'memory');
       
       logger.info('File uploaded successfully', {
         filename: req.file.filename,
         originalName: req.file.originalname,
         size: req.file.size,
+        storageType: storageResult.storageType,
+        storageKey: storageResult.key,
       });
 
-              res.json({
-          success: true,
-          message: 'File uploaded successfully',
-          data: {
-            uploadPath: `/uploads/${req.file.filename}`,
-            ...fileInfo,
-          },
-          timestamp: new Date().toISOString(),
-        } as ApiResponse);
+      res.json({
+        success: true,
+        message: 'File uploaded successfully',
+        data: {
+          uploadPath: storageResult.url,
+          storageKey: storageResult.key,
+          storageType: storageResult.storageType,
+          ...fileInfo,
+        },
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
       
     } catch (error) {
       logger.error('File upload failed', { error });
@@ -744,18 +888,56 @@ export class ImageController {
         try {
           logger.info(`🔄 Processing image ${index + 1}/${imageFiles.length}: ${imageFile.filename}`);
           
-          // Create generation record in database
+          // Upload original image to hybrid storage first
+          let imageStorageResult;
+          let imageProcessingPath = imageFile.path; // Default to disk path
+          
+          if (imageFile.buffer) {
+            // File is in memory (R2 mode)
+            imageStorageResult = await this.storageService.uploadBuffer(
+              imageFile.buffer,
+              this.storageService.generateKey(imageFile.originalname),
+              imageFile.mimetype,
+              {
+                originalName: imageFile.originalname,
+                uploadedAt: new Date().toISOString(),
+                userId: req.user?.id || 'anonymous',
+              }
+            );
+            
+            // Save buffer to temporary file for processing
+            const tempFilename = imageFile.filename || imageFile.originalname || `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+            const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+            await FileUtils.ensureDirectoryExists(config.tempDir);
+            await require('fs/promises').writeFile(tempPath, imageFile.buffer);
+            imageProcessingPath = tempPath;
+            tempFiles.push(tempPath);
+          } else {
+            // File is on disk (local mode)
+            imageStorageResult = await this.storageService.uploadFile(
+              imageFile.path,
+              undefined, // Let storage service generate key
+              imageFile.mimetype,
+              {
+                originalName: imageFile.originalname,
+                uploadedAt: new Date().toISOString(),
+                userId: req.user?.id || 'anonymous',
+              }
+            );
+          }
+          
+          // Create generation record in database with actual image URL
           const generationId = await this.userStatsService.createGenerationRecord({
             user_id: userId,
             model_type: 'image_enhancement',
             status: 'processing',
-            input_image_url: `/uploads/${imageFile.filename}`,
+            input_image_url: imageStorageResult.url,
             prompt: `Enhancement: ${req.body.enhancementType || 'luminosity'} with ${req.body.enhancementStrength || 'moderate'} strength`
           });
           
           // Process image enhancement using Replicate
           const enhancedImageUrl = await this.replicateService.enhanceImage(
-            imageFile.path,
+            imageProcessingPath,
             referenceFile?.path || null,
             req.body.enhancementType || 'luminosity',
             req.body.enhancementStrength || 'moderate'
@@ -777,7 +959,7 @@ export class ImageController {
           );
 
           return {
-            originalImage: `/uploads/${imageFile.filename}`,
+            originalImage: imageStorageResult.url,
             enhancedImage: `/outputs/${path.basename(enhancedImagePath)}`,
             filename: imageFile.filename,
             generationId
@@ -862,7 +1044,7 @@ export class ImageController {
       });
 
       // Clean up temp files on error
-      await FileUtils.cleanupTempFiles(tempFiles);
+      await this.cleanupTempFiles(req, tempFiles);
 
       res.status(500).json({
         success: false,
@@ -978,18 +1160,56 @@ export class ImageController {
         userId,
       });
 
-      // Create generation record in database
+      // Upload original image to hybrid storage first
+      let imageStorageResult;
+      let imageProcessingPath = imageFile.path; // Default to disk path
+      
+      if (imageFile.buffer) {
+        // File is in memory (R2 mode)
+        imageStorageResult = await this.storageService.uploadBuffer(
+          imageFile.buffer,
+          this.storageService.generateKey(imageFile.originalname),
+          imageFile.mimetype,
+          {
+            originalName: imageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        // Save buffer to temporary file for processing
+        const tempFilename = imageFile.filename || imageFile.originalname || `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+        const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+        await FileUtils.ensureDirectoryExists(config.tempDir);
+        await require('fs/promises').writeFile(tempPath, imageFile.buffer);
+        imageProcessingPath = tempPath;
+        tempFiles.push(tempPath);
+      } else {
+        // File is on disk (local mode)
+        imageStorageResult = await this.storageService.uploadFile(
+          imageFile.path,
+          undefined, // Let storage service generate key
+          imageFile.mimetype,
+          {
+            originalName: imageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Create generation record in database with actual image URL
       generationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'element_replacement',
         status: 'processing',
-        input_image_url: `/uploads/${imageFile.filename}`,
+        input_image_url: imageStorageResult.url,
         prompt: req.body.prompt
       });
 
       // Process element replacement using Replicate
       const replacedImageUrl = await this.replicateService.replaceElements(
-        imageFile.path,
+        imageProcessingPath,
         req.body.prompt,
         req.body.outputFormat || 'jpg'
       );
@@ -1090,7 +1310,7 @@ export class ImageController {
       });
 
       // Clean up temp files on error
-      await FileUtils.cleanupTempFiles(tempFiles);
+      await this.cleanupTempFiles(req, tempFiles);
 
       res.status(500).json({
         success: false,
@@ -1168,19 +1388,97 @@ export class ImageController {
         userId
       });
 
-      // Create generation record in database
+      // Upload original room image to hybrid storage first
+      let roomImageStorageResult;
+      let roomImageProcessingPath = roomImageFile.path; // Default to disk path
+      
+      if (roomImageFile.buffer) {
+        // File is in memory (R2 mode)
+        roomImageStorageResult = await this.storageService.uploadBuffer(
+          roomImageFile.buffer,
+          this.storageService.generateKey(roomImageFile.originalname),
+          roomImageFile.mimetype,
+          {
+            originalName: roomImageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        // Save buffer to temporary file for processing
+        const tempFilename = roomImageFile.filename || roomImageFile.originalname || `temp_${Date.now()}.jpg`;
+        const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+        await FileUtils.ensureDirectoryExists(config.tempDir);
+        await require('fs/promises').writeFile(tempPath, roomImageFile.buffer);
+        roomImageProcessingPath = tempPath;
+        tempFiles.push(tempPath);
+      } else {
+        // File is on disk (local mode)
+        roomImageStorageResult = await this.storageService.uploadFile(
+          roomImageFile.path,
+          undefined, // Let storage service generate key
+          roomImageFile.mimetype,
+          {
+            originalName: roomImageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Upload furniture image to hybrid storage if provided
+      let furnitureImageStorageResult = null;
+      let furnitureImageProcessingPath = furnitureImageFile?.path;
+      
+      if (furnitureImageFile) {
+        if (furnitureImageFile.buffer) {
+          // File is in memory (R2 mode)
+          furnitureImageStorageResult = await this.storageService.uploadBuffer(
+            furnitureImageFile.buffer,
+            this.storageService.generateKey(furnitureImageFile.originalname),
+            furnitureImageFile.mimetype,
+            {
+              originalName: furnitureImageFile.originalname,
+              uploadedAt: new Date().toISOString(),
+              userId: req.user?.id || 'anonymous',
+            }
+          );
+          
+          // Save buffer to temporary file for processing
+          const tempFilename = furnitureImageFile.filename || furnitureImageFile.originalname || `temp_${Date.now()}.jpg`;
+          const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
+          await FileUtils.ensureDirectoryExists(config.tempDir);
+          await require('fs/promises').writeFile(tempPath, furnitureImageFile.buffer);
+          furnitureImageProcessingPath = tempPath;
+          tempFiles.push(tempPath);
+        } else {
+          // File is on disk (local mode)
+          furnitureImageStorageResult = await this.storageService.uploadFile(
+            furnitureImageFile.path,
+            undefined, // Let storage service generate key
+            furnitureImageFile.mimetype,
+            {
+              originalName: furnitureImageFile.originalname,
+              uploadedAt: new Date().toISOString(),
+              userId: req.user?.id || 'anonymous',
+            }
+          );
+        }
+      }
+
+      // Create generation record in database with actual image URL
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'add_furnitures',
         status: 'processing',
-        input_image_url: `/uploads/${roomImageFile.filename}`,
+        input_image_url: roomImageStorageResult.url,
         prompt: req.body.prompt
       });
 
       // Process the furniture addition
       const result = await this.addFurnitureService.addFurniture(
-        roomImageFile.path,
-        furnitureImageFile?.path || null,
+        roomImageProcessingPath,
+        furnitureImageProcessingPath || null,
         req.body.prompt,
         req.body.furnitureType || 'general'
       );
@@ -1201,8 +1499,8 @@ export class ImageController {
         const finalImagePath = finalOutputPath;
         
         // Generate public URLs
-        const roomImageUrl = `/uploads/${roomImageFile.filename}`;
-        const furnitureImageUrl = furnitureImageFile ? `/uploads/${furnitureImageFile.filename}` : null;
+        const roomImageUrl = roomImageStorageResult.url;
+        const furnitureImageUrl = furnitureImageStorageResult?.url || null;
         const resultImageUrl = `/outputs/${outputFilename}`;
 
         const processingTime = Date.now() - startTime;
@@ -1347,19 +1645,52 @@ export class ImageController {
         userId
       });
 
-      // Create generation record in database
+      // Upload original building image to hybrid storage first
+      let buildingImageStorageResult;
+      let buildingImageProcessingPath: string | Buffer = buildingImageFile.path; // Default to disk path
+      
+      if (buildingImageFile.buffer) {
+        // File is in memory (R2 mode)
+        buildingImageStorageResult = await this.storageService.uploadBuffer(
+          buildingImageFile.buffer,
+          this.storageService.generateKey(buildingImageFile.originalname),
+          buildingImageFile.mimetype,
+          {
+            originalName: buildingImageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        // Use buffer directly for processing - no temp file needed
+        buildingImageProcessingPath = buildingImageFile.buffer;
+      } else {
+        // File is on disk (local mode)
+        buildingImageStorageResult = await this.storageService.uploadFile(
+          buildingImageFile.path,
+          undefined, // Let storage service generate key
+          buildingImageFile.mimetype,
+          {
+            originalName: buildingImageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Create generation record in database with actual image URL
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'exterior_design',
         status: 'processing',
-        input_image_url: `/uploads/${buildingImageFile.filename}`,
+        input_image_url: buildingImageStorageResult.url,
         prompt: req.body.designPrompt
       });
       generationId = dbGenerationId;
 
       // Process the exterior design
       const result = await this.exteriorDesignService.generateExteriorDesign(
-        buildingImageFile.path,
+        buildingImageProcessingPath,
         req.body.designPrompt,
         req.body.designType || 'modern',
         req.body.style || 'architectural'

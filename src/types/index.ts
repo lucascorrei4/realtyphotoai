@@ -57,6 +57,13 @@ export interface AppConfig {
   tempDir: string;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  // R2 Configuration
+  r2AccountId: string;
+  r2AccessKeyId: string;
+  r2SecretAccessKey: string;
+  r2BucketName: string;
+  r2PublicUrl: string;
+  useR2Storage: boolean;
 }
 
 export interface ReplicateInput {

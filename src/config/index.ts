@@ -46,6 +46,13 @@ class ConfigManager {
       tempDir: process.env.TEMP_DIR || 'temp',
       rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
       rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+      // R2 Configuration
+      r2AccountId: process.env.R2_ACCOUNT_ID || '',
+      r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+      r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+      r2BucketName: process.env.R2_BUCKET_NAME || 'realvisionai',
+      r2PublicUrl: process.env.R2_PUBLIC_URL || '',
+      useR2Storage: process.env.USE_R2_STORAGE === 'true',
     };
   }
 

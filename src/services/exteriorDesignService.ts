@@ -1,7 +1,6 @@
 import Replicate from 'replicate';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { FileUtils } from '../utils/fileUtils';
 import { v4 as uuidv4 } from 'uuid';
 
 export class ExteriorDesignService {
@@ -20,7 +19,7 @@ export class ExteriorDesignService {
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
   public async generateExteriorDesign(
-    buildingImagePath: string,
+    buildingImagePath: string | Buffer,
     designPrompt: string,
     designType: 'modern' | 'traditional' | 'minimalist' | 'industrial' | 'custom' = 'modern',
     style: 'isometric' | 'realistic' | 'architectural' = 'architectural'
@@ -38,25 +37,44 @@ export class ExteriorDesignService {
         model: this.modelId
       });
 
-      // Validate building image file exists
-      const fs = require('fs');
-      if (!fs.existsSync(buildingImagePath)) {
-        throw new Error(`Building image file not found: ${buildingImagePath}`);
-      }
+      // Handle both buffer and file path inputs
+      let buildingImageBuffer: Buffer;
+      let fileSize: number;
       
-      const buildingImageStats = fs.statSync(buildingImagePath);
-      logger.info('📁 Building image file details', {
-        requestId,
-        fileSize: buildingImageStats.size,
-        fileExists: true,
-        buildingImagePath
-      });
+      if (Buffer.isBuffer(buildingImagePath)) {
+        // Input is already a buffer
+        buildingImageBuffer = buildingImagePath;
+        fileSize = buildingImageBuffer.length;
+        logger.info('📁 Building image buffer details', {
+          requestId,
+          fileSize,
+          isBuffer: true
+        });
+      } else {
+        // Input is a file path
+        const fs = require('fs');
+        if (!fs.existsSync(buildingImagePath)) {
+          throw new Error(`Building image file not found: ${buildingImagePath}`);
+        }
+        
+        const buildingImageStats = fs.statSync(buildingImagePath);
+        fileSize = buildingImageStats.size;
+        logger.info('📁 Building image file details', {
+          requestId,
+          fileSize,
+          fileExists: true,
+          buildingImagePath
+        });
+        
+        // Read file into buffer
+        buildingImageBuffer = fs.readFileSync(buildingImagePath);
+      }
 
       // Convert image to base64
       logger.info('🔄 Converting building image to base64', { requestId });
       
       try {
-        const buildingImageBase64 = await FileUtils.imageToBase64(buildingImagePath);
+        const buildingImageBase64 = buildingImageBuffer.toString('base64');
         logger.info('✅ Building image base64 conversion completed', { 
           requestId, 
           buildingImageBase64Length: buildingImageBase64.length 

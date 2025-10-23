@@ -10,11 +10,13 @@ import { PromptingUtils } from '../utils/promptingUtils';
 import { InteriorDesignService } from './interiorDesignService';
 import { ElementReplacementService } from './elementReplacementService';
 import { ImageEnhancementService } from './imageEnhancementService';
+import { HybridStorageService } from './hybridStorageService';
 
 export class ReplicateService {
   private replicate: Replicate;
   private readonly defaultModel: string;
   private readonly qualityPresets: Record<string, QualityPreset>;
+  private readonly storageService: HybridStorageService;
   
   // Specialized services for each model type
   private readonly interiorDesignService: InteriorDesignService;
@@ -27,6 +29,7 @@ export class ReplicateService {
     });
     this.defaultModel = config.stableDiffusionModel;
     this.qualityPresets = this.initializeQualityPresets();
+    this.storageService = new HybridStorageService();
     
     // Initialize specialized services
     this.interiorDesignService = new InteriorDesignService();
@@ -401,6 +404,65 @@ export class ReplicateService {
         imageUrl 
       });
       throw new Error(`Failed to download image: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Download processed image from URL and save to hybrid storage (R2 or local)
+   */
+  public async downloadAndSaveToHybridStorage(
+    imageUrl: string,
+    filename?: string,
+    metadata?: Record<string, string>
+  ): Promise<{ storageKey: string; url: string; storageType: 'local' | 'r2' }> {
+    try {
+      const finalFilename = filename || `processed_${uuidv4()}.png`;
+      
+      logger.info('Downloading processed image to hybrid storage', { imageUrl, filename: finalFilename });
+      
+      // Download image using fetch
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download image: ${response.statusText}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      const nodeBuffer = Buffer.from(buffer);
+      
+      // Generate storage key
+      const storageKey = this.storageService.generateProcessedKey(finalFilename);
+      
+      // Upload to hybrid storage
+      const storageResult = await this.storageService.uploadBuffer(
+        nodeBuffer,
+        storageKey,
+        'image/png',
+        {
+          ...metadata,
+          originalUrl: imageUrl,
+          processedAt: new Date().toISOString(),
+        }
+      );
+      
+      logger.info('Image downloaded and saved to hybrid storage successfully', { 
+        storageKey: storageResult.key,
+        url: storageResult.url,
+        storageType: storageResult.storageType,
+        size: storageResult.size
+      });
+      
+      return {
+        storageKey: storageResult.key,
+        url: storageResult.url,
+        storageType: storageResult.storageType,
+      };
+      
+    } catch (error) {
+      logger.error('Failed to download and save image to hybrid storage', { 
+        error: error instanceof Error ? error.message : String(error),
+        imageUrl 
+      });
+      throw new Error(`Failed to download image to hybrid storage: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
