@@ -3,17 +3,16 @@ import { Upload, Sofa } from 'lucide-react';
 import { API_CONFIG } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget } from '../components';
+import { RecentGenerationsWidget, ImagePreview } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
+import { validateImageFile } from '../utils/fileValidation';
 
 const AddFurnitures: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [furnitureImage, setFurnitureImage] = useState<File | null>(null);
-  const [roomPreview, setRoomPreview] = useState<string | null>(null);
-  const [furniturePreview, setFurniturePreview] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('Add modern furniture to this room');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -23,53 +22,30 @@ const AddFurnitures: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
-  const handleRoomFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRoomFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (!validTypes.includes(file.type)) {
-        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      const validation = validateImageFile(file, 10);
+      if (!validation.isValid) {
+        showWarning(validation.error!);
         return;
       }
-      if (file.size > maxFileSize) {
-        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
-        return;
-      }
-      
-      try {
-        const preview = URL.createObjectURL(file);
-        setRoomImage(file);
-        setRoomPreview(preview);
-      } catch (error) {
-        console.error('Error creating room file preview:', error);
-        showError('Error processing room file. Please try again.');
-      }
+      setRoomImage(file);
     }
-  }, [maxFileSize, validTypes, showWarning, showError]);
+  }, [showWarning]);
 
-  const handleFurnitureFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFurnitureFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (!validTypes.includes(file.type)) {
-        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+      const validation = validateImageFile(file, 10);
+      if (!validation.isValid) {
+        showWarning(validation.error!);
         return;
       }
-      if (file.size > maxFileSize) {
-        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
-        return;
-      }
-      
-      try {
-        const preview = URL.createObjectURL(file);
-        setFurnitureImage(file);
-        setFurniturePreview(preview);
-      } catch (error) {
-        console.error('Error creating furniture file preview:', error);
-        showError('Error processing furniture file. Please try again.');
-      }
+      setFurnitureImage(file);
     }
-  }, [maxFileSize, validTypes, showWarning, showError]);
+  }, [showWarning]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent, target: 'room' | 'furniture') => {
@@ -84,7 +60,7 @@ const AddFurnitures: React.FC = () => {
     setDragTarget(null);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, target: 'room' | 'furniture') => {
+  const handleDrop = useCallback(async (e: React.DragEvent, target: 'room' | 'furniture') => {
     e.preventDefault();
     setIsDragOver(false);
     setDragTarget(null);
@@ -94,22 +70,15 @@ const AddFurnitures: React.FC = () => {
 
     const file = files[0];
     
-    if (!validTypes.includes(file.type)) {
-      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
-      return;
-    }
-
-    if (file.size > maxFileSize) {
-      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+    const validation = validateImageFile(file, 10);
+    if (!validation.isValid) {
+      showWarning(validation.error!);
       return;
     }
 
     try {
-      const preview = URL.createObjectURL(file);
-      
       if (target === 'room') {
         setRoomImage(file);
-        setRoomPreview(preview);
         // Update the hidden input
         if (roomInputRef.current) {
           const dataTransfer = new DataTransfer();
@@ -118,7 +87,6 @@ const AddFurnitures: React.FC = () => {
         }
       } else {
         setFurnitureImage(file);
-        setFurniturePreview(preview);
         // Update the hidden input
         if (furnitureInputRef.current) {
           const dataTransfer = new DataTransfer();
@@ -130,7 +98,7 @@ const AddFurnitures: React.FC = () => {
       console.error('Error processing dropped file:', error);
       showError('Error processing dropped file. Please try again.');
     }
-  }, [maxFileSize, validTypes, showWarning, showError]);
+  }, [showWarning, showError]);
 
   const openRoomFileDialog = () => {
     roomInputRef.current?.click();
@@ -142,7 +110,6 @@ const AddFurnitures: React.FC = () => {
 
   const removeRoomFile = () => {
     setRoomImage(null);
-    setRoomPreview(null);
     if (roomInputRef.current) {
       roomInputRef.current.value = '';
     }
@@ -150,11 +117,11 @@ const AddFurnitures: React.FC = () => {
 
   const removeFurnitureFile = () => {
     setFurnitureImage(null);
-    setFurniturePreview(null);
     if (furnitureInputRef.current) {
       furnitureInputRef.current.value = '';
     }
   };
+
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -190,9 +157,7 @@ const AddFurnitures: React.FC = () => {
         
         // Reset form after successful generation
         setRoomImage(null);
-        setRoomPreview(null);
         setFurnitureImage(null);
-        setFurniturePreview(null);
         
         // Clear file inputs
         if (roomInputRef.current) {
@@ -304,19 +269,11 @@ const AddFurnitures: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Room Image Preview
               </h3>
-              <div className="relative inline-block">
-                <img
-                  src={roomPreview || ''}
-                  alt={roomImage.name}
-                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-                />
-                <button
-                  onClick={removeRoomFile}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                >
-                  ×
-                </button>
-              </div>
+              <ImagePreview
+                file={roomImage}
+                onRemove={removeRoomFile}
+                alt={roomImage.name}
+              />
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                 {roomImage.name} ({(roomImage.size / 1024 / 1024).toFixed(1)}MB)
               </p>
@@ -398,19 +355,11 @@ const AddFurnitures: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Furniture Style Reference Preview
               </h3>
-              <div className="relative inline-block">
-                <img
-                  src={furniturePreview || ''}
-                  alt={furnitureImage.name}
-                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-                />
-                <button
-                  onClick={removeFurnitureFile}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                >
-                  ×
-                </button>
-              </div>
+              <ImagePreview
+                file={furnitureImage}
+                onRemove={removeFurnitureFile}
+                alt={furnitureImage.name}
+              />
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                 {furnitureImage.name} ({(furnitureImage.size / 1024 / 1024).toFixed(1)}MB)
               </p>

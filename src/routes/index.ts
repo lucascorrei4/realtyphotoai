@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { ImageController } from '../controllers/imageController';
-import { uploadMiddleware, uploadMultipleMiddleware, handleUploadError, validateUploadedFile } from '../middleware/uploadMiddleware';
+import { uploadMiddleware, uploadMultipleMiddleware, handleUploadError, validateUploadedFile, validateUploadedFiles } from '../middleware/uploadMiddleware';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { config } from '../config';
@@ -93,6 +93,7 @@ router.post('/image-enhancement',
     { name: 'image', maxCount: 20 },
     { name: 'referenceImage', maxCount: 1 }
   ]),
+  validateUploadedFiles,
   handleUploadError,
   asyncHandler(imageController.enhanceImage)
 );
@@ -104,6 +105,7 @@ router.post('/replace-elements',
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 1 }
   ]),
+  validateUploadedFiles,
   handleUploadError,
   asyncHandler(imageController.replaceElements)
 );
@@ -116,6 +118,7 @@ router.post('/add-furnitures',
     { name: 'roomImage', maxCount: 1 },
     { name: 'furnitureImage', maxCount: 1 }
   ]),
+  validateUploadedFiles,
   handleUploadError,
   asyncHandler(imageController.addFurnitures)
 );
@@ -128,6 +131,13 @@ router.post('/exterior-design',
   validateUploadedFile,
   handleUploadError,
   asyncHandler(imageController.exteriorDesign)
+);
+
+// HEIC conversion endpoint for preview
+router.post('/convert-heic', 
+  uploadMiddleware.single('image'),
+  handleUploadError,
+  asyncHandler(imageController.convertHeic)
 );
 
 // Authentication routes

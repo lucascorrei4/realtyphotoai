@@ -19,7 +19,7 @@ export class ElementReplacementService {
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
   public async replaceElements(
-    imagePath: string,
+    imagePath: string | Buffer,
     prompt: string,
     outputFormat: string = 'jpg'
   ): Promise<string> {
@@ -34,14 +34,35 @@ export class ElementReplacementService {
         outputFormat
       });
 
-      // Validate input image exists
-      const fs = require('fs');
-      if (!fs.existsSync(imagePath)) {
-        throw new Error(`Input image file not found: ${imagePath}`);
+      // Handle both buffer and file path inputs
+      let imageBuffer: Buffer;
+      
+      if (Buffer.isBuffer(imagePath)) {
+        // Input is already a buffer
+        imageBuffer = imagePath;
+        logger.info('📁 Image buffer details', {
+          requestId,
+          bufferSize: imageBuffer.length,
+          isBuffer: true
+        });
+      } else {
+        // Input is a file path - validate it exists first
+        const fs = require('fs');
+        if (!fs.existsSync(imagePath)) {
+          throw new Error(`Input image file not found: ${imagePath}`);
+        }
+        
+        logger.info('📁 Image file details', {
+          requestId,
+          imagePath,
+          fileExists: true
+        });
+        
+        // Read file into buffer
+        imageBuffer = fs.readFileSync(imagePath);
       }
-
-      // Convert local file to base64 for Replicate API
-      const imageBuffer = fs.readFileSync(imagePath);
+      
+      // Convert image to base64 for Replicate API
       const base64Image = imageBuffer.toString('base64');
       
       // ⚠️ CRITICAL: This model requires data URL format - DO NOT CHANGE

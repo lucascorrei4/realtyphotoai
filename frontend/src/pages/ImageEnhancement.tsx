@@ -6,15 +6,16 @@ import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
+import { validateImageFiles, validateImageFile } from '../utils/fileValidation';
+import ImagePreview from '../components/ImagePreview';
+import { createImagePreview } from '../utils/imagePreview';
 
 
 const ImageEnhancement: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showWarning } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [filePreviews, setFilePreviews] = useState<string[]>([]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
-  const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [showOriginals, setShowOriginals] = useState(true);
@@ -26,7 +27,7 @@ const ImageEnhancement: React.FC = () => {
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
   const maxFileCount = API_CONFIG.MAX_FILE_COUNT;
 
-  const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
 
     if (files.length === 0) {
@@ -40,44 +41,34 @@ const ImageEnhancement: React.FC = () => {
     }
 
     // Validate file types and sizes
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-
-    for (const file of files) {
-
-      if (!validTypes.includes(file.type)) {
-        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
-        event.target.value = '';
-        return;
-      }
-
-      if (file.size > maxFileSize) {
-        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
-        event.target.value = '';
-        return;
-      }
+    const validation = validateImageFiles(files, 10, maxFileCount);
+    if (!validation.isValid) {
+      showWarning(validation.error!);
+      event.target.value = '';
+      return;
     }
 
     try {
-      // Create previews for selected files
-      const previews = files.map(file => URL.createObjectURL(file));
-
       setSelectedFiles(files);
-      setFilePreviews(previews);
     } catch (error) {
-      console.error('Error creating file previews:', error);
+      console.error('Error processing files:', error);
       showError('Error processing files. Please try again.');
     }
   }, [maxFileCount, maxFileSize]);
 
-  const handleReferenceFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReferenceFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      const validation = validateImageFile(file, 10);
+      if (!validation.isValid) {
+        showWarning(validation.error!);
+        return;
+      }
+      
       try {
-        const preview = URL.createObjectURL(file);
         setReferenceFile(file);
-        setReferencePreview(preview);
       } catch (error) {
-        console.error('Error creating reference file preview:', error);
+        console.error('Error processing reference file:', error);
         showError('Error processing reference file. Please try again.');
       }
     }
@@ -94,7 +85,7 @@ const ImageEnhancement: React.FC = () => {
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
 
@@ -125,10 +116,7 @@ const ImageEnhancement: React.FC = () => {
 
     if (validFiles.length > 0) {
       try {
-        const previews = validFiles.map(file => URL.createObjectURL(file));
-
         setSelectedFiles(validFiles);
-        setFilePreviews(previews);
 
         // Update the hidden file input with the dropped files
         if (fileInputRef.current) {
@@ -207,7 +195,7 @@ const ImageEnhancement: React.FC = () => {
         } else if (result.enhancedImage) {
           // Single image enhanced (fallback)
           setResults([{
-            originalImage: result.originalImage || filePreviews[0],
+            originalImage: result.originalImage || (selectedFiles[0] ? URL.createObjectURL(selectedFiles[0]) : ''),
             enhancedImage: result.enhancedImage
           }]);
         } else {
@@ -220,9 +208,7 @@ const ImageEnhancement: React.FC = () => {
         
         // Reset form after successful generation
         setSelectedFiles([]);
-        setFilePreviews([]);
         setReferenceFile(null);
-        setReferencePreview(null);
         
         // Clear file input
         if (fileInputRef.current) {
@@ -242,14 +228,11 @@ const ImageEnhancement: React.FC = () => {
 
   const removeFile = (index: number) => {
     const newFiles = selectedFiles.filter((_, i) => i !== index);
-    const newPreviews = filePreviews.filter((_, i) => i !== index);
     setSelectedFiles(newFiles);
-    setFilePreviews(newPreviews);
   };
 
   const removeReferenceFile = () => {
     setReferenceFile(null);
-    setReferencePreview(null);
   };
 
   const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
@@ -346,23 +329,16 @@ const ImageEnhancement: React.FC = () => {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                     Selected Files ({selectedFiles.length})
                   </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                     {selectedFiles.map((file, index) => (
                       <div key={index} className="relative group">
-                        <img
-                          src={filePreviews[index]}
+                        <ImagePreview
+                          file={file}
+                          onRemove={() => removeFile(index)}
                           alt={file.name}
-                          className="w-full h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+                          className="w-full h-24 xs:h-28 sm:h-32 md:h-36 lg:h-40 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
                         />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                          <button
-                            onClick={() => removeFile(index)}
-                            className="w-10 h-10 absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate px-1">
                           {file.name}
                         </p>
                       </div>
@@ -436,18 +412,13 @@ const ImageEnhancement: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Reference Image
               </h3>
-              <div className="relative inline-block">
-                <img
-                  src={referencePreview || ''}
-                  alt={referenceFile.name}
-                  className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+              <div className="flex justify-center sm:justify-start">
+                <ImagePreview
+                  file={referenceFile}
+                  onRemove={removeReferenceFile}
+                  alt="Reference image"
+                  className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
                 />
-                <button
-                  onClick={removeReferenceFile}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                >
-                  ×
-                </button>
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                 {referenceFile.name}

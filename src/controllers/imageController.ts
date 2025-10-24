@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/authMiddleware';
 import path from 'path';
+import fs from 'fs';
 import { ReplicateService } from '../services/replicateService';
 import { InteriorDesignService } from '../services/interiorDesignService';
 import { AddFurnitureService } from '../services/addFurnitureService';
@@ -221,16 +222,37 @@ export class ImageController {
       
       if (req.file.buffer) {
         // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let storageFilename = req.file.originalname;
+        if (req.file.mimetype === 'image/webp' && !storageFilename.endsWith('.webp')) {
+          storageFilename = storageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
+        // Debug: Log file info before storage
+        logger.info('Uploading buffer to storage', {
+          originalName: req.file.originalname,
+          storageFilename: storageFilename,
+          mimetype: req.file.mimetype,
+          bufferSize: req.file.buffer.length,
+          generatedKey: this.storageService.generateKey(storageFilename)
+        });
+        
         processImageOriginalStorageResult = await this.storageService.uploadBuffer(
           req.file.buffer,
-          this.storageService.generateKey(req.file.originalname),
+          this.storageService.generateKey(storageFilename),
           req.file.mimetype,
           {
-            originalName: req.file.originalname,
+            originalName: storageFilename,
             uploadedAt: new Date().toISOString(),
             userId: req.user?.id || 'anonymous',
           }
         );
+        
+        // Debug: Log storage result
+        logger.info('Storage upload completed', {
+          url: processImageOriginalStorageResult.url,
+          key: processImageOriginalStorageResult.key
+        });
         
         // Save buffer to temporary file for processing
         const tempFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
@@ -478,12 +500,18 @@ export class ImageController {
       
       if (req.file.buffer) {
         // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let storageFilename = req.file.originalname;
+        if (req.file.mimetype === 'image/webp' && !storageFilename.endsWith('.webp')) {
+          storageFilename = storageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
         interiorDesignOriginalStorageResult = await this.storageService.uploadBuffer(
           req.file.buffer,
-          this.storageService.generateKey(req.file.originalname),
+          this.storageService.generateKey(storageFilename),
           req.file.mimetype,
           {
-            originalName: req.file.originalname,
+            originalName: storageFilename,
             uploadedAt: new Date().toISOString(),
             userId: req.user?.id || 'anonymous',
           }
@@ -720,12 +748,18 @@ export class ImageController {
       let storageResult;
       if (req.file.buffer) {
         // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let storageFilename = req.file.originalname;
+        if (req.file.mimetype === 'image/webp' && !storageFilename.endsWith('.webp')) {
+          storageFilename = storageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
         storageResult = await this.storageService.uploadBuffer(
           req.file.buffer,
-          this.storageService.generateKey(req.file.originalname),
+          this.storageService.generateKey(storageFilename),
           req.file.mimetype,
           {
-            originalName: req.file.originalname,
+            originalName: storageFilename,
             uploadedAt: new Date().toISOString(),
           }
         );
@@ -855,11 +889,15 @@ export class ImageController {
         return;
       }
 
-      // Add all image files to temp files for cleanup
-      imageFiles.forEach(file => tempFiles.push(file.path));
+      // Add disk-based files to temp files for cleanup (buffer files don't need cleanup)
+      imageFiles.forEach(file => {
+        if (file.path && !file.buffer) {
+          tempFiles.push(file.path);
+        }
+      });
 
-      // If reference image is provided, add it to temp files
-      if (referenceFile) {
+      // If reference image is provided, add it to temp files (only if it's disk-based)
+      if (referenceFile && referenceFile.path && !referenceFile.buffer) {
         tempFiles.push(referenceFile.path);
       }
 
@@ -890,28 +928,29 @@ export class ImageController {
           
           // Upload original image to hybrid storage first
           let imageStorageResult;
-          let imageProcessingPath = imageFile.path; // Default to disk path
+          let imageProcessingPath: string | Buffer = imageFile.path; // Default to disk path
           
           if (imageFile.buffer) {
             // File is in memory (R2 mode)
+            // Ensure filename matches MIME type (fix for HEIC conversion)
+            let storageFilename = imageFile.originalname;
+            if (imageFile.mimetype === 'image/webp' && !storageFilename.endsWith('.webp')) {
+              storageFilename = storageFilename.replace(/\.[^.]+$/, '.webp');
+            }
+            
             imageStorageResult = await this.storageService.uploadBuffer(
               imageFile.buffer,
-              this.storageService.generateKey(imageFile.originalname),
+              this.storageService.generateKey(storageFilename),
               imageFile.mimetype,
               {
-                originalName: imageFile.originalname,
+                originalName: storageFilename,
                 uploadedAt: new Date().toISOString(),
                 userId: req.user?.id || 'anonymous',
               }
             );
             
-            // Save buffer to temporary file for processing
-            const tempFilename = imageFile.filename || imageFile.originalname || `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
-            const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
-            await FileUtils.ensureDirectoryExists(config.tempDir);
-            await require('fs/promises').writeFile(tempPath, imageFile.buffer);
-            imageProcessingPath = tempPath;
-            tempFiles.push(tempPath);
+            // Use buffer directly for processing - no temp file needed
+            imageProcessingPath = imageFile.buffer;
           } else {
             // File is on disk (local mode)
             imageStorageResult = await this.storageService.uploadFile(
@@ -936,9 +975,10 @@ export class ImageController {
           });
           
           // Process image enhancement using Replicate
+          const referenceProcessingPath = referenceFile?.buffer || referenceFile?.path || null;
           const enhancedImageUrl = await this.replicateService.enhanceImage(
             imageProcessingPath,
-            referenceFile?.path || null,
+            referenceProcessingPath,
             req.body.enhancementType || 'luminosity',
             req.body.enhancementStrength || 'moderate'
           );
@@ -995,16 +1035,8 @@ export class ImageController {
       // Verify all files exist before returning paths
       const fs = require('fs');
       const verifiedResults = results.map(result => {
-        const originalExists = fs.existsSync(path.join(process.cwd(), 'uploads', path.basename(result.originalImage)));
+        // Only check enhanced files exist (original images are in R2)
         const enhancedExists = fs.existsSync(path.join(process.cwd(), 'outputs', path.basename(result.enhancedImage)));
-
-        if (!originalExists) {
-          logger.error('❌ Original image file not found in uploads directory', { 
-            filename: path.basename(result.originalImage),
-            path: result.originalImage 
-          });
-          throw new Error(`Original image file not found: ${path.basename(result.originalImage)}`);
-        }
 
         if (!enhancedExists) {
           logger.error('❌ Enhanced image file not found in outputs directory', { 
@@ -1150,8 +1182,10 @@ export class ImageController {
         return;
       }
 
-      // Add image file to temp files for cleanup
-      tempFiles.push(imageFile.path);
+      // Add disk-based files to temp files for cleanup (buffer files don't need cleanup)
+      if (imageFile.path && !imageFile.buffer) {
+        tempFiles.push(imageFile.path);
+      }
 
       logger.info('🎨 Starting element replacement', {
         imageFile: imageFile.filename,
@@ -1162,7 +1196,7 @@ export class ImageController {
 
       // Upload original image to hybrid storage first
       let imageStorageResult;
-      let imageProcessingPath = imageFile.path; // Default to disk path
+      let imageProcessingPath: string | Buffer = imageFile.path; // Default to disk path
       
       if (imageFile.buffer) {
         // File is in memory (R2 mode)
@@ -1177,13 +1211,8 @@ export class ImageController {
           }
         );
         
-        // Save buffer to temporary file for processing
-        const tempFilename = imageFile.filename || imageFile.originalname || `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
-        const tempPath = path.join(config.tempDir, `temp_${tempFilename}`);
-        await FileUtils.ensureDirectoryExists(config.tempDir);
-        await require('fs/promises').writeFile(tempPath, imageFile.buffer);
-        imageProcessingPath = tempPath;
-        tempFiles.push(tempPath);
+        // Use buffer directly for processing - no temp file needed
+        imageProcessingPath = imageFile.buffer;
       } else {
         // File is on disk (local mode)
         imageStorageResult = await this.storageService.uploadFile(
@@ -1242,18 +1271,9 @@ export class ImageController {
       const originalImagePath = `/uploads/${imageFile.filename}`;
       const replacedImagePathUrl = `/outputs/${path.basename(replacedImagePath)}`;
 
-      // Verify files exist before returning paths
+      // Verify replaced image exists (original image is in R2, so we only check replaced image)
       const fs = require('fs');
-      const originalExists = fs.existsSync(path.join(process.cwd(), 'uploads', imageFile.filename));
       const replacedExists = fs.existsSync(replacedImagePath);
-
-      if (!originalExists) {
-        logger.error('❌ Original image file not found in uploads directory', { 
-          filename: imageFile.filename,
-          path: originalImagePath 
-        });
-        throw new Error(`Original image file not found: ${imageFile.filename}`);
-      }
 
       if (!replacedExists) {
         logger.error('❌ Replaced image file not found in outputs directory', { 
@@ -1266,7 +1286,6 @@ export class ImageController {
       logger.info('✅ File validation passed', {
         originalImage: originalImagePath,
         replacedImage: replacedImagePathUrl,
-        originalExists,
         replacedExists
       });
 
@@ -1329,6 +1348,7 @@ export class ImageController {
     const startTime = Date.now();
     const tempFiles: string[] = [];
     let generationId: string | undefined;
+    let responseSent = false;
 
     try {
       // Check if files were uploaded
@@ -1394,12 +1414,18 @@ export class ImageController {
       
       if (roomImageFile.buffer) {
         // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let roomStorageFilename = roomImageFile.originalname;
+        if (roomImageFile.mimetype === 'image/webp' && !roomStorageFilename.endsWith('.webp')) {
+          roomStorageFilename = roomStorageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
         roomImageStorageResult = await this.storageService.uploadBuffer(
           roomImageFile.buffer,
-          this.storageService.generateKey(roomImageFile.originalname),
+          this.storageService.generateKey(roomStorageFilename),
           roomImageFile.mimetype,
           {
-            originalName: roomImageFile.originalname,
+            originalName: roomStorageFilename,
             uploadedAt: new Date().toISOString(),
             userId: req.user?.id || 'anonymous',
           }
@@ -1433,12 +1459,18 @@ export class ImageController {
       if (furnitureImageFile) {
         if (furnitureImageFile.buffer) {
           // File is in memory (R2 mode)
+          // Ensure filename matches MIME type (fix for HEIC conversion)
+          let furnitureStorageFilename = furnitureImageFile.originalname;
+          if (furnitureImageFile.mimetype === 'image/webp' && !furnitureStorageFilename.endsWith('.webp')) {
+            furnitureStorageFilename = furnitureStorageFilename.replace(/\.[^.]+$/, '.webp');
+          }
+          
           furnitureImageStorageResult = await this.storageService.uploadBuffer(
             furnitureImageFile.buffer,
-            this.storageService.generateKey(furnitureImageFile.originalname),
+            this.storageService.generateKey(furnitureStorageFilename),
             furnitureImageFile.mimetype,
             {
-              originalName: furnitureImageFile.originalname,
+              originalName: furnitureStorageFilename,
               uploadedAt: new Date().toISOString(),
               userId: req.user?.id || 'anonymous',
             }
@@ -1537,6 +1569,7 @@ export class ImageController {
           },
           timestamp: new Date().toISOString(),
         });
+        responseSent = true;
       } else {
         // Update generation record with failure
         await this.userStatsService.updateGenerationStatus(
@@ -1558,6 +1591,7 @@ export class ImageController {
           error: 'NO_OUTPUT_URL',
           timestamp: new Date().toISOString(),
         } as ApiResponse);
+        responseSent = true;
       }
     } catch (error) {
       logger.error('🚨 Error in addFurnitures:', error as Error);
@@ -1577,12 +1611,14 @@ export class ImageController {
         }
       }
 
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error during furniture addition',
-        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
-        timestamp: new Date().toISOString(),
-      } as ApiResponse);
+      if (!responseSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Internal server error during furniture addition',
+          error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
     } finally {
       // Clean up temporary files
       for (const tempFile of tempFiles) {
@@ -1639,6 +1675,11 @@ export class ImageController {
 
       logger.info('🏢 Starting exterior design generation', {
         buildingImageFile: buildingImageFile.filename,
+        buildingImageOriginalName: buildingImageFile.originalname,
+        buildingImageMimetype: buildingImageFile.mimetype,
+        buildingImageSize: buildingImageFile.size,
+        hasBuffer: !!buildingImageFile.buffer,
+        bufferSize: buildingImageFile.buffer ? buildingImageFile.buffer.length : 0,
         designPrompt: req.body.designPrompt,
         designType: req.body.designType || 'modern',
         style: req.body.style || 'architectural',
@@ -1651,16 +1692,33 @@ export class ImageController {
       
       if (buildingImageFile.buffer) {
         // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let buildingStorageFilename = buildingImageFile.originalname;
+        if (buildingImageFile.mimetype === 'image/webp' && !buildingStorageFilename.endsWith('.webp')) {
+          buildingStorageFilename = buildingStorageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
+        logger.info('📤 Uploading building image buffer to storage', {
+          bufferSize: buildingImageFile.buffer.length,
+          filename: buildingStorageFilename,
+          mimetype: buildingImageFile.mimetype
+        });
+        
         buildingImageStorageResult = await this.storageService.uploadBuffer(
           buildingImageFile.buffer,
-          this.storageService.generateKey(buildingImageFile.originalname),
+          this.storageService.generateKey(buildingStorageFilename),
           buildingImageFile.mimetype,
           {
-            originalName: buildingImageFile.originalname,
+            originalName: buildingStorageFilename,
             uploadedAt: new Date().toISOString(),
             userId: req.user?.id || 'anonymous',
           }
         );
+        
+        logger.info('✅ Building image uploaded to storage successfully', {
+          storageUrl: buildingImageStorageResult.url,
+          key: buildingImageStorageResult.key
+        });
         
         // Use buffer directly for processing - no temp file needed
         buildingImageProcessingPath = buildingImageFile.buffer;
@@ -1687,6 +1745,15 @@ export class ImageController {
         prompt: req.body.designPrompt
       });
       generationId = dbGenerationId;
+
+      logger.info('🚀 Calling exterior design service', {
+        processingPathType: typeof buildingImageProcessingPath,
+        processingPathIsBuffer: Buffer.isBuffer(buildingImageProcessingPath),
+        processingPathSize: Buffer.isBuffer(buildingImageProcessingPath) ? buildingImageProcessingPath.length : 'N/A',
+        designPrompt: req.body.designPrompt,
+        designType: req.body.designType || 'modern',
+        style: req.body.style || 'architectural'
+      });
 
       // Process the exterior design
       const result = await this.exteriorDesignService.generateExteriorDesign(
@@ -1803,6 +1870,75 @@ export class ImageController {
           logger.warn('Failed to clean up temp file:', { tempFile });
         }
       }
+    }
+  };
+
+  /**
+   * Convert HEIC file to WebP for preview
+   */
+  public convertHeic = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!req.file) {
+        res.status(400).json({
+          success: false,
+          message: 'No image file provided',
+          error: 'NO_FILE'
+        });
+        return;
+      }
+
+      logger.info('Converting HEIC file for preview', {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      });
+
+      let convertedBuffer: Buffer;
+
+      if (req.file.buffer) {
+        // Memory storage - convert buffer directly
+        convertedBuffer = await FileUtils.convertHeicBufferToWebP(req.file.buffer);
+      } else if (req.file.path) {
+        // Disk storage - convert file
+        const tempOutputPath = path.join(config.tempDir, `preview_${Date.now()}.webp`);
+        await FileUtils.convertHeicToWebP(req.file.path, tempOutputPath);
+        convertedBuffer = await fs.promises.readFile(tempOutputPath);
+        await fs.promises.unlink(tempOutputPath);
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid file data',
+          error: 'INVALID_FILE'
+        });
+        return;
+      }
+
+      // Set response headers
+      res.set({
+        'Content-Type': 'image/webp',
+        'Content-Length': convertedBuffer.length.toString(),
+        'Cache-Control': 'public, max-age=3600' // Cache for 1 hour
+      });
+
+      // Send the converted image
+      res.send(convertedBuffer);
+
+      logger.info('HEIC conversion successful', {
+        originalSize: req.file.size,
+        convertedSize: convertedBuffer.length
+      });
+
+    } catch (error) {
+      logger.error('HEIC conversion failed', {
+        error: error instanceof Error ? error.message : String(error),
+        filename: req.file?.originalname
+      });
+
+      res.status(500).json({
+        success: false,
+        message: 'HEIC conversion failed',
+        error: 'CONVERSION_FAILED'
+      });
     }
   };
 } 

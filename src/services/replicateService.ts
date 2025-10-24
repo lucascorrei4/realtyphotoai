@@ -694,8 +694,8 @@ export class ReplicateService {
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
   public async enhanceImage(
-    imagePath: string,
-    referenceImagePath: string | null = null,
+    imagePath: string | Buffer,
+    referenceImagePath: string | Buffer | null = null,
     enhancementType: string = 'luminosity',
     enhancementStrength: string = 'moderate'
   ): Promise<string> {
@@ -710,7 +710,7 @@ export class ReplicateService {
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
   public async replaceElements(
-    imagePath: string,
+    imagePath: string | Buffer,
     prompt: string,
     outputFormat: string = 'jpg'
   ): Promise<string> {

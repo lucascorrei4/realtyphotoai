@@ -6,12 +6,14 @@ import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
+import { validateImageFile } from '../utils/fileValidation';
+import ImagePreview from '../components/ImagePreview';
+import { createImagePreview } from '../utils/imagePreview';
 
 const InteriorDesign: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
-  const [roomPreview, setRoomPreview] = useState<string | null>(null);
   const [designPrompt, setDesignPrompt] = useState('Transform this room with a modern interior design');
   const [designType, setDesignType] = useState<'modern' | 'traditional' | 'minimalist' | 'scandinavian' | 'industrial' | 'bohemian' | 'custom'>('modern');
   const [style, setStyle] = useState<'realistic' | 'architectural' | 'lifestyle'>('realistic');
@@ -21,30 +23,24 @@ const InteriorDesign: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
-  const handleRoomFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRoomFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (!validTypes.includes(file.type)) {
-        showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
-        return;
-      }
-      if (file.size > maxFileSize) {
-        showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+      const validation = validateImageFile(file, 10);
+      if (!validation.isValid) {
+        showWarning(validation.error!);
         return;
       }
       
       try {
-        const preview = URL.createObjectURL(file);
         setRoomImage(file);
-        setRoomPreview(preview);
       } catch (error) {
-        console.error('Error creating room file preview:', error);
+        console.error('Error processing room file:', error);
         showError('Error processing room file. Please try again.');
       }
     }
-  }, [maxFileSize, validTypes, showWarning, showError]);
+  }, [showWarning, showError]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -57,7 +53,7 @@ const InteriorDesign: React.FC = () => {
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
 
@@ -66,20 +62,14 @@ const InteriorDesign: React.FC = () => {
 
     const file = files[0];
     
-    if (!validTypes.includes(file.type)) {
-      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
-      return;
-    }
-
-    if (file.size > maxFileSize) {
-      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is ${(maxFileSize / 1024 / 1024).toFixed(0)}MB.`);
+    const validation = validateImageFile(file, 10);
+    if (!validation.isValid) {
+      showWarning(validation.error!);
       return;
     }
 
     try {
-      const preview = URL.createObjectURL(file);
       setRoomImage(file);
-      setRoomPreview(preview);
       
       // Update the hidden input
       if (roomInputRef.current) {
@@ -91,7 +81,7 @@ const InteriorDesign: React.FC = () => {
       console.error('Error processing dropped file:', error);
       showError('Error processing dropped file. Please try again.');
     }
-  }, [maxFileSize, validTypes, showWarning, showError]);
+  }, [showWarning, showError]);
 
   const openRoomFileDialog = () => {
     roomInputRef.current?.click();
@@ -99,7 +89,6 @@ const InteriorDesign: React.FC = () => {
 
   const removeRoomFile = () => {
     setRoomImage(null);
-    setRoomPreview(null);
     if (roomInputRef.current) {
       roomInputRef.current.value = '';
     }
@@ -135,7 +124,6 @@ const InteriorDesign: React.FC = () => {
         
         // Reset form after successful generation
         setRoomImage(null);
-        setRoomPreview(null);
         
         // Clear file input
         if (roomInputRef.current) {
@@ -244,19 +232,11 @@ const InteriorDesign: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Room Image Preview
               </h3>
-              <div className="relative inline-block">
-                <img
-                  src={roomPreview || ''}
-                  alt={roomImage.name}
-                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-                />
-                <button
-                  onClick={removeRoomFile}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                >
-                  ×
-                </button>
-              </div>
+              <ImagePreview
+                file={roomImage}
+                onRemove={removeRoomFile}
+                alt="Room image preview"
+              />
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                 {roomImage.name} ({(roomImage.size / 1024 / 1024).toFixed(1)}MB)
               </p>

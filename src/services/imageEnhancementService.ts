@@ -1,7 +1,6 @@
 import Replicate from 'replicate';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import { FileUtils } from '../utils/fileUtils';
 import { v4 as uuidv4 } from 'uuid';
 
 export class ImageEnhancementService {
@@ -20,8 +19,8 @@ export class ImageEnhancementService {
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
    */
   public async enhanceImage(
-    imagePath: string,
-    referenceImagePath: string | null = null,
+    imagePath: string | Buffer,
+    referenceImagePath: string | Buffer | null = null,
     enhancementType: string = 'luminosity',
     enhancementStrength: string = 'moderate'
   ): Promise<string> {
@@ -38,18 +37,37 @@ export class ImageEnhancementService {
         model: this.modelId
       });
 
-      // Validate input image exists
-      const fs = require('fs');
-      if (!fs.existsSync(imagePath)) {
-        throw new Error(`Input image file not found: ${imagePath}`);
+      // Handle both buffer and file path inputs
+      let imageBuffer: Buffer;
+      
+      if (Buffer.isBuffer(imagePath)) {
+        // Input is already a buffer
+        imageBuffer = imagePath;
+        logger.info('📁 Image buffer details', {
+          requestId,
+          bufferSize: imageBuffer.length,
+          isBuffer: true
+        });
+      } else {
+        // Input is a file path
+        const fs = require('fs');
+        if (!fs.existsSync(imagePath)) {
+          throw new Error(`Input image file not found: ${imagePath}`);
+        }
+        
+        logger.info('📁 Image file details', {
+          requestId,
+          imagePath,
+          fileExists: true
+        });
+        
+        // Read file into buffer
+        imageBuffer = fs.readFileSync(imagePath);
       }
-
+      
       // Convert image to base64
       logger.info('🔄 Converting image to base64', { requestId });
-      const imageBuffer = await FileUtils.readFileAsBuffer(imagePath);
-      
-      // ⚠️ CRITICAL: This model requires data URL format - DO NOT CHANGE
-      const imageBase64 = `data:image/jpeg;base64,${imageBuffer.toString('base64')}`;
+      const imageBase64 = imageBuffer.toString('base64');
       
       logger.info('✅ Base64 conversion completed', { 
         requestId, 
@@ -73,7 +91,7 @@ export class ImageEnhancementService {
 
       // ⚠️ CRITICAL: These parameters are fixed and tested - DO NOT CHANGE
       const input: any = {
-        image: imageBase64, // Must be data URL format
+        image: `data:image/jpeg;base64,${imageBase64}`, // Must be data URL format
         desired_increase: desiredIncrease
       };
 

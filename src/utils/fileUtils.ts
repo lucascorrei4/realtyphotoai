@@ -231,7 +231,12 @@ export class FileUtils {
       // Method 1: Try Sharp with WebP output
       try {
         await sharp(inputPath)
-          .webp({ quality: 90 })
+          .webp({ 
+            quality: 95,           // Higher quality (90 → 95)
+            lossless: false,       // Better compression
+            effort: 6,            // Maximum compression effort (0-6)
+            smartSubsample: true   // Better color handling
+          })
           .toFile(outputPath);
         
         logger.info(`Successfully converted HEIC/HEIF to WebP using Sharp: ${inputPath} -> ${outputPath}`);
@@ -247,11 +252,16 @@ export class FileUtils {
         try {
           const tempJpegPath = outputPath.replace('.webp', '_temp.jpg');
           await sharp(inputPath)
-            .jpeg({ quality: 90 })
+            .jpeg({ quality: 95 })
             .toFile(tempJpegPath);
           
           await sharp(tempJpegPath)
-            .webp({ quality: 90 })
+            .webp({ 
+              quality: 95,           // Higher quality (90 → 95)
+              lossless: false,       // Better compression
+              effort: 6,            // Maximum compression effort (0-6)
+              smartSubsample: true   // Better color handling
+            })
             .toFile(outputPath);
           
           // Clean up temp JPEG file
@@ -466,6 +476,106 @@ export class FileUtils {
         outputDir 
       });
       throw new Error(`Failed to download image: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Convert HEIC buffer to WebP buffer for preview
+   */
+  public static async convertHeicBufferToWebP(inputBuffer: Buffer): Promise<Buffer> {
+    try {
+      logger.debug('Converting HEIC buffer to WebP buffer', { 
+        inputSize: inputBuffer.length 
+      });
+      
+      // Method 1: Try Sharp with WebP output
+      try {
+        const sharp = require('sharp');
+        const webpBuffer = await sharp(inputBuffer)
+          .webp({ 
+            quality: 95,           // Higher quality
+            lossless: false,       // Better compression
+            effort: 6,            // Maximum compression effort (0-6)
+            smartSubsample: true   // Better color handling
+          })
+          .toBuffer();
+        
+        logger.info('Successfully converted HEIC buffer to WebP using Sharp', { 
+          inputSize: inputBuffer.length,
+          outputSize: webpBuffer.length
+        });
+        return webpBuffer;
+      } catch (sharpError) {
+        logger.warn('Sharp WebP conversion failed, trying JPEG fallback', { 
+          error: sharpError instanceof Error ? sharpError.message : String(sharpError)
+        });
+        
+        // Method 2: Try HEIC → JPEG → WebP (more compatible)
+        try {
+          const sharp = require('sharp');
+          const jpegBuffer = await sharp(inputBuffer)
+            .jpeg({ quality: 95 })
+            .toBuffer();
+          
+          const webpBuffer = await sharp(jpegBuffer)
+            .webp({ 
+              quality: 95,           // Higher quality
+              lossless: false,       // Better compression
+              effort: 6,            // Maximum compression effort (0-6)
+              smartSubsample: true   // Better color handling
+            })
+            .toBuffer();
+          
+          logger.info('Successfully converted HEIC buffer to WebP using JPEG fallback', { 
+            inputSize: inputBuffer.length,
+            outputSize: webpBuffer.length
+          });
+          return webpBuffer;
+        } catch (jpegFallbackError) {
+          logger.warn('JPEG fallback conversion failed, trying heic-convert', { 
+            error: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError)
+          });
+          
+          // Method 3: Try heic-convert plugin
+          try {
+            const heicConvert = require('heic-convert');
+            const jpegBuffer = await heicConvert({
+              buffer: inputBuffer,
+              format: 'JPEG',
+              quality: 0.95
+            });
+            
+            const sharp = require('sharp');
+            const webpBuffer = await sharp(jpegBuffer)
+              .webp({ 
+                quality: 95,           // Higher quality
+                lossless: false,       // Better compression
+                effort: 6,            // Maximum compression effort (0-6)
+                smartSubsample: true   // Better color handling
+              })
+              .toBuffer();
+            
+            logger.info('Successfully converted HEIC buffer to WebP using heic-convert', { 
+              inputSize: inputBuffer.length,
+              outputSize: webpBuffer.length
+            });
+            return webpBuffer;
+          } catch (heicConvertError) {
+            logger.error('All HEIC conversion methods failed', { 
+              sharpError: sharpError instanceof Error ? sharpError.message : String(sharpError),
+              jpegFallbackError: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError),
+              heicConvertError: heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)
+            });
+            throw new Error(`All HEIC conversion methods failed. Last error: ${heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)}`);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to convert HEIC buffer to WebP', { 
+        error: error instanceof Error ? error.message : String(error),
+        inputSize: inputBuffer.length
+      });
+      throw error;
     }
   }
 } 

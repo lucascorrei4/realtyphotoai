@@ -6,6 +6,9 @@ import StatsWidget from '../components/StatsWidget';
 import { RecentGenerationsWidget } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
+import { validateImageFile } from '../utils/fileValidation';
+import ImagePreview from '../components/ImagePreview';
+import { createImagePreview } from '../utils/imagePreview';
 
 interface ElementReplacementRequest {
   id: string;
@@ -31,10 +34,21 @@ const ReplaceElements: React.FC = () => {
   const [requests, setRequests] = useState<ElementReplacementRequest[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
+      const validation = validateImageFile(file, 10);
+      if (!validation.isValid) {
+        showWarning(validation.error!);
+        return;
+      }
+      
+      try {
+        setSelectedFile(file);
+      } catch (error) {
+        console.error('Error processing file:', error);
+        showError('Error processing file. Please try again.');
+      }
     }
   };
 
@@ -49,7 +63,7 @@ const ReplaceElements: React.FC = () => {
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
 
@@ -60,21 +74,19 @@ const ReplaceElements: React.FC = () => {
     const file = files[0]; // Take first file
 
     // Validate file type and size
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-    const maxFileSize = 10 * 1024 * 1024; // 10MB
-
-    if (!validTypes.includes(file.type)) {
-      showWarning(`Invalid file type: ${file.name}. Please select only JPG, PNG, WebP, or HEIC files.`);
+    const validation = validateImageFile(file, 10);
+    if (!validation.isValid) {
+      showWarning(validation.error!);
       return;
     }
 
-    if (file.size > maxFileSize) {
-      showWarning(`File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB). Maximum size is 10MB.`);
-      return;
+    try {
+      setSelectedFile(file);
+    } catch (error) {
+      console.error('Error processing file:', error);
+      showError('Error processing file. Please try again.');
     }
-
-    setSelectedFile(file);
-  }, []);
+  }, [showWarning, showError]);
 
   const openFileDialog = () => {
     fileInputRef.current?.click();
@@ -258,19 +270,12 @@ const ReplaceElements: React.FC = () => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Selected Image to Transform
               </h3>
-              <div className="relative inline-block">
-                <img
-                  src={URL.createObjectURL(selectedFile)}
-                  alt={selectedFile.name}
-                  className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
-                />
-                <button
-                  onClick={() => setSelectedFile(null)}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-all duration-200"
-                >
-                  ×
-                </button>
-              </div>
+              <ImagePreview
+                file={selectedFile}
+                onRemove={() => setSelectedFile(null)}
+                alt="Selected image to transform"
+                className="w-64 h-48 object-cover rounded-lg border-2 border-gray-200 dark:border-gray-600"
+              />
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                 {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(1)}MB)
               </p>

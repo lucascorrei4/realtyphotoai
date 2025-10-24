@@ -123,10 +123,23 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+
+  const formatTimeOnly = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
   };
 
@@ -243,7 +256,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               {showComparison ? 'Single View' : 'Compare View'}
             </button>
           )}
-          
+
           {/* Image Display */}
           {showComparison && beforeImageSrc ? (
             <div className="relative w-full h-full max-w-5xl max-h-[80vh]">
@@ -253,9 +266,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 alt="Before"
                 className="absolute inset-0 w-full h-full object-contain rounded-lg shadow-2xl"
               />
-              
+
               {/* After Image (Overlay with clip-path) */}
-              <div 
+              <div
                 className="absolute inset-0 w-full h-full overflow-hidden rounded-lg"
                 style={{ clipPath: `inset(0 0 0 ${sliderPosition}%)` }}
               >
@@ -265,9 +278,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   className="w-full h-full object-contain"
                 />
               </div>
-              
+
               {/* Slider Line */}
-              <div 
+              <div
                 className="absolute top-0 bottom-0 w-1 bg-white shadow-lg z-10"
                 style={{ left: `${sliderPosition}%` }}
               >
@@ -276,7 +289,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   <div className="w-1 h-6 bg-gray-400 rounded"></div>
                 </div>
               </div>
-              
+
               {/* Slider Input (Invisible but functional) */}
               <input
                 type="range"
@@ -290,7 +303,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 onMouseLeave={() => setIsDragging(false)}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-grab active:cursor-grabbing z-20"
               />
-              
+
               {/* Labels */}
               <div className="absolute top-4 left-4 bg-red-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
                 Before
@@ -298,7 +311,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               <div className="absolute top-4 right-4 bg-green-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
                 After
               </div>
-              
+
               {/* Instructions */}
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-lg text-sm">
                 Drag to compare • {Math.round(sliderPosition)}%
@@ -312,7 +325,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
             />
           )}
-          
+
           {/* Background click to close */}
           <div
             className="absolute inset-0 -z-10"
@@ -668,9 +681,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {formatDate(generation.created_at)}
-                    </span>
+                    <div className="text-right">
+                      <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                        {formatDate(generation.created_at)}
+                      </div>
+                    </div>
                   </div>
                 </div>
 

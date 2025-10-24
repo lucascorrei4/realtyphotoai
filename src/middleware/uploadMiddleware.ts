@@ -187,13 +187,32 @@ export const validateUploadedFile = async (
         const metadata = await sharp(req.file.buffer).metadata();
         isValidImage = !!(metadata.width && metadata.height);
         
-        // Check if it's HEIC format by examining the buffer
+        // Check if it's HEIC format by examining the buffer and filename
         const bufferStart = req.file.buffer.slice(0, 12);
         const heicSignatures = [
           Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]), // HEIC
           Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]), // HEIF
         ];
-        isHeic = heicSignatures.some(sig => bufferStart.includes(sig));
+        const hasHeicSignature = heicSignatures.some(sig => bufferStart.includes(sig));
+        
+        // Also check filename extension as fallback
+        const filename = req.file.originalname || '';
+        const hasHeicExtension = /\.(heic|heif)$/i.test(filename);
+        
+        // Also check MIME type as additional fallback
+        const hasHeicMimeType = req.file.mimetype === 'image/heic' || req.file.mimetype === 'image/heif';
+        
+        isHeic = hasHeicSignature || hasHeicExtension || hasHeicMimeType;
+        
+        logger.info('HEIC detection completed', {
+          hasHeicSignature,
+          hasHeicExtension,
+          hasHeicMimeType,
+          filename,
+          mimetype: req.file.mimetype,
+          bufferStart: bufferStart.toString('hex'),
+          isHeic
+        });
         
         logger.info('Memory validation completed', {
           isValidImage,
@@ -227,7 +246,18 @@ export const validateUploadedFile = async (
     }
 
     // Check if file is HEIC/HEIF and convert to WebP for better AI processing
-    if (isHeic) {
+    logger.info('Checking for HEIC conversion', { isHeic, hasBuffer: !!req.file.buffer, hasPath: !!req.file.path });
+    
+    // Force HEIC conversion if filename suggests HEIC (additional safety check)
+    const filename = req.file.originalname || '';
+    const forceHeicConversion = /\.(heic|heif)$/i.test(filename);
+    
+    if (isHeic || forceHeicConversion) {
+      logger.info('HEIC file detected, starting conversion process', { 
+        isHeic, 
+        forceHeicConversion, 
+        filename 
+      });
       try {
         if (req.file.buffer) {
           // Memory storage - convert buffer directly
@@ -237,9 +267,69 @@ export const validateUploadedFile = async (
           });
           
           const sharp = require('sharp');
-          const webpBuffer = await sharp(req.file.buffer)
-            .webp({ quality: 90 })
-            .toBuffer();
+          let webpBuffer: Buffer;
+          
+          try {
+            // Method 1: Try direct Sharp WebP conversion
+            webpBuffer = await sharp(req.file.buffer)
+              .webp({ 
+                quality: 95,           // Higher quality (90 → 95)
+                lossless: false,       // Better compression
+                effort: 6,            // Maximum compression effort (0-6)
+                smartSubsample: true   // Better color handling
+              })
+              .toBuffer();
+          } catch (sharpError) {
+            logger.warn('Sharp WebP conversion failed, trying JPEG fallback', { 
+              error: sharpError instanceof Error ? sharpError.message : String(sharpError)
+            });
+            
+            try {
+              // Method 2: Try HEIC → JPEG → WebP (more compatible)
+              const jpegBuffer = await sharp(req.file.buffer)
+                .jpeg({ quality: 95 })
+                .toBuffer();
+              
+              webpBuffer = await sharp(jpegBuffer)
+                .webp({ 
+                  quality: 95,           // Higher quality
+                  lossless: false,       // Better compression
+                  effort: 6,            // Maximum compression effort (0-6)
+                  smartSubsample: true   // Better color handling
+                })
+                .toBuffer();
+            } catch (jpegFallbackError) {
+              logger.warn('JPEG fallback conversion failed, trying heic-convert', { 
+                error: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError)
+              });
+              
+              try {
+                // Method 3: Try heic-convert plugin
+                const heicConvert = require('heic-convert');
+                const jpegBuffer = await heicConvert({
+                  buffer: req.file.buffer,
+                  format: 'JPEG',
+                  quality: 0.95
+                });
+                
+                webpBuffer = await sharp(jpegBuffer)
+                  .webp({ 
+                    quality: 95,           // Higher quality
+                    lossless: false,       // Better compression
+                    effort: 6,            // Maximum compression effort (0-6)
+                    smartSubsample: true   // Better color handling
+                  })
+                  .toBuffer();
+              } catch (heicConvertError) {
+                logger.error('All HEIC conversion methods failed', { 
+                  sharpError: sharpError instanceof Error ? sharpError.message : String(sharpError),
+                  jpegFallbackError: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError),
+                  heicConvertError: heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)
+                });
+                throw new Error(`All HEIC conversion methods failed. Last error: ${heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)}`);
+              }
+            }
+          }
           
           // Update the buffer with converted WebP data
           req.file.buffer = webpBuffer;
@@ -247,9 +337,12 @@ export const validateUploadedFile = async (
           
           // Update filename to reflect WebP format
           const originalName = req.file.originalname || 'converted_image';
-          req.file.originalname = originalName.replace(/\.[^.]+$/, '.webp');
+          const newOriginalName = originalName.replace(/\.[^.]+$/, '.webp');
+          req.file.originalname = newOriginalName;
           
           logger.info('HEIC to WebP conversion successful in memory', { 
+            originalName: originalName,
+            newOriginalName: newOriginalName,
             originalSize: req.file.buffer.length,
             newSize: webpBuffer.length,
             newMimetype: req.file.mimetype
@@ -371,6 +464,302 @@ export const validateUploadedFile = async (
     res.status(500).json({
       success: false,
       message: 'Error validating uploaded file',
+      error: 'VALIDATION_ERROR',
+    });
+  }
+};
+
+// Middleware to validate uploaded files (for multiple file uploads)
+export const validateUploadedFiles = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    if (!req.files) {
+      return res.status(400).json({
+        success: false,
+        message: 'No files uploaded',
+        error: 'NO_FILES',
+      });
+    }
+
+    // Handle different multer file structures
+    let filesToValidate: Express.Multer.File[] = [];
+    
+    if (Array.isArray(req.files)) {
+      // Single field with multiple files
+      filesToValidate = req.files;
+    } else {
+      // Multiple fields with files
+      Object.values(req.files).forEach(fieldFiles => {
+        if (Array.isArray(fieldFiles)) {
+          filesToValidate.push(...fieldFiles);
+        } else {
+          filesToValidate.push(fieldFiles);
+        }
+      });
+    }
+
+    if (filesToValidate.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No files uploaded',
+        error: 'NO_FILES',
+      });
+    }
+
+    logger.debug('Validating uploaded files', { 
+      fileCount: filesToValidate.length,
+      filenames: filesToValidate.map(f => f.originalname)
+    });
+
+    // Validate each file using the same logic as single file validation
+    for (const file of filesToValidate) {
+      let isValidImage: boolean;
+      let isHeic: boolean;
+
+      if (file.buffer) {
+        // Memory storage (R2 mode) - validate directly from buffer without temp files
+        try {
+          // Use Sharp to validate the buffer directly
+          const sharp = require('sharp');
+          const metadata = await sharp(file.buffer).metadata();
+          isValidImage = !!(metadata.width && metadata.height);
+          
+          // Check if it's HEIC format by examining the buffer and filename
+          const bufferStart = file.buffer.slice(0, 12);
+          const heicSignatures = [
+            Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70]), // HEIC
+            Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]), // HEIF
+          ];
+          const hasHeicSignature = heicSignatures.some(sig => bufferStart.includes(sig));
+          
+          // Also check filename extension as fallback
+          const filename = file.originalname || '';
+          const hasHeicExtension = /\.(heic|heif)$/i.test(filename);
+          
+          // Also check MIME type as additional fallback
+          const hasHeicMimeType = file.mimetype === 'image/heic' || file.mimetype === 'image/heif';
+          
+          isHeic = hasHeicSignature || hasHeicExtension || hasHeicMimeType;
+          
+          logger.info('HEIC detection completed', {
+            hasHeicSignature,
+            hasHeicExtension,
+            hasHeicMimeType,
+            filename,
+            mimetype: file.mimetype,
+            bufferStart: bufferStart.toString('hex'),
+            isHeic
+          });
+          
+          logger.info('Memory validation completed', {
+            isValidImage,
+            isHeic,
+            width: metadata.width,
+            height: metadata.height,
+            format: metadata.format
+          });
+        } catch (bufferError) {
+          logger.error('Buffer validation failed', { error: bufferError });
+          isValidImage = false;
+          isHeic = false;
+        }
+      } else {
+        // Disk storage (local mode) - use existing file-based validation
+        isValidImage = await FileUtils.validateImageFile(file.path);
+        isHeic = await FileUtils.isHeicFormat(file.path);
+      }
+      
+      if (!isValidImage) {
+        // Clean up invalid file (only for disk storage)
+        if (!file.buffer && file.path) {
+          await FileUtils.cleanupTempFiles([file.path]);
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid image file or corrupted data',
+          error: 'INVALID_IMAGE',
+        });
+      }
+
+      // Check if file is HEIC/HEIF and convert to WebP for better AI processing
+      logger.info('Checking for HEIC conversion', { isHeic, hasBuffer: !!file.buffer, hasPath: !!file.path });
+      
+      // Force HEIC conversion if filename suggests HEIC (additional safety check)
+      const filename = file.originalname || '';
+      const forceHeicConversion = /\.(heic|heif)$/i.test(filename);
+      
+      if (isHeic || forceHeicConversion) {
+        logger.info('HEIC file detected, starting conversion process', { 
+          isHeic, 
+          forceHeicConversion, 
+          filename 
+        });
+        try {
+          if (file.buffer) {
+            // Memory storage - convert buffer directly
+            logger.info('HEIC file detected in memory, converting to WebP', { 
+              originalSize: file.buffer.length,
+              isMemoryStorage: true
+            });
+            
+            const sharp = require('sharp');
+            let webpBuffer: Buffer;
+            
+            try {
+              // Method 1: Try direct Sharp WebP conversion
+              webpBuffer = await sharp(file.buffer)
+                .webp({ 
+                  quality: 95,           // Higher quality (90 → 95)
+                  lossless: false,       // Better compression
+                  effort: 6,            // Maximum compression effort (0-6)
+                  smartSubsample: true   // Better color handling
+                })
+                .toBuffer();
+            } catch (sharpError) {
+              logger.warn('Sharp WebP conversion failed, trying JPEG fallback', { 
+                error: sharpError instanceof Error ? sharpError.message : String(sharpError)
+              });
+              
+              try {
+                // Method 2: Try HEIC → JPEG → WebP (more compatible)
+                const jpegBuffer = await sharp(file.buffer)
+                  .jpeg({ quality: 95 })
+                  .toBuffer();
+                
+                webpBuffer = await sharp(jpegBuffer)
+                  .webp({ 
+                    quality: 95,           // Higher quality
+                    lossless: false,       // Better compression
+                    effort: 6,            // Maximum compression effort (0-6)
+                    smartSubsample: true   // Better color handling
+                  })
+                  .toBuffer();
+              } catch (jpegFallbackError) {
+                logger.warn('JPEG fallback conversion failed, trying heic-convert', { 
+                  error: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError)
+                });
+                
+                try {
+                  // Method 3: Try heic-convert plugin
+                  const heicConvert = require('heic-convert');
+                  const jpegBuffer = await heicConvert({
+                    buffer: file.buffer,
+                    format: 'JPEG',
+                    quality: 0.95
+                  });
+                  
+                  webpBuffer = await sharp(jpegBuffer)
+                    .webp({ 
+                      quality: 95,           // Higher quality
+                      lossless: false,       // Better compression
+                      effort: 6,            // Maximum compression effort (0-6)
+                      smartSubsample: true   // Better color handling
+                    })
+                    .toBuffer();
+                } catch (heicConvertError) {
+                  logger.error('All HEIC conversion methods failed', { 
+                    sharpError: sharpError instanceof Error ? sharpError.message : String(sharpError),
+                    jpegFallbackError: jpegFallbackError instanceof Error ? jpegFallbackError.message : String(jpegFallbackError),
+                    heicConvertError: heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)
+                  });
+                  throw new Error(`All HEIC conversion methods failed. Last error: ${heicConvertError instanceof Error ? heicConvertError.message : String(heicConvertError)}`);
+                }
+              }
+            }
+            
+            // Update the buffer with converted WebP data
+            file.buffer = webpBuffer;
+            file.mimetype = 'image/webp';
+            
+            // Update filename to reflect WebP format
+            const originalName = file.originalname || 'converted_image';
+            const newOriginalName = originalName.replace(/\.[^.]+$/, '.webp');
+            file.originalname = newOriginalName;
+            
+            logger.info('HEIC to WebP conversion successful in memory', { 
+              originalName: originalName,
+              newOriginalName: newOriginalName,
+              originalSize: file.buffer.length,
+              newSize: webpBuffer.length,
+              newMimetype: file.mimetype
+            });
+          } else {
+            // Disk storage - use existing file-based conversion
+            const filePath = file.path;
+            logger.info('HEIC file detected on disk, checking compatibility first', { 
+              originalPath: filePath,
+              isDiskStorage: true
+            });
+            
+            // Try to convert using Sharp first
+            try {
+              const sharp = require('sharp');
+              const outputPath = filePath.replace(/\.[^.]+$/, '.webp');
+              
+              await sharp(filePath)
+                .webp({ 
+                  quality: 95,           // Higher quality (90 → 95)
+                  lossless: false,       // Better compression
+                  effort: 6,            // Maximum compression effort (0-6)
+                  smartSubsample: true   // Better color handling
+                })
+                .toFile(outputPath);
+              
+              // Update file info
+              file.path = outputPath;
+              file.mimetype = 'image/webp';
+              file.originalname = (file.originalname || 'converted_image').replace(/\.[^.]+$/, '.webp');
+              
+              logger.info('HEIC to WebP conversion successful on disk', { 
+                originalPath: filePath,
+                newPath: outputPath,
+                newMimetype: file.mimetype
+              });
+            } catch (sharpError) {
+              logger.warn('Sharp conversion failed, trying FileUtils', { 
+                error: sharpError instanceof Error ? sharpError.message : String(sharpError)
+              });
+              
+              // Fallback to FileUtils conversion
+              await FileUtils.convertHeicToWebP(filePath, filePath.replace(/\.[^.]+$/, '.webp'));
+              file.path = filePath.replace(/\.[^.]+$/, '.webp');
+              file.mimetype = 'image/webp';
+              file.originalname = (file.originalname || 'converted_image').replace(/\.[^.]+$/, '.webp');
+            }
+          }
+        } catch (conversionError) {
+          logger.error('HEIC conversion failed', { 
+            error: conversionError instanceof Error ? conversionError.message : String(conversionError),
+            filename: file.originalname
+          });
+          
+          return res.status(400).json({
+            success: false,
+            message: 'HEIC conversion failed',
+            error: 'HEIC_CONVERSION_FAILED',
+          });
+        }
+      }
+    }
+
+    logger.info('All files validated successfully', { 
+      fileCount: filesToValidate.length,
+      filenames: filesToValidate.map(f => f.originalname)
+    });
+    
+    next();
+  } catch (error) {
+    logger.error('Multiple file validation error', { 
+      error: error instanceof Error ? error.message : String(error)
+    });
+    
+    res.status(500).json({
+      success: false,
+      message: 'File validation error',
       error: 'VALIDATION_ERROR',
     });
   }
