@@ -165,17 +165,17 @@ const Pricing: React.FC = () => {
                 <div className="space-y-3 text-sm mb-6">
                   <div className="flex items-center">
                     <span className="font-medium text-gray-900">
-                      {plan.features.aiPhotos.toLocaleString()} AI Photos (credits)
+                      {plan.features.displayCredits.toLocaleString()} Credits per month
                     </span>
                   </div>
                   <div className="flex items-center">
                     <span className="font-medium text-gray-900">
-                      Create {plan.features.aiModels} AI Model{plan.features.aiModels > 1 ? 's' : ''} per month
+                      ~{plan.features.monthlyCredits.toLocaleString()} images OR ~{Math.floor(plan.features.monthlyCredits / 15).toLocaleString()} videos (16s) OR mix
                     </span>
                   </div>
                   <div className="flex items-center">
                     <span className="font-medium text-gray-900">
-                      Flux™ {plan.features.quality === 'high' || plan.features.quality === 'ultra' ? 'HD photorealistic' : 'photorealistic'} model
+                      Flux™ photorealistic model
                     </span>
                   </div>
                 </div>

@@ -8,6 +8,7 @@ import { config } from '../config';
 import authRoutes from './auth';
 import adminRoutes from './admin';
 import userRoutes from './user';
+import stripeRoutes from './stripe';
 
 const router = Router();
 const imageController = new ImageController();
@@ -148,5 +149,8 @@ router.use('/admin', adminRoutes);
 
 // User routes
 router.use('/user', userRoutes);
+
+// Stripe routes
+router.use('/stripe', stripeRoutes);
 
 export default router; 

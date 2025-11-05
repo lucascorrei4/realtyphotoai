@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../config/supabase';
 import {
   Home,
   Image,
@@ -16,8 +17,12 @@ import {
   Moon,
   Menu,
   X,
-  LogOut
+  LogOut,
+  Coins
 } from 'lucide-react';
+import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
+import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
+import { Crown } from 'lucide-react';
 import packageJson from '../../package.json';
 
 interface LayoutProps {
@@ -30,11 +35,84 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<{
+    displayCreditsRemaining: number;
+    displayCreditsTotal: number;
+    displayCreditsUsed: number;
+  } | null>(null);
+  const [creditsLoading, setCreditsLoading] = useState(true);
 
   // Ensure component is mounted before rendering theme-dependent content
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch credit balance
+  useEffect(() => {
+    if (user?.id) {
+      fetchCreditBalance();
+    }
+  }, [user]);
+
+  const fetchCreditBalance = async () => {
+    if (!user?.id) return;
+    
+    setCreditsLoading(true);
+    try {
+      // Get user's plan from database plan_rules
+      let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
+      
+      if (user.subscription_plan) {
+        const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
+        if (dbPlan) {
+          userPlan = dbPlan;
+        }
+      }
+
+      // Fetch ONLY current month's completed generations
+      // Monthly credits reset each billing cycle
+      const now = new Date();
+      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      const { data: generations, error } = await supabase
+        .from('generations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'completed')
+        .gte('created_at', currentMonth.toISOString());
+
+      if (error) {
+        console.error('Error fetching credit balance:', error);
+        return;
+      }
+
+      // Calculate actual credits used - count ONLY current month's completed generations
+      // Each completed generation consumes credits (1 credit per image, 15 credits per second of video)
+      let actualCreditsUsed = 0;
+      (generations || []).forEach(g => {
+        // Check if it's a video generation (you'll need to add this field to generations table)
+        if (g.generation_type === 'video' && g.duration_seconds) {
+          actualCreditsUsed += getVideoCredits(g.duration_seconds);
+        } else {
+          // Default to image generation (1 credit per image)
+          actualCreditsUsed += getImageCredits(1);
+        }
+      });
+
+      // Get credit usage summary
+      const summary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+      
+      setCreditBalance({
+        displayCreditsRemaining: summary.displayCreditsRemaining,
+        displayCreditsTotal: summary.displayCreditsTotal,
+        displayCreditsUsed: summary.displayCreditsUsed
+      });
+    } catch (error) {
+      console.error('Error calculating credit balance:', error);
+    } finally {
+      setCreditsLoading(false);
+    }
+  };
 
   const navigation = [
     { path: '/dashboard', label: 'Dashboard', icon: Home },
@@ -125,6 +203,46 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               );
             })}
 
+            {/* Plan Info Section */}
+            {user && user.subscription_plan && (
+              <>
+                <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
+                <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase">
+                      {PLAN_DISPLAY_NAMES[user.subscription_plan] || user.subscription_plan} Plan
+                    </span>
+                    {user.subscription_plan !== 'free' && (
+                      <Crown className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    )}
+                  </div>
+                  {creditBalance && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400">
+                      <div className="flex items-center justify-between">
+                        <span>{creditBalance.displayCreditsUsed.toLocaleString()} / {creditBalance.displayCreditsTotal.toLocaleString()} credits</span>
+                        <span>{Math.min(100, Math.round((creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100))}%</span>
+                      </div>
+                      <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1.5 mt-1">
+                        <div
+                          className={`h-1.5 rounded-full transition-all ${
+                            (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.9
+                              ? 'bg-red-500'
+                              : (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.7
+                              ? 'bg-yellow-500'
+                              : 'bg-blue-500'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100)}%`
+                          }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
+              </>
+            )}
+
             {/* Separator line */}
             <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
 
@@ -201,8 +319,38 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </button>
             </div>
 
-            {/* Right side - User profile */}
-            <div className="flex items-center">
+            {/* Right side - Credit balance and User profile */}
+            <div className="flex items-center space-x-4">
+              {/* Credit Balance */}
+              {user && !creditsLoading && creditBalance && (
+                <Link
+                  to="/dashboard"
+                  className="flex items-center space-x-2 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg px-3 py-2 transition-colors"
+                >
+                  <Coins className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <div className="hidden md:block">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                        {creditBalance.displayCreditsUsed.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-blue-600 dark:text-blue-400">
+                        / {creditBalance.displayCreditsTotal.toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400">credits used</p>
+                  </div>
+                  <div className="md:hidden">
+                    <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
+                      {creditBalance.displayCreditsUsed.toLocaleString()}/{creditBalance.displayCreditsTotal.toLocaleString()}
+                    </span>
+                  </div>
+                </Link>
+              )}
+              {creditsLoading && (
+                <div className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
+              )}
+
+              {/* User profile */}
               {user && (
                 <Link
                   to="/settings"

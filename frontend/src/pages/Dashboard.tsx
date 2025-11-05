@@ -13,7 +13,8 @@ import { supabase } from '../config/supabase';
 import { RecentGenerationsWidget, QuickActions } from '../components';
 import StripeCheckout from '../components/StripeCheckout';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
-import { SUBSCRIPTION_PLANS } from '../config/subscriptionPlans';
+import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
+import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 
 
 interface UserStats {
@@ -23,6 +24,15 @@ interface UserStats {
   successRate: number;
   monthlyUsage: number;
   monthlyLimit: number;
+  actualCreditsUsed: number;
+  creditUsageSummary: {
+    displayCreditsTotal: number;
+    displayCreditsUsed: number;
+    displayCreditsRemaining: number;
+    actualCreditsTotal: number;
+    actualCreditsUsed: number;
+    actualCreditsRemaining: number;
+  };
   generationsByType: {
     interiorDesign: number;
     imageEnhancement: number;
@@ -97,9 +107,51 @@ const Dashboard: React.FC = () => {
       // Monthly usage (current month)
       const now = new Date();
       const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthlyUsage = userGenerations.filter(g =>
-        new Date(g.created_at) >= currentMonth
-      ).length;
+      const monthlyGenerations = userGenerations.filter(g =>
+        new Date(g.created_at) >= currentMonth && g.status === 'completed'
+      );
+      const monthlyUsage = monthlyGenerations.length;
+
+      // Calculate actual credits used - count ONLY current month's completed generations
+      // Monthly credits reset each billing cycle (reuse currentMonth from above)
+      const monthlyCompletedGenerations = userGenerations.filter(g => 
+        g.status === 'completed' && new Date(g.created_at) >= currentMonth
+      );
+      
+      let actualCreditsUsed = 0;
+      monthlyCompletedGenerations.forEach(g => {
+        // Check if it's a video generation (you'll need to add this field to generations table)
+        if (g.generation_type === 'video' && g.duration_seconds) {
+          actualCreditsUsed += getVideoCredits(g.duration_seconds);
+        } else {
+          // Default to image generation (1 credit per image)
+          actualCreditsUsed += getImageCredits(1);
+        }
+      });
+
+      // Get user's plan from database and calculate credit usage summary
+      let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
+      
+      if (user.subscription_plan) {
+        const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
+        if (dbPlan) {
+          userPlan = dbPlan;
+        } else {
+          // Fallback to hardcoded plans if database plan not found
+          const planMap: Record<string, string> = {
+            free: 'explorer',
+            basic: 'creator',
+            premium: 'studio',
+            enterprise: 'business'
+          };
+          const mappedPlan = planMap[user.subscription_plan];
+          userPlan = mappedPlan && SUBSCRIPTION_PLANS[mappedPlan as keyof typeof SUBSCRIPTION_PLANS]
+            ? SUBSCRIPTION_PLANS[mappedPlan as keyof typeof SUBSCRIPTION_PLANS]
+            : SUBSCRIPTION_PLANS.starter;
+        }
+      }
+
+      const creditUsageSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
 
       // Count by model type
       const generationsByType = {
@@ -151,6 +203,8 @@ const Dashboard: React.FC = () => {
         successRate,
         monthlyUsage,
         monthlyLimit: user.monthly_generations_limit || 0,
+        actualCreditsUsed,
+        creditUsageSummary,
         generationsByType,
         monthlyData,
         recentActivity
@@ -230,9 +284,9 @@ const Dashboard: React.FC = () => {
         <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg shadow-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold mb-2">✨ {SUBSCRIPTION_PLANS[user.subscription_plan]?.displayName || 'Premium'} Plan</h2>
+              <h2 className="text-xl font-semibold mb-2">✨ {PLAN_DISPLAY_NAMES[user.subscription_plan] || user.subscription_plan || 'Premium'} Plan</h2>
               <p className="text-green-100 mb-4">
-                You're enjoying premium features with {SUBSCRIPTION_PLANS[user.subscription_plan]?.features.aiPhotos?.toLocaleString() || 'unlimited'} AI photos per month
+                You're enjoying premium features with {userStats?.creditUsageSummary?.displayCreditsTotal.toLocaleString() || 'unlimited'} credits per month
               </p>
               <button 
                 onClick={() => setShowPricing(true)}
@@ -246,8 +300,51 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Usage Progress Bar */}
-      {userStats && (
+      {/* Credit Usage Progress Bar */}
+      {userStats && userStats.creditUsageSummary && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white">Credit Balance</h3>
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {userStats.creditUsageSummary.displayCreditsUsed.toLocaleString()} / {userStats.creditUsageSummary.displayCreditsTotal.toLocaleString()} credits
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-2">
+            <div
+              className={`h-3 rounded-full transition-all duration-300 ${
+                (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.9
+                  ? 'bg-red-500'
+                  : (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.7
+                  ? 'bg-yellow-500'
+                  : 'bg-green-500'
+              }`}
+              style={{
+                width: `${Math.min(100, (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) * 100)}%`
+              }}
+            ></div>
+          </div>
+          <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+            <span>Used: {userStats.creditUsageSummary.displayCreditsUsed.toLocaleString()} credits</span>
+            <span>{Math.min(100, Math.round((userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) * 100))}% used</span>
+          </div>
+          {(userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.8 && (
+            <div className="mt-3 flex items-center justify-between">
+              <p className="text-sm text-orange-600 dark:text-orange-400">
+                ⚠️ You're running low on credits. Consider upgrading for more!
+              </p>
+              <button
+                onClick={() => setShowPricing(true)}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Upgrade Now
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy Usage Progress Bar (for backward compatibility) */}
+      {userStats && !userStats.creditUsageSummary && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Monthly Usage</h3>
@@ -258,30 +355,17 @@ const Dashboard: React.FC = () => {
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
             <div
               className={`h-3 rounded-full transition-all duration-300 ${
-                (userStats.monthlyUsage / userStats.monthlyLimit) > 0.9
+                userStats.monthlyLimit > 0 && (userStats.monthlyUsage / userStats.monthlyLimit) > 0.9
                   ? 'bg-red-500'
-                  : (userStats.monthlyUsage / userStats.monthlyLimit) > 0.7
+                  : userStats.monthlyLimit > 0 && (userStats.monthlyUsage / userStats.monthlyLimit) > 0.7
                   ? 'bg-yellow-500'
                   : 'bg-green-500'
               }`}
               style={{
-                width: `${Math.min(100, (userStats.monthlyUsage / userStats.monthlyLimit) * 100)}%`
+                width: `${userStats.monthlyLimit > 0 ? Math.min(100, (userStats.monthlyUsage / userStats.monthlyLimit) * 100) : 0}%`
               }}
             ></div>
           </div>
-          {(userStats.monthlyUsage / userStats.monthlyLimit) > 0.8 && (
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-sm text-orange-600 dark:text-orange-400">
-                ⚠️ You're approaching your monthly limit. Consider upgrading for more generations!
-              </p>
-              <button
-                onClick={() => setShowPricing(true)}
-                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                Upgrade Now
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -342,10 +426,10 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Remaining
+                Credits Remaining
               </p>
               <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {Math.max(0, (userStats?.monthlyLimit || 0) - (userStats?.monthlyUsage || 0))}
+                {userStats?.creditUsageSummary?.displayCreditsRemaining.toLocaleString() || Math.max(0, (userStats?.monthlyLimit || 0) - (userStats?.monthlyUsage || 0))}
               </p>
             </div>
           </div>

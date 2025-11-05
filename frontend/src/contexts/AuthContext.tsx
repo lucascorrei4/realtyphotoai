@@ -56,16 +56,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isFetching, setIsFetching] = useState(false);
 
   useEffect(() => {
-    // Safety timeout to ensure loading state is always cleared
-    const safetyTimeout = setTimeout(() => {
-      console.warn('⚠️ Safety timeout reached - forcing loading to false');
-      setLoading(false);
-    }, 5000); // 5 second safety timeout
-
     // Check for existing session
     const checkSession = async () => {
       try {
-
         // Check if Supabase is properly configured
         const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
         const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
@@ -73,7 +66,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!supabaseAnonKey || !supabaseUrl) {
           console.warn('⚠️ Supabase configuration missing - running in demo mode');
           setLoading(false);
-          clearTimeout(safetyTimeout);
           return;
         }
 
@@ -83,25 +75,50 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) {
           console.error('❌ Session error:', error);
           setLoading(false);
-          clearTimeout(safetyTimeout);
           return;
         }
 
-        if (session?.access_token) {
-          await fetchUserProfile(session.user.id);
-          clearTimeout(safetyTimeout);
+        if (session?.access_token && session?.user) {
+          console.log('✅ Session found:', session.user.id, session.user.email);
+          
+          // CRITICAL: Set loading to false FIRST to allow UI to render
+          setLoading(false);
+          
+          // Use session user data directly - fetch full profile in background
+          const sessionUser: User = {
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
+            role: 'user',
+            subscription_plan: 'free',
+            monthly_generations_limit: 10,
+            total_generations: 0,
+            successful_generations: 0,
+            failed_generations: 0,
+            is_active: true,
+            created_at: session.user.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          console.log('👤 Setting user from session:', sessionUser);
+          setUser(sessionUser);
+          
+          // Fetch full profile from database in background (non-blocking)
+          console.log('🔄 Fetching profile for user:', session.user.id);
+          fetchUserProfile(session.user.id).catch(err => {
+            console.error('❌ Profile fetch error (non-critical):', err);
+            // Don't clear user or set loading - user is already set from session
+          });
+          
           return;
         }
 
         // No session found, allow access to landing page
         console.log('🔓 No session found - allowing access to landing page');
         setLoading(false);
-        clearTimeout(safetyTimeout);
 
       } catch (error) {
         console.error('🚨 Error checking session:', error);
         setLoading(false);
-        clearTimeout(safetyTimeout);
       }
     };
 
@@ -123,7 +140,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = async (userId: string, retryCount: number = 0): Promise<void> => {
+    console.log('🔍 fetchUserProfile called:', userId, 'retry:', retryCount);
     try {
       // Prevent multiple simultaneous calls
       if (isFetching) {
@@ -132,6 +150,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       setIsFetching(true);
+      console.log('📡 Starting profile fetch...');
       
       // Check if Supabase is properly configured first
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
@@ -143,39 +162,71 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setIsFetching(false);
         return;
       }
+      
+      console.log('✅ Supabase configured, making query...');
 
       // Prevent infinite retry loops
-
-      setFetchAttempts(prev => prev + 1);
-      if (fetchAttempts >= 3) {
+      if (retryCount >= 3) {
         console.warn('⚠️ Maximum fetch attempts reached - stopping retries');
-        setLoading(false);
+        // Don't clear loading here - let the session check handle it
+        // This ensures we don't redirect to /auth if we have a valid session
         setIsFetching(false);
         return;
       }
 
-      const supabaseTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Supabase query timeout after 3 seconds')), 3000);
-      });
+      // Fetch user profile with timeout
+      let profile: any = null;
+      let error: any = null;
       
-      const supabaseQuery = supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      try {
+        console.log('📤 Making Supabase query to user_profiles table...');
+        
+        const queryPromise = supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Query timeout after 5 seconds')), 5000);
+        });
+        
+        console.log('⏳ Waiting for query response (5s timeout)...');
+        const result = await Promise.race([queryPromise, timeoutPromise]) as any;
+        console.log('📥 Query response received:', result);
+        
+        // Check if we have data first - if yes, use it even if there's an error property
+        if (result?.data) {
+          profile = result.data;
+          error = result.error; // Might be null even if data exists
+        } else {
+          profile = result.data;
+          error = result.error || result;
+        }
+      } catch (err) {
+        // Only treat as error if we don't have profile data
+        if (!profile) {
+          error = err;
+          console.error('❌ Error in profile query:', err);
+          if (err instanceof Error && err.message.includes('timeout')) {
+            console.warn('⚠️ Query timed out - profile may not exist or RLS blocking access');
+          }
+        }
+      }
       
-      const result = await Promise.race([supabaseQuery, supabaseTimeout]);
-      const { data: profile, error } = result as { data: any; error: any };
-      
-      // If we have data, proceed; if error, handle it
+      // If we have profile data, use it immediately (even if there was a timeout error)
       if (profile && !error) {
         console.log('✅ Profile data received, processing...');
+      } else if (profile && error) {
+        // We have data but also an error - use the data (query succeeded)
+        console.log('✅ Profile data received (despite error), processing...');
+        error = null; // Clear error since we have data
       } else if (error) {
         console.log('❌ Profile fetch error, handling...');
       }
 
-
-      if (error) {
+      // Only handle errors if we don't have profile data
+      if (error && !profile) {
         console.error('❌ Error fetching user profile:', error);
         console.error('Error details:', {
           code: error.code,
@@ -184,12 +235,72 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         });
 
         // If profile doesn't exist, create one
-        if (error.code === 'PGRST116') {
+        if (error?.code === 'PGRST116' || (error?.message && error.message.includes('No rows'))) {
+          console.log('📝 Profile not found, creating new profile...');
           await createUserProfile(userId);
+          // Retry after creating profile
+          if (retryCount < 2) {
+            console.log('🔄 Retrying profile fetch after creation...');
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            return fetchUserProfile(userId, retryCount + 1);
+          }
+        } else if (error?.message?.includes('timeout')) {
+          // Query timed out - check if profile exists before attempting creation
+          console.log('⏱️ Query timed out, checking if profile exists before creating...');
+          
+          // Quick check if profile exists (with a short timeout to avoid blocking)
+          const quickCheckPromise = supabase
+            .from('user_profiles')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle();
+          
+          const quickTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Quick check timeout')), 2000); // 2 second timeout
+          });
+          
+          try {
+            const quickResult = await Promise.race([quickCheckPromise, quickTimeoutPromise]) as any;
+            
+            // If profile doesn't exist (no data and no error, or error is PGRST116), create it
+            if (!quickResult?.data && (!quickResult?.error || quickResult?.error?.code === 'PGRST116')) {
+              console.log('⏱️ Profile not found, creating in background (non-blocking)...');
+              createUserProfile(userId).catch(createErr => {
+                // Ignore 409/23505 (already exists) - race condition where profile was created
+                if (createErr?.code === '23505' || createErr?.message?.includes('duplicate key')) {
+                  console.log('✅ Profile already exists (race condition)');
+                } else {
+                  console.error('❌ Failed to create profile (non-critical):', createErr);
+                }
+              });
+            } else if (quickResult?.data) {
+              console.log('✅ Profile exists (found in quick check), skipping creation');
+            }
+          } catch (quickErr) {
+            // Quick check also timed out - skip creation to avoid unnecessary errors
+            console.log('⏱️ Quick check timed out, skipping profile creation to avoid duplicate errors');
+          }
+          
+          // Don't retry - just continue with session user immediately
+          setIsFetching(false);
+          return;
         } else {
-          // For any other error, set loading to false so user can proceed
-          setLoading(false);
+          // For network/timeout errors, retry with exponential backoff
+          if (retryCount < 2 && (error.message?.includes('timeout') || error.message?.includes('network') || error.code === 'PGRST301')) {
+            const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+            console.log(`🔄 Retrying profile fetch in ${delay}ms... (attempt ${retryCount + 1}/3)`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchUserProfile(userId, retryCount + 1);
+          }
+          
+          // If profile fetch failed but we have session, keep current user
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            setLoading(false);
+          }
+          // If session exists, user is already set from session check, so don't clear it
         }
+        setIsFetching(false);
         return;
       }
 
@@ -214,37 +325,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error('🚨 Error in fetchUserProfile:', error);
       
-      // Don't spam the console with timeout errors
-      if (error instanceof Error && error.message.includes('timeout')) {
-        console.warn('⚠️ Profile fetch timed out - creating fallback user profile');
-        
-        // Create a fallback user profile to allow access
-        const fallbackUser: User = {
-          id: userId,
-          email: 'user@example.com',
-          name: 'User',
-          role: 'user',
-          subscription_plan: 'free',
-          monthly_generations_limit: 10,
-          total_generations: 0,
-          successful_generations: 0,
-          failed_generations: 0,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        
-        console.log('🆘 Using fallback user profile to allow access');
-        setUser(fallbackUser);
-        setLoading(false);
-        setIsFetching(false);
-        return;
-        
-      } else if (error instanceof Error) {
-        console.error('Error stack:', error.stack);
+      // Retry on unexpected errors if we haven't exceeded retry count
+      if (retryCount < 2) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.log(`🔄 Retrying profile fetch after error in ${delay}ms... (attempt ${retryCount + 1}/3)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return fetchUserProfile(userId, retryCount + 1);
       }
       
-      setLoading(false);
+      // If profile fetch failed but we have session, keep current user
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setLoading(false);
+      }
+      // If session exists, user is already set from session check, so don't clear it
       setIsFetching(false);
     }
   };
@@ -263,6 +357,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       if (error) {
+        // Ignore 409/23505 errors - profile already exists (duplicate key)
+        if (error.code === '23505' || error.message?.includes('duplicate key')) {
+          console.log('✅ Profile already exists, skipping creation');
+          return;
+        }
         console.error('Error creating user profile:', error);
         return;
       }
@@ -365,7 +464,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (data.user) {
-        await fetchUserProfile(data.user.id);
+        // Set user immediately from session, don't wait for profile fetch
+        const sessionUser: User = {
+          id: data.user.id,
+          email: data.user.email || '',
+          name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
+          role: 'user',
+          subscription_plan: 'free',
+          monthly_generations_limit: 10,
+          total_generations: 0,
+          successful_generations: 0,
+          failed_generations: 0,
+          is_active: true,
+          created_at: data.user.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        setUser(sessionUser);
+        setLoading(false);
+        
+        // Fetch full profile in background (don't await)
+        fetchUserProfile(data.user.id).catch(err => {
+          console.error('Profile fetch error (non-blocking):', err);
+        });
+        
         return { success: true, message: 'Successfully signed in!' };
       } else {
         return { success: false, message: 'Verification failed' };

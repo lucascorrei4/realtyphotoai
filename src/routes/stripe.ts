@@ -393,4 +393,63 @@ router.post('/sync-plans', authenticateToken, async (req: AuthenticatedRequest, 
   }
 });
 
+/**
+ * Delete a Stripe Connect account
+ * DELETE /stripe/account/:accountId
+ */
+router.delete('/account/:accountId', authenticateToken, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { accountId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'Account ID is required' });
+    }
+
+    // Optional: Add admin-only access by uncommenting below
+    // const { data: user } = await supabase
+    //   .from('user_profiles')
+    //   .select('role')
+    //   .eq('id', userId)
+    //   .single();
+    // if (!user || !['admin', 'super_admin'].includes(user.role)) {
+    //   return res.status(403).json({ error: 'Admin access required' });
+    // }
+
+    const deletedAccount = await stripeCheckoutService.deleteAccount(accountId);
+
+    logger.info(`Account ${accountId} deleted by user ${userId}`);
+
+    return res.json({
+      success: true,
+      account: deletedAccount,
+      message: 'Account deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Error deleting Stripe account:', error as Error);
+    
+    // Handle Stripe-specific errors
+    const stripeError = error as any;
+    if (stripeError?.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ 
+        success: false,
+        error: stripeError.message || 'Invalid account ID or account not found',
+        details: stripeError.raw || null
+      });
+    }
+    
+    // Return more detailed error information
+    return res.status(500).json({ 
+      success: false,
+      error: 'Failed to delete Stripe account',
+      message: (error as Error).message,
+      details: stripeError?.raw || null
+    });
+  }
+});
+
 export default router;

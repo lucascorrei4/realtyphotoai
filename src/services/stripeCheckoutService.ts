@@ -46,6 +46,9 @@ export class StripeCheckoutService {
     });
 
     // Split payment configuration with fee consideration
+    // NOTE: Currently configured for 3 recipients (2 partners + agency)
+    // If you only need 2 partners, update percentages to total 100%
+    // e.g., 50% each: partner1: 50, partner2: 50, agency: 0
     this.splitConfig = {
       partner1: {
         accountId: process.env.STRIPE_PARTNER1_ACCOUNT_ID || 'acct_partner1',
@@ -59,7 +62,7 @@ export class StripeCheckoutService {
       },
       agency: {
         accountId: process.env.STRIPE_AGENCY_ACCOUNT_ID || 'acct_agency',
-        percentage: 8, // 8% of gross revenue
+        percentage: 8, // 8% of gross revenue (set to 0 to disable if only 2 partners)
         description: 'Paid Ads Agency'
       }
     };
@@ -112,8 +115,10 @@ export class StripeCheckoutService {
             agency_account: this.splitConfig.agency.accountId,
             ...data.metadata
           },
-          // Application fee will be charged to connected accounts, not main account
-          application_fee_percent: 5, // 5% application fee to cover platform costs
+          // Note: Using Separate Charges and Transfers model
+          // Payment goes to platform account, then transfers to connected accounts
+          // application_fee_percent only works with Destination Charges (single destination)
+          // For multi-partner splits, fees are handled in post-payment transfer logic
         },
         // Enable customer portal for subscription management
         allow_promotion_codes: true,
@@ -256,32 +261,37 @@ export class StripeCheckoutService {
 
   /**
    * Calculate split amounts for partners and agency
-   * With application fees, connected accounts pay their share of fees
+   * Fair approach: Deduct Stripe fees first, then split the remainder
+   * This way partners and agency effectively share the cost of platform fees
    */
   private calculateSplitAmounts(totalAmount: number): { 
     partner1: number; 
     partner2: number; 
     agency: number;
-    platformApplicationFee: number;
-    totalFeesPaidByConnectedAccounts: number;
+    platformAmount: number;
+    stripeFees: number;
   } {
-    // Calculate splits based on gross revenue
-    const partner1Amount = Math.round(totalAmount * this.splitConfig.partner1.percentage / 100);
-    const partner2Amount = Math.round(totalAmount * this.splitConfig.partner2.percentage / 100);
-    const agencyAmount = Math.round(totalAmount * this.splitConfig.agency.percentage / 100);
+    // Calculate Stripe fees (2.9% + $0.30)
+    const stripeFees = Math.round(totalAmount * 0.029) + 30; // 2.9% + $0.30
     
-    // Application fee (5%) goes to platform, charged to connected accounts
-    const platformApplicationFee = Math.round(totalAmount * 0.05);
+    // Amount available after Stripe fees
+    const netAmount = totalAmount - stripeFees;
     
-    // Connected accounts pay their share of Stripe fees + application fee
-    const totalFeesPaidByConnectedAccounts = Math.round(totalAmount * 0.079); // ~7.9% total (2.9% + 5%)
+    // Split the NET amount based on percentages
+    // This way partners effectively share the cost of Stripe fees
+    const partner1Amount = Math.round(netAmount * this.splitConfig.partner1.percentage / 100);
+    const partner2Amount = Math.round(netAmount * this.splitConfig.partner2.percentage / 100);
+    const agencyAmount = Math.round(netAmount * this.splitConfig.agency.percentage / 100);
+    
+    // Platform keeps: Stripe fees (to cover platform costs)
+    const platformAmount = stripeFees;
 
     return {
       partner1: partner1Amount,
       partner2: partner2Amount,
       agency: agencyAmount,
-      platformApplicationFee,
-      totalFeesPaidByConnectedAccounts
+      platformAmount,
+      stripeFees
     };
   }
 
@@ -296,8 +306,8 @@ export class StripeCheckoutService {
       const amount = invoice.amount_paid;
       const splitAmounts = this.calculateSplitAmounts(amount / 100); // Convert from cents
 
-      // Create transfers to all partners and agency
-      await Promise.all([
+      // Create transfers to partners and agency (only if percentage > 0)
+      const transferPromises = [
         this.createTransfer(
           this.splitConfig.partner1.accountId,
           splitAmounts.partner1 * 100, // Convert to cents
@@ -309,24 +319,38 @@ export class StripeCheckoutService {
           splitAmounts.partner2 * 100, // Convert to cents
           this.splitConfig.partner2.description,
           subscriptionId
-        ),
-        this.createTransfer(
-          this.splitConfig.agency.accountId,
-          splitAmounts.agency * 100, // Convert to cents
-          this.splitConfig.agency.description,
-          subscriptionId
         )
-      ]);
+      ];
 
-      logger.info(`Processed split payment for subscription ${subscriptionId}:`, {
+      // Only create agency transfer if percentage > 0
+      if (this.splitConfig.agency.percentage > 0 && splitAmounts.agency > 0) {
+        transferPromises.push(
+          this.createTransfer(
+            this.splitConfig.agency.accountId,
+            splitAmounts.agency * 100, // Convert to cents
+            this.splitConfig.agency.description,
+            subscriptionId
+          )
+        );
+      }
+
+      await Promise.all(transferPromises);
+
+      const logData: any = {
         grossAmount: amount / 100,
         partner1: splitAmounts.partner1,
         partner2: splitAmounts.partner2,
-        agency: splitAmounts.agency,
-        platformApplicationFee: splitAmounts.platformApplicationFee,
-        totalFeesPaidByConnectedAccounts: splitAmounts.totalFeesPaidByConnectedAccounts,
-        note: 'Application fee charged to connected accounts, not main account'
-      });
+        platformAmount: splitAmounts.platformAmount,
+        stripeFees: splitAmounts.stripeFees,
+        note: 'Fair split: Stripe fees deducted first, then remainder split. Partners share the cost of platform fees.'
+      };
+
+      // Only log agency if it's being used
+      if (splitAmounts.agency > 0) {
+        logData.agency = splitAmounts.agency;
+      }
+
+      logger.info(`Processed split payment for subscription ${subscriptionId}:`, logData);
     } catch (error) {
       logger.error('Error processing split payment:', error as Error);
       throw new Error('Failed to process split payment');
@@ -343,6 +367,22 @@ export class StripeCheckoutService {
     subscriptionId: string
   ): Promise<Stripe.Transfer> {
     try {
+      // Allow dry-run to skip real transfers during testing
+      if ((process.env.STRIPE_SPLIT_DRY_RUN || '').toLowerCase() === 'true') {
+        logger.info('DRY RUN: Skipping Stripe transfer', {
+          destinationAccountId,
+          amount,
+          description,
+          subscriptionId,
+        });
+        // Return a minimal mock-like object shape to satisfy calling code expectations
+        return {
+          id: 'tr_mock_dry_run',
+          amount,
+          currency: 'usd',
+          destination: destinationAccountId as any,
+        } as unknown as Stripe.Transfer;
+      }
       const transfer = await this.stripe.transfers.create({
         amount,
         currency: 'usd',
@@ -487,6 +527,40 @@ export class StripeCheckoutService {
     } catch (error) {
       logger.error('Error syncing plan with Stripe:', error as Error);
       throw new Error('Failed to sync plan with Stripe');
+    }
+  }
+
+  /**
+   * Delete a Stripe Connect account by account ID
+   */
+  async deleteAccount(accountId: string): Promise<{ id: string; deleted: boolean }> {
+    try {
+      logger.info(`Attempting to delete Stripe account: ${accountId}`);
+      const deletedAccount = await this.stripe.accounts.del(accountId);
+      logger.info(`Deleted Stripe account ${accountId}`, { deletedAccount });
+      
+      // The response should have id and deleted properties
+      return {
+        id: deletedAccount.id || accountId,
+        deleted: true
+      };
+    } catch (error) {
+      logger.error(`Error deleting Stripe account ${accountId}:`, error as Error);
+      
+      // Preserve original error details
+      const stripeError = error as any;
+      const errorDetails = {
+        type: stripeError?.type,
+        code: stripeError?.code,
+        message: stripeError?.message,
+        param: stripeError?.param,
+        raw: stripeError?.raw
+      };
+      
+      logger.error(`Stripe error details for account ${accountId}:`, errorDetails);
+      
+      // Re-throw with more context
+      throw error;
     }
   }
 }
