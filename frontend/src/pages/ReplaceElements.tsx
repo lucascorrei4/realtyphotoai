@@ -9,6 +9,7 @@ import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
 import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
+import { useCredits } from '../contexts/CreditContext';
 
 interface ElementReplacementRequest {
   id: string;
@@ -22,6 +23,7 @@ interface ElementReplacementRequest {
 
 const ReplaceElements: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCredits } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('Replace the floor for a modern black mirror floor');
@@ -137,6 +139,8 @@ const ReplaceElements: React.FC = () => {
         // Trigger refresh of RecentGenerationsWidget
         setRefreshTrigger(prev => prev + 1);
 
+        await refreshCredits();
+
         // Reset form after successful generation
         setSelectedFile(null);
         
@@ -144,15 +148,13 @@ const ReplaceElements: React.FC = () => {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-        
-        setIsProcessing(false);
       } else {
         showError(`Transformation failed: ${result.message || result.error}`);
-        setIsProcessing(false);
       }
     } catch (error) {
       console.error('Transformation error:', error);
       showError('Transformation failed. Please try again.');
+    } finally {
       setIsProcessing(false);
     }
   };

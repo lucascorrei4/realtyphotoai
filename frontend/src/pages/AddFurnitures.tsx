@@ -7,9 +7,11 @@ import { RecentGenerationsWidget, ImagePreview } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
+import { useCredits } from '../contexts/CreditContext';
 
 const AddFurnitures: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCredits } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [furnitureImage, setFurnitureImage] = useState<File | null>(null);
@@ -154,6 +156,8 @@ const AddFurnitures: React.FC = () => {
       if (result.success) {
         // Trigger refresh of RecentGenerationsWidget
         setRefreshTrigger(prev => prev + 1);
+
+        await refreshCredits();
         
         // Reset form after successful generation
         setRoomImage(null);

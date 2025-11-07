@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react';
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import supabase from '../config/supabase';
 
 export interface User {
@@ -52,10 +53,75 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fetchAttempts, setFetchAttempts] = useState(0);
-  const [isFetching, setIsFetching] = useState(false);
+  const latestFetchIdRef = useRef(0);
+  const isFetchingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const loadingTimeoutRef = useRef<number | null>(null);
+
+  const clearLoadingFallback = useCallback(() => {
+    if (loadingTimeoutRef.current !== null) {
+      window.clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markLoadingComplete = useCallback(() => {
+    if (!mountedRef.current) {
+      return;
+    }
+    clearLoadingFallback();
+    setLoading(false);
+  }, [clearLoadingFallback]);
+
+  const mapSessionUserToUser = useCallback((sessionUser: SupabaseAuthUser): User => ({
+    id: sessionUser.id,
+    email: sessionUser.email || '',
+    name:
+      sessionUser.user_metadata?.full_name ||
+      sessionUser.user_metadata?.name ||
+      sessionUser.email?.split('@')[0] ||
+      'User',
+    role: 'user',
+    subscription_plan: 'free',
+    monthly_generations_limit: 10,
+    total_generations: 0,
+    successful_generations: 0,
+    failed_generations: 0,
+    is_active: true,
+    created_at: sessionUser.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }), []);
+
+  const setUserFromSession = useCallback((sessionUser?: SupabaseAuthUser | null) => {
+    if (!sessionUser) {
+      return;
+    }
+
+    const mappedUser = mapSessionUserToUser(sessionUser);
+    console.log('👤 Hydrating user from session state:', mappedUser.id, mappedUser.email);
+
+    setUser(prev => {
+      if (prev?.id === mappedUser.id) {
+        return prev;
+      }
+      return mappedUser;
+    });
+
+    markLoadingComplete();
+  }, [mapSessionUserToUser, markLoadingComplete]);
 
   useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      clearLoadingFallback();
+    };
+  }, [clearLoadingFallback]);
+
+  useEffect(() => {
+    loadingTimeoutRef.current = window.setTimeout(() => {
+      markLoadingComplete();
+    }, 4000);
+
     // Check for existing session
     const checkSession = async () => {
       try {
@@ -65,7 +131,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (!supabaseAnonKey || !supabaseUrl) {
           console.warn('⚠️ Supabase configuration missing - running in demo mode');
-          setLoading(false);
+          markLoadingComplete();
           return;
         }
 
@@ -74,51 +140,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (error) {
           console.error('❌ Session error:', error);
-          setLoading(false);
+          markLoadingComplete();
           return;
         }
 
         if (session?.access_token && session?.user) {
           console.log('✅ Session found:', session.user.id, session.user.email);
-          
-          // CRITICAL: Set loading to false FIRST to allow UI to render
-          setLoading(false);
-          
-          // Use session user data directly - fetch full profile in background
-          const sessionUser: User = {
-            id: session.user.id,
-            email: session.user.email || '',
-            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'User',
-            role: 'user',
-            subscription_plan: 'free',
-            monthly_generations_limit: 10,
-            total_generations: 0,
-            successful_generations: 0,
-            failed_generations: 0,
-            is_active: true,
-            created_at: session.user.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          console.log('👤 Setting user from session:', sessionUser);
-          setUser(sessionUser);
-          
+
+          setUserFromSession(session.user);
+
           // Fetch full profile from database in background (non-blocking)
           console.log('🔄 Fetching profile for user:', session.user.id);
           fetchUserProfile(session.user.id).catch(err => {
             console.error('❌ Profile fetch error (non-critical):', err);
             // Don't clear user or set loading - user is already set from session
           });
-          
+
           return;
         }
 
         // No session found, allow access to landing page
         console.log('🔓 No session found - allowing access to landing page');
-        setLoading(false);
+        markLoadingComplete();
 
       } catch (error) {
         console.error('🚨 Error checking session:', error);
-        setLoading(false);
+        markLoadingComplete();
       }
     };
 
@@ -127,10 +174,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          await fetchUserProfile(session.user.id);
-        } else if (event === 'SIGNED_OUT') {
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+          setUserFromSession(session.user);
+          fetchUserProfile(session.user.id).catch(err => {
+            console.error('❌ Profile fetch error (non-critical):', err);
+          });
+        } else if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
           setUser(null);
+          markLoadingComplete();
         }
       }
     );
@@ -138,208 +189,113 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [markLoadingComplete, setUserFromSession]);
 
   const fetchUserProfile = async (userId: string, retryCount: number = 0): Promise<void> => {
     console.log('🔍 fetchUserProfile called:', userId, 'retry:', retryCount);
-    try {
-      // Prevent multiple simultaneous calls
-      if (isFetching) {
-        console.log('⏳ Profile fetch already in progress, skipping...');
-        return;
-      }
 
-      setIsFetching(true);
+    if (isFetchingRef.current && retryCount === 0) {
+      console.log('⏳ Profile fetch already in progress, skipping...');
+      return;
+    }
+
+    const fetchId = ++latestFetchIdRef.current;
+    isFetchingRef.current = true;
+
+    try {
       console.log('📡 Starting profile fetch...');
-      
-      // Check if Supabase is properly configured first
+
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
       const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
       if (!supabaseAnonKey || !supabaseUrl) {
         console.warn('⚠️ Supabase configuration missing - skipping profile fetch');
-        setLoading(false);
-        setIsFetching(false);
+        markLoadingComplete();
         return;
       }
-      
-      console.log('✅ Supabase configured, making query...');
 
-      // Prevent infinite retry loops
       if (retryCount >= 3) {
         console.warn('⚠️ Maximum fetch attempts reached - stopping retries');
-        // Don't clear loading here - let the session check handle it
-        // This ensures we don't redirect to /auth if we have a valid session
-        setIsFetching(false);
+        markLoadingComplete();
         return;
       }
 
-      // Fetch user profile with timeout
-      let profile: any = null;
-      let error: any = null;
-      
-      try {
-        console.log('📤 Making Supabase query to user_profiles table...');
-        
-        const queryPromise = supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Query timeout after 5 seconds')), 5000);
-        });
-        
-        console.log('⏳ Waiting for query response (5s timeout)...');
-        const result = await Promise.race([queryPromise, timeoutPromise]) as any;
-        console.log('📥 Query response received:', result);
-        
-        // Check if we have data first - if yes, use it even if there's an error property
-        if (result?.data) {
-          profile = result.data;
-          error = result.error; // Might be null even if data exists
-        } else {
-          profile = result.data;
-          error = result.error || result;
-        }
-      } catch (err) {
-        // Only treat as error if we don't have profile data
-        if (!profile) {
-          error = err;
-          console.error('❌ Error in profile query:', err);
-          if (err instanceof Error && err.message.includes('timeout')) {
-            console.warn('⚠️ Query timed out - profile may not exist or RLS blocking access');
-          }
-        }
-      }
-      
-      // If we have profile data, use it immediately (even if there was a timeout error)
-      if (profile && !error) {
-        console.log('✅ Profile data received, processing...');
-      } else if (profile && error) {
-        // We have data but also an error - use the data (query succeeded)
-        console.log('✅ Profile data received (despite error), processing...');
-        error = null; // Clear error since we have data
-      } else if (error) {
-        console.log('❌ Profile fetch error, handling...');
-      }
+      console.log('✅ Supabase configured, making query...');
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('id,email,name,phone,role,subscription_plan,monthly_generations_limit,total_generations,successful_generations,failed_generations,is_active,created_at,updated_at')
+        .eq('id', userId)
+        .maybeSingle();
 
-      // Only handle errors if we don't have profile data
       if (error && !profile) {
         console.error('❌ Error fetching user profile:', error);
-        console.error('Error details:', {
-          code: error.code,
-          message: error.message,
-          details: error.details
-        });
 
-        // If profile doesn't exist, create one
-        if (error?.code === 'PGRST116' || (error?.message && error.message.includes('No rows'))) {
+        if (error.code === 'PGRST116' || /No rows/i.test(error.message || '')) {
           console.log('📝 Profile not found, creating new profile...');
           await createUserProfile(userId);
-          // Retry after creating profile
+
           if (retryCount < 2) {
-            console.log('🔄 Retrying profile fetch after creation...');
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+            await new Promise(resolve => setTimeout(resolve, 500));
             return fetchUserProfile(userId, retryCount + 1);
           }
-        } else if (error?.message?.includes('timeout')) {
-          // Query timed out - check if profile exists before attempting creation
-          console.log('⏱️ Query timed out, checking if profile exists before creating...');
-          
-          // Quick check if profile exists (with a short timeout to avoid blocking)
-          const quickCheckPromise = supabase
-            .from('user_profiles')
-            .select('id')
-            .eq('id', userId)
-            .maybeSingle();
-          
-          const quickTimeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Quick check timeout')), 2000); // 2 second timeout
-          });
-          
-          try {
-            const quickResult = await Promise.race([quickCheckPromise, quickTimeoutPromise]) as any;
-            
-            // If profile doesn't exist (no data and no error, or error is PGRST116), create it
-            if (!quickResult?.data && (!quickResult?.error || quickResult?.error?.code === 'PGRST116')) {
-              console.log('⏱️ Profile not found, creating in background (non-blocking)...');
-              createUserProfile(userId).catch(createErr => {
-                // Ignore 409/23505 (already exists) - race condition where profile was created
-                if (createErr?.code === '23505' || createErr?.message?.includes('duplicate key')) {
-                  console.log('✅ Profile already exists (race condition)');
-                } else {
-                  console.error('❌ Failed to create profile (non-critical):', createErr);
-                }
-              });
-            } else if (quickResult?.data) {
-              console.log('✅ Profile exists (found in quick check), skipping creation');
-            }
-          } catch (quickErr) {
-            // Quick check also timed out - skip creation to avoid unnecessary errors
-            console.log('⏱️ Quick check timed out, skipping profile creation to avoid duplicate errors');
-          }
-          
-          // Don't retry - just continue with session user immediately
-          setIsFetching(false);
-          return;
+        } else if (retryCount < 2 && (/timeout|network/i.test(error.message || '') || error.code === 'PGRST301')) {
+          const delay = (1 << retryCount) * 500; // 500ms, 1s
+          console.log(`🔄 Retrying profile fetch in ${delay}ms... (attempt ${retryCount + 1}/3)`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchUserProfile(userId, retryCount + 1);
         } else {
-          // For network/timeout errors, retry with exponential backoff
-          if (retryCount < 2 && (error.message?.includes('timeout') || error.message?.includes('network') || error.code === 'PGRST301')) {
-            const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-            console.log(`🔄 Retrying profile fetch in ${delay}ms... (attempt ${retryCount + 1}/3)`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return fetchUserProfile(userId, retryCount + 1);
-          }
-          
-          // If profile fetch failed but we have session, keep current user
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
-            setLoading(false);
+            markLoadingComplete();
           }
-          // If session exists, user is already set from session check, so don't clear it
         }
-        setIsFetching(false);
+
         return;
       }
 
-      // Middleware: Verify user is active and has valid role
-      if (!profile.is_active) {
+      if (!profile) {
+        console.warn('⚠️ Profile query returned no data.');
+        markLoadingComplete();
+        return;
+      }
+
+      if (profile.is_active === false) {
         console.error('❌ User account is inactive');
         await forceSignOut();
+        markLoadingComplete();
         return;
       }
 
-      if (!profile.role || !['user', 'admin', 'super_admin'].includes(profile.role)) {
-        console.error('❌ Invalid user role:', profile.role);
-        await forceSignOut();
-        return;
+      const resolvedRole = (profile.role || 'user') as User['role'];
+      if (!['user', 'admin', 'super_admin'].includes(resolvedRole)) {
+        console.warn('⚠️ Unexpected user role detected, defaulting to user:', profile.role);
       }
 
-      setUser(profile);
-      setLoading(false);
-      setFetchAttempts(0); // Reset attempts on success
-      setIsFetching(false);
-
+      setUser({
+        ...(profile as User),
+        role: ['user', 'admin', 'super_admin'].includes(resolvedRole) ? resolvedRole : 'user',
+        is_active: profile.is_active ?? true,
+      });
+      markLoadingComplete();
     } catch (error) {
       console.error('🚨 Error in fetchUserProfile:', error);
-      
-      // Retry on unexpected errors if we haven't exceeded retry count
+
       if (retryCount < 2) {
-        const delay = Math.pow(2, retryCount) * 1000;
+        const delay = (1 << retryCount) * 500;
         console.log(`🔄 Retrying profile fetch after error in ${delay}ms... (attempt ${retryCount + 1}/3)`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return fetchUserProfile(userId, retryCount + 1);
       }
-      
-      // If profile fetch failed but we have session, keep current user
+
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        setLoading(false);
+        markLoadingComplete();
       }
-      // If session exists, user is already set from session check, so don't clear it
-      setIsFetching(false);
+    } finally {
+      if (latestFetchIdRef.current === fetchId) {
+        isFetchingRef.current = false;
+        markLoadingComplete();
+      }
     }
   };
 
@@ -379,10 +335,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       setUser(profile);
-      setLoading(false);
+      markLoadingComplete();
     } catch (error) {
       console.error('Error creating user profile:', error);
-      setLoading(false);
+      markLoadingComplete();
     }
   };
 
@@ -391,7 +347,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Check if Supabase is configured
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
       const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-      
+
       if (!supabaseAnonKey || !supabaseUrl) {
         // Demo mode - simulate successful code sending
         console.log('Demo mode: Simulating OTP code sent to:', email);
@@ -430,7 +386,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Check if Supabase is configured
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
       const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-      
+
       if (!supabaseAnonKey || !supabaseUrl) {
         // Demo mode - simulate successful login
         console.log('Demo mode: Simulating login for:', email);
@@ -465,28 +421,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (data.user) {
         // Set user immediately from session, don't wait for profile fetch
-        const sessionUser: User = {
-          id: data.user.id,
-          email: data.user.email || '',
-          name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || data.user.email?.split('@')[0] || 'User',
-          role: 'user',
-          subscription_plan: 'free',
-          monthly_generations_limit: 10,
-          total_generations: 0,
-          successful_generations: 0,
-          failed_generations: 0,
-          is_active: true,
-          created_at: data.user.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        setUser(sessionUser);
-        setLoading(false);
-        
+        setUserFromSession(data.user);
+
         // Fetch full profile in background (don't await)
         fetchUserProfile(data.user.id).catch(err => {
           console.error('Profile fetch error (non-blocking):', err);
         });
-        
+
         return { success: true, message: 'Successfully signed in!' };
       } else {
         return { success: false, message: 'Verification failed' };
@@ -501,6 +442,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await supabase.auth.signOut();
       setUser(null);
+      markLoadingComplete();
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -513,6 +455,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Clear local state
       setUser(null);
+      markLoadingComplete();
 
       // Clear all localStorage items
       localStorage.removeItem('supabase.auth.token');
@@ -535,6 +478,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     } catch (error) {
       console.error('🚨 Error clearing authentication state:', error);
+      markLoadingComplete();
     }
   };
 
@@ -561,7 +505,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (session?.user) {
         await fetchUserProfile(session.user.id);
-      } 
+      }
     } catch (error) {
       console.error('🚨 Error clearing cache and refetching:', error);
     }
@@ -598,7 +542,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         await fetchUserProfile(session.user.id);
-      } 
+      }
 
     } catch (error) {
       console.error('🚨 Error in manual session debug:', error);
@@ -623,7 +567,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const forceClearLoading = () => {
-    setLoading(false);
+    markLoadingComplete();
   };
 
   const refreshSupabaseClient = async () => {
@@ -635,7 +579,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
         await fetchUserProfile(session.user.id);
-      } 
+      }
     } catch (error) {
       console.error('🚨 Error refreshing Supabase client:', error);
     }

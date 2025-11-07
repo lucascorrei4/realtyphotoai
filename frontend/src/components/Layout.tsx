@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../config/supabase';
 import {
   Home,
   Image,
@@ -20,99 +19,27 @@ import {
   LogOut,
   Coins
 } from 'lucide-react';
-import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
-import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
+import { PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { Crown } from 'lucide-react';
 import packageJson from '../../package.json';
+import { CreditProvider, useCredits } from '../contexts/CreditContext';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
   const { theme, toggleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
+  const { creditBalance, creditsLoading } = useCredits();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [creditBalance, setCreditBalance] = useState<{
-    displayCreditsRemaining: number;
-    displayCreditsTotal: number;
-    displayCreditsUsed: number;
-  } | null>(null);
-  const [creditsLoading, setCreditsLoading] = useState(true);
 
   // Ensure component is mounted before rendering theme-dependent content
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  // Fetch credit balance
-  useEffect(() => {
-    if (user?.id) {
-      fetchCreditBalance();
-    }
-  }, [user]);
-
-  const fetchCreditBalance = async () => {
-    if (!user?.id) return;
-    
-    setCreditsLoading(true);
-    try {
-      // Get user's plan from database plan_rules
-      let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
-      
-      if (user.subscription_plan) {
-        const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
-        if (dbPlan) {
-          userPlan = dbPlan;
-        }
-      }
-
-      // Fetch ONLY current month's completed generations
-      // Monthly credits reset each billing cycle
-      const now = new Date();
-      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      const { data: generations, error } = await supabase
-        .from('generations')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'completed')
-        .gte('created_at', currentMonth.toISOString());
-
-      if (error) {
-        console.error('Error fetching credit balance:', error);
-        return;
-      }
-
-      // Calculate actual credits used - count ONLY current month's completed generations
-      // Each completed generation consumes credits (1 credit per image, 15 credits per second of video)
-      let actualCreditsUsed = 0;
-      (generations || []).forEach(g => {
-        // Check if it's a video generation (you'll need to add this field to generations table)
-        if (g.generation_type === 'video' && g.duration_seconds) {
-          actualCreditsUsed += getVideoCredits(g.duration_seconds);
-        } else {
-          // Default to image generation (1 credit per image)
-          actualCreditsUsed += getImageCredits(1);
-        }
-      });
-
-      // Get credit usage summary
-      const summary = getCreditUsageSummary(actualCreditsUsed, userPlan);
-      
-      setCreditBalance({
-        displayCreditsRemaining: summary.displayCreditsRemaining,
-        displayCreditsTotal: summary.displayCreditsTotal,
-        displayCreditsUsed: summary.displayCreditsUsed
-      });
-    } catch (error) {
-      console.error('Error calculating credit balance:', error);
-    } finally {
-      setCreditsLoading(false);
-    }
-  };
 
   const navigation = [
     { path: '/dashboard', label: 'Dashboard', icon: Home },
@@ -131,6 +58,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const isActive = (path: string) => location.pathname === path;
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const totalCredits = creditBalance?.displayCreditsTotal ?? 0;
+  const usedCredits = creditBalance?.displayCreditsUsed ?? 0;
+  const usageRatio = totalCredits > 0 ? Math.min(usedCredits / totalCredits, 1) : 0;
+  const usagePercent = totalCredits > 0 ? Math.min(100, Math.round(usageRatio * 100)) : 0;
 
   // Don't render theme-dependent content until mounted
   if (!mounted) {
@@ -219,20 +151,20 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {creditBalance && (
                     <div className="text-xs text-blue-600 dark:text-blue-400">
                       <div className="flex items-center justify-between">
-                        <span>{creditBalance.displayCreditsUsed.toLocaleString()} / {creditBalance.displayCreditsTotal.toLocaleString()} credits</span>
-                        <span>{Math.min(100, Math.round((creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100))}%</span>
+                        <span>{usedCredits.toLocaleString()} / {totalCredits.toLocaleString()} credits</span>
+                        <span>{usagePercent}%</span>
                       </div>
                       <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-1.5 mt-1">
                         <div
                           className={`h-1.5 rounded-full transition-all ${
-                            (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.9
+                            usageRatio > 0.9
                               ? 'bg-red-500'
-                              : (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.7
+                              : usageRatio > 0.7
                               ? 'bg-yellow-500'
                               : 'bg-blue-500'
                           }`}
                           style={{
-                            width: `${Math.min(100, (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100)}%`
+                            width: `${usageRatio * 100}%`
                           }}
                         ></div>
                       </div>
@@ -331,17 +263,17 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <div className="hidden md:block">
                     <div className="flex items-center space-x-2">
                       <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                        {creditBalance.displayCreditsUsed.toLocaleString()}
+                        {usedCredits.toLocaleString()}
                       </span>
                       <span className="text-xs text-blue-600 dark:text-blue-400">
-                        / {creditBalance.displayCreditsTotal.toLocaleString()}
+                        / {totalCredits.toLocaleString()}
                       </span>
                     </div>
                     <p className="text-xs text-blue-600 dark:text-blue-400">credits used</p>
                   </div>
                   <div className="md:hidden">
                     <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                      {creditBalance.displayCreditsUsed.toLocaleString()}/{creditBalance.displayCreditsTotal.toLocaleString()}
+                      {usedCredits.toLocaleString()} / {totalCredits.toLocaleString()}
                     </span>
                   </div>
                 </Link>
@@ -383,5 +315,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     </div>
   );
 };
+
+const Layout: React.FC<LayoutProps> = ({ children }) => (
+  <CreditProvider>
+    <LayoutContent>{children}</LayoutContent>
+  </CreditProvider>
+);
 
 export default Layout;

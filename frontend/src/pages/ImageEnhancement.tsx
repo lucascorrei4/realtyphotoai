@@ -9,10 +9,12 @@ import { useToast } from '../hooks/useToast';
 import { validateImageFiles, validateImageFile } from '../utils/fileValidation';
 import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
+import { useCredits } from '../contexts/CreditContext';
 
 
 const ImageEnhancement: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCredits } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -205,6 +207,8 @@ const ImageEnhancement: React.FC = () => {
 
         // Trigger refresh of RecentGenerationsWidget
         setRefreshTrigger(prev => prev + 1);
+
+        await refreshCredits();
         
         // Reset form after successful generation
         setSelectedFiles([]);

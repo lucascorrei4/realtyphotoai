@@ -9,9 +9,11 @@ import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
 import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
+import { useCredits } from '../contexts/CreditContext';
 
 const ExteriorDesign: React.FC = () => {
   const { user } = useAuth();
+  const { refreshCredits } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [buildingImage, setBuildingImage] = useState<File | null>(null);
   const [designPrompt, setDesignPrompt] = useState('Transform this building with a modern exterior design');
@@ -121,6 +123,8 @@ const ExteriorDesign: React.FC = () => {
       if (result.success) {
         // Trigger refresh of RecentGenerationsWidget
         setRefreshTrigger(prev => prev + 1);
+
+        await refreshCredits();
         
         // Reset form after successful generation
         setBuildingImage(null);
