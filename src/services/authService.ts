@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
+import conversionEventService, { ConversionEventPayload } from './conversionEventService';
 
 export interface UserProfile {
   id: string;
@@ -33,7 +34,7 @@ export class AuthService {
   /**
    * Send login/signup code to user's email
    */
-  async sendAuthCode(email: string): Promise<AuthResponse> {
+  async sendAuthCode(email: string, metadata?: Partial<ConversionEventPayload>): Promise<AuthResponse> {
     try {
       // Check if user exists
       const { data: existingUser } = await supabase
@@ -60,6 +61,13 @@ export class AuthService {
           code: code // Remove this in production
         };
       } else {
+        const conversionPayload: ConversionEventPayload = {
+          email,
+          ...metadata,
+        };
+
+        await conversionEventService.sendConversionEvent('Lead', conversionPayload);
+
         return {
           success: true,
           message: 'Signup code sent to your email',
@@ -78,7 +86,7 @@ export class AuthService {
   /**
    * Verify code and authenticate user
    */
-  async verifyCode(email: string, code: string): Promise<AuthResponse> {
+  async verifyCode(email: string, code: string, metadata?: Partial<ConversionEventPayload>): Promise<AuthResponse> {
     try {
       // In production, verify the code from your email service or temporary storage
       // For now, we'll accept any 6-digit code for demo purposes
@@ -117,6 +125,14 @@ export class AuthService {
         const newUser = await this.createUser(email);
         if (newUser) {
           const token = this.generateToken(newUser);
+          const conversionPayload: ConversionEventPayload = {
+            email,
+            createdAt: newUser.created_at,
+            ...metadata,
+          };
+
+          await conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload);
+
           return {
             success: true,
             message: 'Account created and login successful',

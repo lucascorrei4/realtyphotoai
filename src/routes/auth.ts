@@ -1,9 +1,66 @@
 import express from 'express';
 import authService from '../services/authService';
+import { ConversionEventPayload } from '../services/conversionEventService';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
+
+const buildConversionMetadata = (req: express.Request): Partial<ConversionEventPayload> => {
+  const forwardedForHeader = req.headers['x-forwarded-for'];
+  const forwardedFor = Array.isArray(forwardedForHeader) ? forwardedForHeader[0] : forwardedForHeader;
+  const userAgentHeader = req.headers['user-agent'];
+  const userAgent = Array.isArray(userAgentHeader) ? userAgentHeader[0] : userAgentHeader;
+
+  const ipCandidate = forwardedFor?.split(',')[0]?.trim() ?? req.ip;
+  const amount = typeof req.body.amount === 'number' ? req.body.amount : undefined;
+  const currency = typeof req.body.currency === 'string' ? req.body.currency : undefined;
+  const createdAt = typeof req.body.createdAt === 'string' ? req.body.createdAt : undefined;
+
+  const metadata: Partial<ConversionEventPayload> = {};
+
+  if (typeof req.body.firstName === 'string') {
+    metadata.firstName = req.body.firstName;
+  }
+
+  if (typeof req.body.lastName === 'string') {
+    metadata.lastName = req.body.lastName;
+  }
+
+  if (typeof req.body.phone === 'string') {
+    metadata.phone = req.body.phone;
+  }
+
+  if (typeof req.body.fbp === 'string') {
+    metadata.fbp = req.body.fbp;
+  }
+
+  if (typeof req.body.fbc === 'string') {
+    metadata.fbc = req.body.fbc;
+  }
+
+  if (typeof userAgent === 'string') {
+    metadata.userAgent = userAgent;
+  }
+
+  if (typeof ipCandidate === 'string' && ipCandidate.length > 0) {
+    metadata.ip = ipCandidate;
+  }
+
+  if (amount !== undefined) {
+    metadata.amount = amount;
+  }
+
+  if (currency) {
+    metadata.currency = currency;
+  }
+
+  if (createdAt) {
+    metadata.createdAt = createdAt;
+  }
+
+  return metadata;
+};
 
 // Send authentication code to email
 router.post('/send-code', async (req, res) => {
@@ -14,7 +71,8 @@ router.post('/send-code', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const result = await authService.sendAuthCode(email);
+    const conversionMetadata = buildConversionMetadata(req);
+    const result = await authService.sendAuthCode(email, conversionMetadata);
     return res.json(result);
   } catch (error) {
     logger.error('Error sending auth code:', error as Error);
@@ -31,7 +89,8 @@ router.post('/verify-code', async (req, res) => {
       return res.status(400).json({ error: 'Email and code are required' });
     }
 
-    const result = await authService.verifyCode(email, code);
+    const conversionMetadata = buildConversionMetadata(req);
+    const result = await authService.verifyCode(email, code, conversionMetadata);
     return res.json(result);
   } catch (error) {
     logger.error('Error verifying code:', error as Error);

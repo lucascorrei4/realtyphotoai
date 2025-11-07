@@ -46,6 +46,7 @@ class ConfigManager {
       tempDir: process.env.TEMP_DIR || 'temp',
       rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
       rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+      n8nWebhookUrl: process.env.N8N_WEBHOOK_URL || 'https://agents.n8n.bizaigpt.com/webhook/b408defb-315d-4676-b4c4-1dcebe81ffc0',
       // R2 Configuration
       r2AccountId: process.env.R2_ACCOUNT_ID || '',
       r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',

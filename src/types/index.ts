@@ -57,6 +57,7 @@ export interface AppConfig {
   tempDir: string;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  n8nWebhookUrl: string;
   // R2 Configuration
   r2AccountId: string;
   r2AccessKeyId: string;
