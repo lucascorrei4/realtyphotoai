@@ -60,7 +60,10 @@ export const errorHandler = (
     timestamp: new Date().toISOString(),
   };
 
-  res.status(statusCode).json(errorResponse);
+  // Ensure we always return JSON, never HTML
+  if (!res.headersSent) {
+    res.status(statusCode).json(errorResponse);
+  }
 };
 
 /**

@@ -3,12 +3,13 @@ import rateLimit from 'express-rate-limit';
 import { ImageController } from '../controllers/imageController';
 import { uploadMiddleware, uploadMultipleMiddleware, handleUploadError, validateUploadedFile, validateUploadedFiles } from '../middleware/uploadMiddleware';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authenticateToken } from '../middleware/authMiddleware';
+import { authenticateToken, checkGenerationLimit, checkModelAccess } from '../middleware/authMiddleware';
 import { config } from '../config';
 import authRoutes from './auth';
 import adminRoutes from './admin';
 import userRoutes from './user';
-import stripeRoutes from './stripe';
+// Stripe routes are registered directly in app.ts to avoid conflicts
+// import stripeRoutes from './stripe';
 
 const router = Router();
 const imageController = new ImageController();
@@ -64,6 +65,8 @@ router.post('/upload',
 // Main image processing endpoint
 router.post('/process-image', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('interior_design'),
   processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
@@ -74,6 +77,8 @@ router.post('/process-image',
 // Interior design processing endpoint
 router.post('/interior-design', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('interior_design'),
   processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
@@ -89,6 +94,8 @@ router.get('/image-enhancement',
 
 router.post('/image-enhancement', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('image_enhancement'),
   processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 20 },
@@ -102,6 +109,8 @@ router.post('/image-enhancement',
 // Element replacement endpoint
 router.post('/replace-elements', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('element_replacement'),
   processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 1 }
@@ -114,6 +123,8 @@ router.post('/replace-elements',
 // Add furnitures endpoint
 router.post('/add-furnitures', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('add_furnitures'),
   processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'roomImage', maxCount: 1 },
@@ -127,6 +138,8 @@ router.post('/add-furnitures',
 // Exterior design endpoint
 router.post('/exterior-design', 
   authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('exterior_design'),
   processingRateLimit,
   uploadMiddleware.single('buildingImage'),
   validateUploadedFile,
@@ -150,7 +163,7 @@ router.use('/admin', adminRoutes);
 // User routes
 router.use('/user', userRoutes);
 
-// Stripe routes
-router.use('/stripe', stripeRoutes);
+// Note: Stripe routes are registered directly in app.ts to avoid conflicts
+// router.use('/stripe', stripeRoutes);
 
 export default router; 

@@ -1,9 +1,16 @@
 import express from 'express';
+import Stripe from 'stripe';
 import stripeCheckoutService from '../services/stripeCheckoutService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
+import { asyncHandler } from '../middleware/errorHandler';
 import { SUBSCRIPTION_PLANS } from '../config/subscriptionPlans';
 import { supabase } from '../config/supabase';
+
+// Initialize Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16',
+});
 
 const router = express.Router();
 
@@ -38,53 +45,85 @@ router.get('/plans', async (_req, res) => {
  * Create checkout session
  * POST /stripe/checkout
  */
-router.post('/checkout', authenticateToken, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { planId, billingCycle = 'monthly' } = req.body;
-    const userId = req.user?.id;
-    const userEmail = req.user?.email;
+router.post('/checkout', authenticateToken, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { planId, billingCycle = 'monthly' } = req.body;
+  const userId = req.user?.id;
+  const userEmail = req.user?.email;
 
-    if (!userId || !userEmail) {
-      return res.status(401).json({ error: 'User authentication required' });
-    }
-
-    if (!planId || !SUBSCRIPTION_PLANS[planId]) {
-      return res.status(400).json({ error: 'Invalid plan ID' });
-    }
-
-    if (!['monthly', 'yearly'].includes(billingCycle)) {
-      return res.status(400).json({ error: 'Invalid billing cycle' });
-    }
-
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    
-    const sessionData = {
-      planId,
-      billingCycle,
-      userId,
-      userEmail,
-      successUrl: `${baseUrl}/dashboard?subscription=success`,
-      cancelUrl: `${baseUrl}/pricing?subscription=cancelled`,
-      metadata: {
-        source: 'web_app',
-        user_agent: req.get('User-Agent') || 'unknown'
-      }
-    };
-
-    const { sessionId, url } = await stripeCheckoutService.createCheckoutSession(sessionData);
-
-    logger.info(`Checkout session created for user ${userId}, plan ${planId}`);
-
-    return res.json({
-      success: true,
-      sessionId,
-      url
+  if (!userId || !userEmail) {
+    res.status(401).json({ 
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'User authentication required' 
     });
-  } catch (error) {
-    logger.error('Error creating checkout session:', error as Error);
-    return res.status(500).json({ error: 'Failed to create checkout session' });
+    return;
   }
-});
+
+  // Validate plan ID - check both SUBSCRIPTION_PLANS and database
+  if (!planId) {
+    res.status(400).json({ 
+      success: false,
+      error: 'INVALID_REQUEST',
+      message: 'Plan ID is required' 
+    });
+    return;
+  }
+
+  // Check if plan exists in SUBSCRIPTION_PLANS (fallback to database check if needed)
+  const plan = SUBSCRIPTION_PLANS[planId];
+  if (!plan) {
+    // Try to get plan from database as fallback
+    const { data: planRule, error: planError } = await supabase
+      .from('plan_rules')
+      .select('plan_name')
+      .eq('plan_name', planId)
+      .eq('is_active', true)
+      .single();
+    
+    if (planError || !planRule) {
+      res.status(400).json({ 
+        success: false,
+        error: 'INVALID_PLAN',
+        message: `Invalid plan ID: ${planId}` 
+      });
+      return;
+    }
+  }
+
+  if (!['monthly', 'yearly'].includes(billingCycle)) {
+    res.status(400).json({ 
+      success: false,
+      error: 'INVALID_BILLING_CYCLE',
+      message: 'Invalid billing cycle. Must be "monthly" or "yearly"' 
+    });
+    return;
+  }
+
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  
+  const sessionData = {
+    planId,
+    billingCycle,
+    userId,
+    userEmail,
+    successUrl: `${baseUrl}/dashboard?subscription=success`,
+    cancelUrl: `${baseUrl}/pricing?subscription=cancelled`,
+    metadata: {
+      source: 'web_app',
+      user_agent: req.get('User-Agent') || 'unknown'
+    }
+  };
+
+  const { sessionId, url } = await stripeCheckoutService.createCheckoutSession(sessionData);
+
+  logger.info(`Checkout session created for user ${userId}, plan ${planId}`);
+
+  res.json({
+    success: true,
+    sessionId,
+    url
+  });
+}));
 
 /**
  * Create customer portal session for subscription management
@@ -111,7 +150,7 @@ router.post('/portal', authenticateToken, async (req: AuthenticatedRequest, res)
     }
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const returnUrl = `${baseUrl}/dashboard?portal=success`;
+    const returnUrl = `${baseUrl}/settings?portal=success`;
 
     const { url } = await stripeCheckoutService.createCustomerPortalSession(
       user.stripe_customer_id,
@@ -127,6 +166,314 @@ router.post('/portal', authenticateToken, async (req: AuthenticatedRequest, res)
     return res.status(500).json({ error: 'Failed to create customer portal session' });
   }
 });
+
+/**
+ * Manually sync subscription from Stripe (for fixing missed webhooks)
+ * POST /stripe/sync-subscription
+ */
+router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?.id;
+  const userEmail = req.user?.email;
+
+  if (!userId || !userEmail) {
+    res.status(401).json({ 
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'User authentication required' 
+    });
+    return;
+  }
+
+  try {
+    // Get user's Stripe customer ID
+    const { data: user } = await supabase
+      .from('user_profiles')
+      .select('stripe_customer_id')
+      .eq('id', userId)
+      .single();
+
+    if (!user?.stripe_customer_id) {
+      res.status(404).json({ 
+        success: false,
+        error: 'NO_CUSTOMER_ID',
+        message: 'No Stripe customer ID found. Please subscribe first.' 
+      });
+      return;
+    }
+
+    // Get active subscriptions from Stripe
+    const subscriptions = await stripe.subscriptions.list({
+      customer: user.stripe_customer_id,
+      status: 'active',
+      limit: 1,
+    });
+
+    if (subscriptions.data.length === 0) {
+      // No active subscription found in Stripe - update local records to reflect cancellation
+      logger.info(`No active Stripe subscriptions for user ${userId}. Resetting local subscription state.`);
+
+      // Mark existing subscription records as canceled
+      await supabase
+        .from('stripe_subscriptions')
+        .update({
+          status: 'canceled',
+          cancel_at_period_end: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .neq('status', 'canceled');
+
+      // Downgrade user to free plan
+      await supabase
+        .from('user_profiles')
+        .update({
+          subscription_plan: 'free',
+          monthly_generations_limit: 10,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      res.json({
+        success: true,
+        message: 'No active subscription found in Stripe. Local records reset.',
+        subscription: null,
+      });
+      return;
+    }
+
+    const subscription = subscriptions.data[0];
+    const priceId = subscription.items.data[0]?.price.id;
+    
+    if (!priceId) {
+      res.status(400).json({ 
+        success: false,
+        error: 'NO_PRICE_ID',
+        message: 'No price ID found in subscription.' 
+      });
+      return;
+    }
+
+    // Get plan name from price metadata
+    const price = await stripe.prices.retrieve(priceId);
+    let planName = price.metadata.plan_name;
+
+    if (!planName) {
+      res.status(400).json({ 
+        success: false,
+        error: 'NO_PLAN_NAME',
+        message: 'No plan name found in price metadata.' 
+      });
+      return;
+    }
+
+    // Normalize plan name to match enum values (lowercase)
+    planName = planName.toLowerCase().trim();
+
+    // Validate plan name is a valid enum value
+    const validPlans = ['free', 'basic', 'premium', 'enterprise', 'ultra'];
+    if (!validPlans.includes(planName)) {
+      logger.warn(`Plan name ${planName} not in valid plans, attempting to use as-is`);
+      // Don't fail here - let the database error if it's truly invalid
+    }
+    
+    logger.info(`Syncing subscription with plan name: ${planName} for user ${userId}`);
+
+    // Get plan limits from database
+    const { data: planRule } = await supabase
+      .from('plan_rules')
+      .select('monthly_generations_limit')
+      .eq('plan_name', planName)
+      .eq('is_active', true)
+      .single();
+
+    const monthlyLimit = planRule?.monthly_generations_limit || 10;
+
+    // Update user profile - try to update subscription_plan separately to handle enum casting
+    // First update other fields
+    const { error: limitError } = await supabase
+      .from('user_profiles')
+      .update({
+        monthly_generations_limit: monthlyLimit,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (limitError) {
+      logger.error('Error updating user profile limits:', limitError);
+      res.status(500).json({ 
+        success: false,
+        error: 'UPDATE_FAILED',
+        message: `Failed to update user profile: ${limitError.message}` 
+      });
+      return;
+    }
+
+    // Update subscription_plan - try RPC function first, fallback to direct update
+    let planError = null;
+    const { error: rpcError } = await supabase.rpc('update_user_subscription_plan', {
+      user_uuid: userId,
+      new_plan: planName
+    });
+
+    if (rpcError) {
+      // RPC function might not exist or failed - try direct update
+      logger.warn('RPC function failed or not available, trying direct update:', {
+        error: rpcError.message || rpcError,
+        code: rpcError.code
+      });
+      const { error: directError } = await supabase
+        .from('user_profiles')
+        .update({
+          subscription_plan: planName as any
+        })
+        .eq('id', userId);
+      
+      planError = directError;
+    } else {
+      // RPC succeeded - still need to update monthly limit separately
+      const { error: limitUpdateError } = await supabase
+        .from('user_profiles')
+        .update({
+          monthly_generations_limit: monthlyLimit,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+      
+      if (limitUpdateError) {
+        logger.warn('Could not update monthly limit after RPC:', {
+          error: limitUpdateError.message || limitUpdateError,
+          code: limitUpdateError.code
+        });
+      }
+    }
+
+    if (planError) {
+      logger.error('Error updating subscription_plan:', {
+        error: planError,
+        planName,
+        validPlans: ['free', 'basic', 'premium', 'enterprise', 'ultra'],
+        userId
+      });
+      
+      // If enum casting fails, the subscription record will still be created
+      // but the user profile won't be updated - log warning but continue
+      logger.warn(`Could not update subscription_plan to ${planName} for user ${userId}. Error: ${planError.message}`);
+      // Don't fail the entire sync - subscription record creation is more important
+    } else {
+      logger.info(`Successfully updated user ${userId} to plan ${planName}`);
+    }
+
+    // Check if subscription already exists
+    const { data: existingSub } = await supabase
+      .from('stripe_subscriptions')
+      .select('id')
+      .eq('stripe_subscription_id', subscription.id)
+      .single();
+
+    if (existingSub) {
+      // Update existing subscription
+      const { error: updateSubError } = await supabase
+        .from('stripe_subscriptions')
+        .update({
+          status: subscription.status,
+          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          cancel_at_period_end: subscription.cancel_at_period_end,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('stripe_subscription_id', subscription.id);
+
+      if (updateSubError) {
+        logger.error('Error updating subscription:', updateSubError);
+        res.status(500).json({ 
+          success: false,
+          error: 'UPDATE_FAILED',
+          message: `Failed to update subscription record: ${updateSubError.message}` 
+        });
+        return;
+      }
+      logger.info(`Updated existing subscription ${subscription.id} for user ${userId}`);
+    } else {
+      // Create new subscription record
+      // Try using RPC function first if it exists, otherwise direct insert
+      let insertError = null;
+      
+      // Try RPC function first (handles enum casting properly)
+      const { error: rpcError } = await supabase.rpc('create_stripe_subscription', {
+        p_user_id: userId,
+        p_stripe_subscription_id: subscription.id,
+        p_stripe_customer_id: user.stripe_customer_id,
+        p_stripe_price_id: priceId,
+        p_plan_name: planName,
+        p_status: subscription.status,
+        p_current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+        p_current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+        p_cancel_at_period_end: subscription.cancel_at_period_end || false
+      });
+      
+      if (!rpcError) {
+        insertError = null; // Success with RPC function
+        logger.info(`Successfully created subscription via RPC function`);
+      } else {
+        // RPC function doesn't exist or failed, try direct insert with subscription_plan enum
+        logger.warn('RPC function not available or failed, trying direct insert with enum cast', {
+          error: rpcError.message || rpcError,
+          code: rpcError.code
+        });
+        
+        const { error: enumInsertError } = await supabase
+          .from('stripe_subscriptions')
+          .insert({
+            user_id: userId,
+            stripe_subscription_id: subscription.id,
+            stripe_customer_id: user.stripe_customer_id,
+            stripe_price_id: priceId,
+            plan_name: planName, // Use plan_name TEXT column
+            status: subscription.status,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            cancel_at_period_end: subscription.cancel_at_period_end,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        
+        if (!enumInsertError) {
+          insertError = null; // Success with enum column
+          logger.info(`Successfully created subscription with direct enum cast`);
+        } else {
+          insertError = enumInsertError;
+          logger.error('Direct insert with enum also failed:', enumInsertError);
+        }
+      }
+
+      if (insertError) {
+        logger.error('Error creating subscription:', insertError);
+        res.status(500).json({ 
+          success: false,
+          error: 'CREATE_FAILED',
+          message: `Failed to create subscription record: ${insertError.message}` 
+        });
+        return;
+      }
+      logger.info(`Created new subscription ${subscription.id} for user ${userId}`);
+    }
+
+    logger.info(`Manually synced subscription for user ${userId} to plan ${planName}`);
+
+    res.json({
+      success: true,
+      message: 'Subscription synced successfully',
+      subscription: {
+        plan_name: planName,
+        status: subscription.status,
+        current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      }
+    });
+  } catch (error) {
+    logger.error('Error syncing subscription:', error as Error);
+    throw error;
+  }
+}));
 
 /**
  * Get user's subscription details
@@ -210,7 +557,30 @@ router.post('/cancel', authenticateToken, async (req: AuthenticatedRequest, res)
       immediately
     );
 
-    logger.info(`Subscription ${subscription.stripe_subscription_id} cancelled by user ${userId}`);
+    // Update local database to reflect cancellation
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (immediately) {
+      updateData.status = 'canceled';
+      updateData.cancel_at_period_end = false;
+    } else {
+      updateData.cancel_at_period_end = true;
+      // Status remains 'active' until period ends
+    }
+
+    const { error: updateError } = await supabase
+      .from('stripe_subscriptions')
+      .update(updateData)
+      .eq('stripe_subscription_id', subscription.stripe_subscription_id);
+
+    if (updateError) {
+      logger.error('Error updating subscription in database after cancellation:', updateError);
+      // Don't fail the request - Stripe was updated successfully
+    } else {
+      logger.info(`Subscription ${subscription.stripe_subscription_id} cancelled and database updated for user ${userId}`);
+    }
 
     return res.json({
       success: true,
@@ -345,8 +715,9 @@ router.get('/usage', authenticateToken, async (req: AuthenticatedRequest, res) =
 });
 
 /**
- * Sync all plans with Stripe (Admin only)
+ * Sync all plans with Stripe from database (Admin only)
  * POST /stripe/sync-plans
+ * Creates products and prices for all active plans in the database
  */
 router.post('/sync-plans', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
@@ -362,34 +733,22 @@ router.post('/sync-plans', authenticateToken, async (req: AuthenticatedRequest, 
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const results = [];
-    
-    for (const [planId, plan] of Object.entries(SUBSCRIPTION_PLANS)) {
-      try {
-        const syncResult = await stripeCheckoutService.syncPlanWithStripe(plan);
-        results.push({
-          planId,
-          success: true,
-          ...syncResult
-        });
-      } catch (error) {
-        logger.error(`Error syncing plan ${planId}:`, error as Error);
-        results.push({
-          planId,
-          success: false,
-          error: (error as Error).message
-        });
-      }
-    }
+    // Sync all plans from database
+    const syncResult = await stripeCheckoutService.syncAllPlansWithStripe();
 
     return res.json({
-      success: true,
-      results,
-      message: `Synced ${results.filter(r => r.success).length}/${results.length} plans with Stripe`
+      success: syncResult.success,
+      synced: syncResult.synced,
+      failed: syncResult.failed,
+      results: syncResult.results,
+      message: `Synced ${syncResult.synced} plans with Stripe${syncResult.failed > 0 ? `, ${syncResult.failed} failed` : ''}`
     });
   } catch (error) {
     logger.error('Error syncing plans with Stripe:', error as Error);
-    return res.status(500).json({ error: 'Failed to sync plans with Stripe' });
+    return res.status(500).json({ 
+      error: 'Failed to sync plans with Stripe',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import supabase from '../config/supabase';
 import { 
   User, 
@@ -14,9 +14,16 @@ import {
   Edit3,
   Save,
   X,
-  CheckCircle
+  CheckCircle,
+  CreditCard,
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getBackendUrl } from '../config/environment';
+import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
+import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
+import StripeCheckout from '../components/StripeCheckout';
 
 interface UserStats {
   total_generations: number;
@@ -25,14 +32,29 @@ interface UserStats {
   success_rate: number;
   monthly_usage: number;
   monthly_limit: number;
+  display_usage: number;
+  display_limit: number;
+  actual_usage: number;
+  actual_limit: number;
   model_breakdown: {
     [key: string]: number;
   };
 }
 
+interface SubscriptionInfo {
+  plan_name: string;
+  status: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+}
+
+const SYNC_STORAGE_KEY = 'subscription-last-sync';
+const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 const Settings: React.FC = () => {
   const { user, signOut, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -43,33 +65,129 @@ const Settings: React.FC = () => {
     name: user?.name || '',
     phone: user?.phone || ''
   });
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const hasInitialSynced = useRef(false);
 
   const fetchUserStats = useCallback(async () => {
+    if (!user?.id) {
+      setStats(null);
+      setLoading(false);
+      return;
+    }
+
     try {
-      // For now, use mock data since the API endpoint might not exist
-      // In a real implementation, you'd fetch from your backend
-      const mockStats: UserStats = {
-        total_generations: user?.total_generations || 0,
-        successful_generations: user?.successful_generations || 0,
-        failed_generations: user?.failed_generations || 0,
-        success_rate: (user?.total_generations && user?.successful_generations) 
-          ? Math.round((user.successful_generations / user.total_generations) * 100) 
-          : 0,
-        monthly_usage: 5, // Mock data
-        monthly_limit: user?.monthly_generations_limit || 10,
-        model_breakdown: {
-          image_enhancement: 3,
-          interior_design: 1,
-          element_replacement: 1,
-          add_furnitures: 1,
+      const { data: generations, error } = await supabase
+        .from('generations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching generations for settings stats:', error);
+      }
+
+      const userGenerations = generations || [];
+      const totalGenerations = userGenerations.length;
+      const successfulGenerations = userGenerations.filter(g => g.status === 'completed').length;
+      const failedGenerations = userGenerations.filter(g => g.status === 'failed').length;
+      const successRate = totalGenerations > 0 ? Math.round((successfulGenerations / totalGenerations) * 100) : 0;
+
+      const now = new Date();
+      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthlyCompletedGenerations = userGenerations.filter(g => 
+        g.status === 'completed' && new Date(g.created_at) >= currentMonth
+      );
+
+      let actualCreditsUsed = 0;
+      monthlyCompletedGenerations.forEach(g => {
+        if (g.generation_type === 'video' && g.duration_seconds) {
+          actualCreditsUsed += getVideoCredits(g.duration_seconds);
+        } else {
+          actualCreditsUsed += getImageCredits(1);
         }
-      };
-      
-      setStats(mockStats);
+      });
+
+      const planName = user.subscription_plan || 'free';
+      let userPlan = SUBSCRIPTION_PLANS.starter;
+      if (planName) {
+        const dbPlan = await getUserPlanFromDatabase(planName);
+        if (dbPlan) {
+          userPlan = dbPlan;
+        } else if (SUBSCRIPTION_PLANS[planName as keyof typeof SUBSCRIPTION_PLANS]) {
+          userPlan = SUBSCRIPTION_PLANS[planName as keyof typeof SUBSCRIPTION_PLANS];
+        }
+      }
+
+      const creditSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+
+      setStats({
+        total_generations: totalGenerations,
+        successful_generations: successfulGenerations,
+        failed_generations: failedGenerations,
+        success_rate: successRate,
+        monthly_usage: actualCreditsUsed,
+        monthly_limit: creditSummary.actualCreditsTotal,
+        display_usage: creditSummary.displayCreditsUsed,
+        display_limit: creditSummary.displayCreditsTotal,
+        actual_usage: creditSummary.actualCreditsUsed,
+        actual_limit: creditSummary.actualCreditsTotal,
+        model_breakdown: {
+          image_enhancement: userGenerations.filter(g => g.model_type === 'image_enhancement').length,
+          interior_design: userGenerations.filter(g => g.model_type === 'interior_design').length,
+          element_replacement: userGenerations.filter(g => g.model_type === 'element_replacement').length,
+          add_furnitures: userGenerations.filter(g => g.model_type === 'add_furnitures').length,
+        },
+      });
     } catch (error) {
       console.error('Error fetching user stats:', error);
+      setStats(null);
     } finally {
       setLoading(false);
+    }
+  }, [user]);
+
+  const fetchSubscription = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      setSubscriptionLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.log('No session token available');
+        setSubscriptionLoading(false);
+        return;
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/subscription`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Subscription data received:', data);
+        if (data.subscription) {
+          setSubscription(data.subscription);
+        } else {
+          console.log('No subscription found in response');
+          setSubscription(null);
+        }
+      } else {
+        console.error('Failed to fetch subscription:', response.status, response.statusText);
+        setSubscription(null);
+      }
+    } catch (error) {
+      console.error('Error fetching subscription:', error);
+      setSubscription(null);
+    } finally {
+      setSubscriptionLoading(false);
     }
   }, [user]);
 
@@ -79,7 +197,8 @@ const Settings: React.FC = () => {
       return;
     }
     fetchUserStats();
-  }, [user, navigate, fetchUserStats]);
+    fetchSubscription();
+  }, [user, navigate, fetchUserStats, fetchSubscription]);
 
   // Update edit form when user data changes
   useEffect(() => {
@@ -176,6 +295,161 @@ const Settings: React.FC = () => {
     navigate('/auth');
   };
 
+  const handleOpenCustomerPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/portal`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to open customer portal');
+      }
+
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error('Error opening customer portal:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to open customer portal');
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const handleSyncSubscription = useCallback(async ({ showFeedback = true }: { showFeedback?: boolean } = {}) => {
+    if (showFeedback) {
+      setSyncLoading(true);
+      setSaveError(null);
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/sync-subscription`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to sync subscription');
+      }
+
+      const data = await response.json();
+
+      await fetchSubscription();
+      await refreshUser();
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(SYNC_STORAGE_KEY, Date.now().toString());
+      }
+
+      if (showFeedback) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 5000);
+      }
+
+      console.log('Subscription synced successfully:', data);
+    } catch (error) {
+      console.error('Error syncing subscription:', error);
+      if (showFeedback) {
+        setSaveError(error instanceof Error ? error.message : 'Failed to sync subscription');
+      }
+    } finally {
+      if (showFeedback) {
+        setSyncLoading(false);
+      }
+    }
+  }, [fetchSubscription, refreshUser]);
+
+  const handlePlanChangeSuccess = useCallback(async () => {
+    setShowPlanModal(false);
+    await handleSyncSubscription();
+  }, [handleSyncSubscription]);
+
+  // Auto sync once on initial page load to ensure state is fresh
+  useEffect(() => {
+    if (!user || subscriptionLoading) return;
+    if (hasInitialSynced.current) return;
+    hasInitialSynced.current = true;
+    handleSyncSubscription({ showFeedback: false });
+  }, [user, subscriptionLoading, handleSyncSubscription]);
+
+  // Auto sync on page load if last sync is stale
+  useEffect(() => {
+    if (!user || subscriptionLoading) return;
+    if (typeof window === 'undefined') return;
+
+    const lastSync = sessionStorage.getItem(SYNC_STORAGE_KEY);
+    if (!lastSync || Date.now() - Number(lastSync) > SYNC_COOLDOWN_MS) {
+      handleSyncSubscription({ showFeedback: false });
+    }
+  }, [user, subscriptionLoading, handleSyncSubscription]);
+
+  // Sync when returning from Stripe customer portal
+  useEffect(() => {
+    if (!user) return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('portal') === 'success') {
+      handleSyncSubscription({ showFeedback: false });
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(SYNC_STORAGE_KEY, Date.now().toString());
+      }
+      navigate('/settings', { replace: true });
+    }
+  }, [location.search, user, handleSyncSubscription, navigate]);
+
+  const handleCancelSubscription = async (immediately: boolean = false) => {
+    setCancelLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ immediately }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cancel subscription');
+      }
+
+      // Refresh subscription info and ensure local state is in sync
+      await handleSyncSubscription();
+      setShowCancelConfirm(false);
+    } catch (error) {
+      console.error('Error canceling subscription:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to cancel subscription');
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
   if (!user) {
     return null;
   }
@@ -202,8 +476,8 @@ const Settings: React.FC = () => {
     })) : [];
 
   const monthlyUsageData = [
-    { name: 'Used', value: stats?.monthly_usage || 0, color: '#3B82F6' },
-    { name: 'Remaining', value: (stats?.monthly_limit || 0) - (stats?.monthly_usage || 0), color: '#E5E7EB' }
+    { name: 'Used', value: stats?.display_usage || 0, color: '#3B82F6' },
+    { name: 'Remaining', value: Math.max(0, (stats?.display_limit || 0) - (stats?.display_usage || 0)), color: '#E5E7EB' }
   ];
 
   return (
@@ -224,8 +498,9 @@ const Settings: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Profile Section */}
-        <div className="lg:col-span-1">
+        {/* Left Column */}
+        <div className="lg:col-span-1 space-y-6">
+          {/* Profile Section */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Profile</h2>
@@ -335,6 +610,168 @@ const Settings: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Subscription Management Section */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Subscription</h2>
+              <CreditCard className="h-5 w-5 text-gray-400" />
+            </div>
+
+            {subscriptionLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : subscription || (user.subscription_plan && user.subscription_plan !== 'free') ? (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Current Plan</span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${planColors[(subscription?.plan_name || user.subscription_plan) as keyof typeof planColors] || planColors.free}`}>
+                      {(subscription?.plan_name || user.subscription_plan || 'Free').charAt(0).toUpperCase() + (subscription?.plan_name || user.subscription_plan || 'Free').slice(1)}
+                    </span>
+                  </div>
+                  
+                  {subscription && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          subscription.status === 'active' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                        }`}>
+                          {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
+                        </span>
+                      </div>
+
+                      {subscription.current_period_end && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Renews On</span>
+                          <span className="text-sm text-gray-900 dark:text-white">
+                            {new Date(subscription.current_period_end).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+
+                      {subscription.cancel_at_period_end && (
+                        <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                          <p className="text-sm text-yellow-600 dark:text-yellow-400 flex items-center">
+                            <AlertCircle className="h-4 w-4 mr-2" />
+                            Your subscription will cancel at the end of the billing period.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {!subscription && user.subscription_plan && user.subscription_plan !== 'free' && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <p className="text-sm text-blue-600 dark:text-blue-400 mb-2">
+                        You have a {user.subscription_plan} plan. Use "Manage Subscription" to cancel or modify your plan.
+                      </p>
+                      <button
+                        onClick={() => handleSyncSubscription()}
+                        disabled={syncLoading}
+                        className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {syncLoading ? 'Syncing...' : 'Sync from Stripe'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                  {/* Sync button for users who paid but subscription not recognized */}
+                  {!subscription && (
+                    <button
+                      onClick={() => handleSyncSubscription()}
+                      disabled={syncLoading}
+                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {syncLoading ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          <span className="font-medium">Sync Subscription from Stripe</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowPlanModal(true);
+                      setSaveError(null);
+                    }}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95"
+                  >
+                    <Crown className="h-4 w-4" />
+                    <span className="font-medium">Change Plan</span>
+                  </button>
+
+                  <button
+                    onClick={handleOpenCustomerPortal}
+                    disabled={portalLoading}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {portalLoading ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                    ) : (
+                      <>
+                        <ExternalLink className="h-4 w-4" />
+                        <span className="font-medium">Manage Subscription</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Show cancel button if user has active subscription OR has a paid plan (even without Stripe record) */}
+                  {(subscription?.status === 'active' || (user.subscription_plan && user.subscription_plan !== 'free')) && (
+                    <button
+                      onClick={() => {
+                        if (subscription?.status === 'active') {
+                          setShowCancelConfirm(true);
+                        } else {
+                          // If no Stripe subscription but has paid plan, direct to customer portal
+                          handleOpenCustomerPortal();
+                        }
+                        setSaveError(null);
+                      }}
+                      disabled={cancelLoading || portalLoading}
+                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <X className="h-4 w-4" />
+                      <span className="font-medium">
+                        {subscription?.cancel_at_period_end 
+                          ? 'Subscription Cancelling' 
+                          : subscription?.status === 'active'
+                          ? 'Cancel Subscription'
+                          : 'Cancel Plan'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    You don't have an active subscription. Subscribe to unlock more features and credits.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowPlanModal(true);
+                      setSaveError(null);
+                    }}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95"
+                  >
+                    <Crown className="h-4 w-4" />
+                    <span className="font-medium">View Plans</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Statistics Section */}
@@ -349,7 +786,7 @@ const Settings: React.FC = () => {
             ) : stats ? (
               <div className="space-y-6">
                 {/* Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                   <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4">
                     <div className="flex items-center space-x-3">
                       <BarChart3 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
@@ -374,8 +811,12 @@ const Settings: React.FC = () => {
                     <div className="flex items-center space-x-3">
                       <Image className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                       <div>
-                        <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Monthly Usage</p>
-                        <p className="text-2xl font-bold text-purple-900 dark:text-white">{stats.monthly_usage}/{stats.monthly_limit}</p>
+                        <p className="text-sm font-medium text-purple-600 dark:text-purple-400">Display Credits Used</p>
+                        <p className="text-2xl font-bold text-purple-900 dark:text-white">
+                          {stats.display_usage?.toLocaleString() || '0'}
+                          <span className="text-base text-purple-500 dark:text-purple-300"> / {stats.display_limit?.toLocaleString() || '0'}</span>
+                        </p>
+                        <p className="text-xs text-purple-500 dark:text-purple-300">Marketing credits shown in your dashboard</p>
                       </div>
                     </div>
                   </div>
@@ -384,8 +825,25 @@ const Settings: React.FC = () => {
                     <div className="flex items-center space-x-3">
                       <SettingsIcon className="h-6 w-6 text-orange-600 dark:text-orange-400" />
                       <div>
-                        <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Remaining</p>
-                        <p className="text-2xl font-bold text-orange-900 dark:text-white">{stats.monthly_limit - stats.monthly_usage}</p>
+                        <p className="text-sm font-medium text-orange-600 dark:text-orange-400">Display Credits Remaining</p>
+                        <p className="text-2xl font-bold text-orange-900 dark:text-white">
+                          {Math.max(0, (stats.display_limit || 0) - (stats.display_usage || 0)).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-orange-500 dark:text-orange-300">Actual usage resets every billing cycle</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-slate-900/30 rounded-lg p-4">
+                    <div className="flex items-center space-x-3">
+                      <SettingsIcon className="h-6 w-6 text-slate-600 dark:text-slate-300" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Actual Credits Used</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                          {stats.actual_usage?.toLocaleString() || '0'}
+                          <span className="text-base text-slate-500 dark:text-slate-300"> / {stats.actual_limit?.toLocaleString() || '0'}</span>
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-300">Real billing credits consumed this cycle</p>
                       </div>
                     </div>
                   </div>
@@ -395,7 +853,7 @@ const Settings: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Monthly Usage Chart */}
                   <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Monthly Usage</h3>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Display Credits Usage</h3>
                     <ResponsiveContainer width="100%" height={200}>
                       <PieChart>
                         <Pie
@@ -448,6 +906,80 @@ const Settings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Plan Selection Modal */}
+      {showPlanModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowPlanModal(false);
+          }
+        }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Manage Subscription</h2>
+              <button
+                onClick={() => {
+                  setShowPlanModal(false);
+                  setSaveError(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <StripeCheckout 
+                onClose={() => {
+                  setShowPlanModal(false);
+                  setSaveError(null);
+                }}
+                onSuccess={handlePlanChangeSuccess}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Subscription Confirmation Modal */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="flex-shrink-0">
+                  <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Cancel Subscription</h3>
+              </div>
+              
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Are you sure you want to cancel your subscription? Your subscription will remain active until{' '}
+                {subscription?.current_period_end 
+                  ? new Date(subscription.current_period_end).toLocaleDateString()
+                  : 'the end of your billing period'
+                }, and you'll continue to have access to all features until then.
+              </p>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => handleCancelSubscription(false)}
+                  disabled={cancelLoading}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {cancelLoading ? 'Canceling...' : 'Cancel at Period End'}
+                </button>
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  disabled={cancelLoading}
+                  className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Keep Subscription
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

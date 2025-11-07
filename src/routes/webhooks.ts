@@ -59,6 +59,11 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req, re
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
       
+      case 'invoice.created':
+        // Log invoice creation (split payments happen on invoice.payment_succeeded)
+        await handleInvoiceCreated(event.data.object as Stripe.Invoice);
+        break;
+      
       case 'invoice.payment_succeeded':
         await handlePaymentSucceeded(event.data.object as Stripe.Invoice);
         break;
@@ -237,33 +242,87 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 /**
+ * Handle invoice creation
+ * Note: We don't set up automatic splits here anymore.
+ * Instead, we use Separate Charges & Transfers on invoice.payment_succeeded
+ * This requires Cross-border Payouts to be enabled on the US platform.
+ */
+async function handleInvoiceCreated(invoice: Stripe.Invoice) {
+  try {
+    // Just log invoice creation - split payments happen on invoice.payment_succeeded
+    logger.info(`Invoice created: ${invoice.id} for subscription ${invoice.subscription || 'N/A'}`);
+  } catch (error) {
+    logger.error('Error handling invoice creation:', error as Error);
+  }
+}
+
+/**
  * Handle successful payment and process split payments
+ * Uses Separate Charges & Transfers pattern:
+ * 1. Charge happens on US platform (normal subscription)
+ * 2. Create transfers to BR connected accounts
+ * 3. Store ledger for refund/reversal tracking
+ * 
+ * Requires:
+ * - Cross-border Payouts enabled on US platform
+ * - BR accounts must be Express or Custom (not Standard)
  */
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
   try {
-    if (invoice.subscription) {
-      // Update subscription status to active
-      await supabase
-        .from('stripe_subscriptions')
-        .update({
-          status: 'active',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('stripe_subscription_id', invoice.subscription as string);
-
-      // Process split payment for partners
-      try {
-        await stripeCheckoutService.processSplitPayment(invoice.subscription as string);
-        logger.info(`Split payment processed for subscription: ${invoice.subscription}`);
-      } catch (splitError) {
-        logger.error('Error processing split payment:', splitError as Error);
-        // Don't fail the webhook if split payment fails
-      }
+    if (!invoice.subscription) {
+      logger.info(`Payment succeeded for invoice ${invoice.id} (no subscription - one-time payment)`);
+      return;
     }
 
-    logger.info(`Payment succeeded for invoice: ${invoice.id}`);
+    const subscriptionId = invoice.subscription as string;
+
+    // Update subscription status to active
+    await supabase
+      .from('stripe_subscriptions')
+      .update({
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_subscription_id', subscriptionId);
+
+    // Process split payment using Separate Charges & Transfers (if enabled)
+    // Feature flag: Set ENABLE_SPLIT_PAYMENTS=false to disable split payments
+    const enableSplitPayments = (process.env.ENABLE_SPLIT_PAYMENTS || 'false').toLowerCase() === 'true';
+    
+    if (enableSplitPayments) {
+      try {
+        const result = await stripeCheckoutService.processSplitPayment(subscriptionId, invoice.id);
+        
+        if (result.success) {
+          logger.info(`✅ Split payment processed successfully for subscription ${subscriptionId}`, {
+            invoiceId: invoice.id,
+            transfersCreated: result.transfers.filter(t => t.transferId).length,
+            transfersTotal: result.transfers.length
+          });
+
+          // TODO: Store ledger in database
+          // if (result.ledger) {
+          //   await storeTransferLedger(result.ledger);
+          // }
+        } else {
+          logger.warn(`⚠️  Split payment partially failed for subscription ${subscriptionId}`, {
+            invoiceId: invoice.id,
+            transfers: result.transfers
+          });
+        }
+      } catch (splitError) {
+        logger.error('Error processing split payment:', splitError as Error);
+        // Don't fail the webhook if split payment fails - subscription still needs to be activated
+        // The split can be retried manually or via a separate process
+      }
+    } else {
+      logger.info(`Split payments are disabled (ENABLE_SPLIT_PAYMENTS=false). All funds remain in platform account.`);
+    }
+
+    logger.info(`Payment succeeded for invoice: ${invoice.id}, subscription: ${subscriptionId}`);
   } catch (error) {
     logger.error('Error handling payment success:', error as Error);
+    // Don't throw - webhook processing should continue
   }
 }
 
@@ -297,10 +356,164 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const userId = session.metadata?.user_id;
     const planId = session.metadata?.plan_id;
     const billingCycle = session.metadata?.billing_cycle;
+    const customerId = session.customer as string;
+    const subscriptionId = session.subscription as string;
 
     if (!userId || !planId) {
       logger.error('Missing metadata in checkout session:', { userId, planId });
       return;
+    }
+
+    logger.info(`Checkout completed for user ${userId}, plan ${planId}, billing ${billingCycle}, customer ${customerId}, subscription ${subscriptionId}`);
+
+    // Update user's Stripe customer ID if not set
+    if (customerId) {
+      const { error: updateError } = await supabase
+        .from('user_profiles')
+        .update({ 
+          stripe_customer_id: customerId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .is('stripe_customer_id', null); // Only update if null
+
+      if (updateError && updateError.code !== 'PGRST116') {
+        logger.error('Error updating stripe_customer_id:', updateError);
+      }
+    }
+
+    // If subscription was created, retrieve it and process
+    if (subscriptionId) {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const priceId = subscription.items.data[0]?.price.id;
+        
+        if (priceId) {
+          // Get plan name from price metadata
+          const price = await stripe.prices.retrieve(priceId);
+          const planName = price.metadata.plan_name || planId;
+
+          // Get plan limits from database
+          const { data: planRule } = await supabase
+            .from('plan_rules')
+            .select('monthly_generations_limit')
+            .eq('plan_name', planName)
+            .eq('is_active', true)
+            .single();
+
+          const monthlyLimit = planRule?.monthly_generations_limit || 10;
+
+          // Update user profile with new plan - try RPC function first for enum casting
+          let profileError = null;
+          const { error: rpcError } = await supabase.rpc('update_user_subscription_plan', {
+            user_uuid: userId,
+            new_plan: planName
+          });
+
+          if (rpcError) {
+            // RPC function might not exist - try direct update
+            logger.warn('RPC function not available, trying direct update:', {
+              error: rpcError.message || rpcError,
+              code: rpcError.code
+            });
+            const { error: directError } = await supabase
+              .from('user_profiles')
+              .update({
+                subscription_plan: planName as any,
+                monthly_generations_limit: monthlyLimit,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', userId);
+            profileError = directError;
+          } else {
+            // RPC succeeded - update monthly limit separately
+            const { error: limitError } = await supabase
+              .from('user_profiles')
+              .update({
+                monthly_generations_limit: monthlyLimit,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', userId);
+            if (limitError) {
+              logger.warn('Could not update monthly limit:', {
+                error: limitError.message || limitError,
+                code: limitError.code
+              });
+            }
+          }
+
+          if (profileError) {
+            logger.error('Error updating user profile:', profileError);
+          } else {
+            logger.info(`Updated user ${userId} to plan ${planName} with limit ${monthlyLimit}`);
+          }
+
+          // Create or update subscription record
+          const { error: subError } = await supabase.rpc('create_subscription', {
+            user_uuid: userId,
+            stripe_sub_id: subscriptionId,
+            stripe_customer_id: customerId || '',
+            stripe_price_id: priceId,
+            plan_name: planName,
+            status: subscription.status,
+            period_start: new Date(subscription.current_period_start * 1000),
+            period_end: new Date(subscription.current_period_end * 1000),
+          });
+
+          if (subError) {
+            // If subscription already exists, update it
+            if (subError.code === '23505' || subError.message?.includes('duplicate')) {
+              const { error: updateSubError } = await supabase
+                .from('stripe_subscriptions')
+                .update({
+                  status: subscription.status,
+                  current_period_start: new Date(subscription.current_period_start * 1000),
+                  current_period_end: new Date(subscription.current_period_end * 1000),
+                  cancel_at_period_end: subscription.cancel_at_period_end,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('stripe_subscription_id', subscriptionId);
+
+              if (updateSubError) {
+                logger.error('Error updating subscription:', updateSubError);
+              } else {
+                logger.info(`Updated existing subscription ${subscriptionId} for user ${userId}`);
+              }
+            } else {
+              logger.error('Error creating subscription:', subError);
+            }
+          } else {
+            logger.info(`Created subscription ${subscriptionId} for user ${userId}`);
+          }
+        }
+      } catch (subError) {
+        logger.error('Error retrieving subscription from Stripe:', subError as Error);
+      }
+    } else {
+      // No subscription ID - might be a one-time payment, but still update plan if metadata has planId
+      const { data: planRule } = await supabase
+        .from('plan_rules')
+        .select('monthly_generations_limit')
+        .eq('plan_name', planId)
+        .eq('is_active', true)
+        .single();
+
+      const monthlyLimit = planRule?.monthly_generations_limit || 10;
+
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .update({
+          subscription_plan: planId,
+          monthly_generations_limit: monthlyLimit,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (profileError) {
+        logger.error('Error updating user profile (no subscription):', profileError);
+      } else {
+        logger.info(`Updated user ${userId} to plan ${planId} (no subscription record)`);
+      }
     }
 
     // Log successful checkout
@@ -313,7 +526,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         processed: true,
       });
 
-    logger.info(`Checkout completed for user ${userId}, plan ${planId}, billing ${billingCycle}`);
+    logger.info(`Checkout processing completed for user ${userId}, plan ${planId}`);
   } catch (error) {
     logger.error('Error handling checkout completion:', error as Error);
   }

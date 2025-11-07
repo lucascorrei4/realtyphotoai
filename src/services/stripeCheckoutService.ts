@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
 import { SUBSCRIPTION_PLANS, SubscriptionPlan } from '../config/subscriptionPlans';
+import planRulesService, { mapPlanIdToPlanName } from './planRulesService';
 
 export interface SplitPaymentConfig {
   partner1: {
@@ -73,9 +74,34 @@ export class StripeCheckoutService {
    */
   async createCheckoutSession(data: CheckoutSessionData): Promise<{ sessionId: string; url: string }> {
     try {
-      const plan = SUBSCRIPTION_PLANS[data.planId];
+      let plan = SUBSCRIPTION_PLANS[data.planId];
       if (!plan) {
-        throw new Error(`Plan ${data.planId} not found`);
+        const planName = mapPlanIdToPlanName(data.planId);
+        const planRule = await planRulesService.getPlanRule(planName);
+        if (!planRule) {
+          throw new Error(`Plan ${data.planId} not found`);
+        }
+        plan = planRulesService.convertToSubscriptionPlan(planRule);
+      }
+
+      if (!plan.stripe.productId || (data.billingCycle === 'monthly' && !plan.stripe.monthlyPriceId) || (data.billingCycle === 'yearly' && !plan.stripe.yearlyPriceId)) {
+        const planName = mapPlanIdToPlanName(data.planId);
+        const planRule = await planRulesService.getPlanRule(planName);
+        if (!planRule) {
+          throw new Error(`Plan ${data.planId} not found`);
+        }
+        plan = planRulesService.convertToSubscriptionPlan(planRule);
+
+        const syncResult = await this.syncPlanWithStripe(plan);
+        plan = {
+          ...plan,
+          stripe: {
+            ...plan.stripe,
+            productId: syncResult.productId,
+            monthlyPriceId: syncResult.monthlyPriceId,
+            yearlyPriceId: syncResult.yearlyPriceId,
+          },
+        };
       }
 
       // Get or create Stripe customer
@@ -110,15 +136,17 @@ export class StripeCheckoutService {
             plan_id: data.planId,
             billing_cycle: data.billingCycle,
             user_id: data.userId,
-            partner1_account: this.splitConfig.partner1.accountId,
-            partner2_account: this.splitConfig.partner2.accountId,
-            agency_account: this.splitConfig.agency.accountId,
+            // Only include partner account IDs if split payments are enabled
+            ...(process.env.ENABLE_SPLIT_PAYMENTS === 'true' ? {
+              partner1_account: this.splitConfig.partner1.accountId,
+              partner2_account: this.splitConfig.partner2.accountId,
+              agency_account: this.splitConfig.agency.accountId,
+            } : {}),
             ...data.metadata
           },
-          // Note: Using Separate Charges and Transfers model
-          // Payment goes to platform account, then transfers to connected accounts
-          // application_fee_percent only works with Destination Charges (single destination)
-          // For multi-partner splits, fees are handled in post-payment transfer logic
+          // Note: Using Separate Charges and Transfers model (if enabled)
+          // Payment goes to platform account, then transfers to connected accounts (if ENABLE_SPLIT_PAYMENTS=true)
+          // If split payments disabled, all funds remain in platform account
         },
         // Enable customer portal for subscription management
         allow_promotion_codes: true,
@@ -228,6 +256,7 @@ export class StripeCheckoutService {
 
       const amount = billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly;
       const interval = billingCycle === 'yearly' ? 'year' : 'month';
+      const planName = mapPlanIdToPlanName(plan.id);
 
       const price = await this.stripe.prices.create({
         product: productId,
@@ -240,6 +269,7 @@ export class StripeCheckoutService {
           ...plan.stripe.metadata,
           billing_cycle: billingCycle,
           plan_id: plan.id,
+          plan_name: planName,
         },
       });
 
@@ -249,7 +279,7 @@ export class StripeCheckoutService {
         .update({
           [`stripe_${billingCycle}_price_id`]: price.id,
         })
-        .eq('plan_name', plan.name);
+        .eq('plan_name', planName);
 
       logger.info(`Created ${billingCycle} price ${price.id} for plan ${plan.id}`);
       return price.id;
@@ -296,76 +326,155 @@ export class StripeCheckoutService {
   }
 
   /**
-   * Process split payment after successful subscription
+   * Process split payment for a subscription using Separate Charges & Transfers
+   * Split: Partner 1 (46% - main account), Partner 2 (46% - BR), Agency (8% - BR)
+   * Platform keeps Stripe fees
+   * 
+   * Architecture: Separate Charges & Transfers
+   * - Charge happens on US platform (normal subscription)
+   * - Transfers created to BR connected accounts after payment
+   * - Requires Cross-border Payouts enabled on US platform
+   * - Requires BR accounts to be Express or Custom (not Standard)
    */
-  async processSplitPayment(subscriptionId: string): Promise<void> {
+  async processSplitPayment(subscriptionId: string, invoiceId?: string): Promise<{
+    success: boolean;
+    transfers: Array<{ accountId: string; transferId: string | null; amount: number; success: boolean }>;
+    ledger?: { invoiceId: string; subscriptionId: string; partner1Amount: number; partner2Amount: number; agencyAmount: number; platformAmount: number };
+  }> {
     try {
       const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
-      const invoice = await this.stripe.invoices.retrieve(subscription.latest_invoice as string);
+      const invoice = invoiceId 
+        ? await this.stripe.invoices.retrieve(invoiceId)
+        : await this.stripe.invoices.retrieve(subscription.latest_invoice as string);
       
       const amount = invoice.amount_paid;
       const splitAmounts = this.calculateSplitAmounts(amount / 100); // Convert from cents
 
-      // Create transfers to partners and agency (only if percentage > 0)
-      const transferPromises = [
-        this.createTransfer(
-          this.splitConfig.partner1.accountId,
-          splitAmounts.partner1 * 100, // Convert to cents
-          this.splitConfig.partner1.description,
-          subscriptionId
-        ),
+      logger.info(`Processing split payment for subscription ${subscriptionId}`, {
+        invoiceId: invoice.id,
+        grossAmount: amount / 100,
+        splitAmounts
+      });
+
+      // Create transfers to BR accounts (Partner 1 is main account - no transfer needed)
+      // Use Promise.allSettled to handle partial failures gracefully
+      const transferResults = await Promise.allSettled([
+        // Partner 1: Main account (no transfer - funds remain)
+        Promise.resolve({ accountId: this.splitConfig.partner1.accountId, amount: splitAmounts.partner1, isMainAccount: true }),
+        
+        // Partner 2: BR account (transfer required)
         this.createTransfer(
           this.splitConfig.partner2.accountId,
-          splitAmounts.partner2 * 100, // Convert to cents
+          Math.round(splitAmounts.partner2 * 100), // Convert to cents
           this.splitConfig.partner2.description,
           subscriptionId
-        )
-      ];
+        ).then(transfer => ({ accountId: this.splitConfig.partner2.accountId, transfer, amount: splitAmounts.partner2, isMainAccount: false })),
+        
+        // Agency: BR account (transfer required, if enabled)
+        this.splitConfig.agency.percentage > 0 && splitAmounts.agency > 0
+          ? this.createTransfer(
+              this.splitConfig.agency.accountId,
+              Math.round(splitAmounts.agency * 100), // Convert to cents
+              this.splitConfig.agency.description,
+              subscriptionId
+            ).then(transfer => ({ accountId: this.splitConfig.agency.accountId, transfer, amount: splitAmounts.agency, isMainAccount: false }))
+          : Promise.resolve({ accountId: this.splitConfig.agency.accountId, transfer: null, amount: 0, isMainAccount: false })
+      ]);
 
-      // Only create agency transfer if percentage > 0
-      if (this.splitConfig.agency.percentage > 0 && splitAmounts.agency > 0) {
-        transferPromises.push(
-          this.createTransfer(
-            this.splitConfig.agency.accountId,
-            splitAmounts.agency * 100, // Convert to cents
-            this.splitConfig.agency.description,
-            subscriptionId
-          )
-        );
-      }
+      // Process results
+      const transfers: Array<{ accountId: string; transferId: string | null; amount: number; success: boolean }> = [];
+      let partner2TransferId: string | null = null;
+      let agencyTransferId: string | null = null;
 
-      await Promise.all(transferPromises);
+      transferResults.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          const data = result.value;
+          if (index === 0) {
+            // Partner 1 (main account - no transfer)
+            transfers.push({
+              accountId: data.accountId,
+              transferId: null,
+              amount: data.amount,
+              success: true
+            });
+          } else if (index === 1) {
+            // Partner 2
+            const partner2Data = data as { accountId: string; transfer: Stripe.Transfer | null; amount: number; isMainAccount: boolean };
+            partner2TransferId = partner2Data.transfer?.id || null;
+            transfers.push({
+              accountId: partner2Data.accountId,
+              transferId: partner2TransferId,
+              amount: partner2Data.amount,
+              success: partner2Data.transfer !== null
+            });
+          } else if (index === 2) {
+            // Agency
+            const agencyData = data as { accountId: string; transfer: Stripe.Transfer | null; amount: number; isMainAccount: boolean };
+            agencyTransferId = agencyData.transfer?.id || null;
+            transfers.push({
+              accountId: agencyData.accountId,
+              transferId: agencyTransferId,
+              amount: agencyData.amount,
+              success: agencyData.transfer !== null || agencyData.amount === 0
+            });
+          }
+        } else {
+          logger.error(`Transfer failed for index ${index}:`, result.reason);
+        }
+      });
 
-      const logData: any = {
-        grossAmount: amount / 100,
-        partner1: splitAmounts.partner1,
-        partner2: splitAmounts.partner2,
+      // Create ledger entry for refund/reversal tracking
+      const ledger = {
+        invoiceId: invoice.id,
+        subscriptionId: subscriptionId,
+        partner1Amount: splitAmounts.partner1,
+        partner2Amount: splitAmounts.partner2,
+        agencyAmount: splitAmounts.agency,
         platformAmount: splitAmounts.platformAmount,
-        stripeFees: splitAmounts.stripeFees,
-        note: 'Fair split: Stripe fees deducted first, then remainder split. Partners share the cost of platform fees.'
       };
 
-      // Only log agency if it's being used
-      if (splitAmounts.agency > 0) {
-        logData.agency = splitAmounts.agency;
-      }
+      // TODO: Store ledger in database (create transfer_ledger table)
+      // await this.storeTransferLedger(ledger);
 
-      logger.info(`Processed split payment for subscription ${subscriptionId}:`, logData);
+      const successCount = transfers.filter(t => t.success).length;
+      const totalTransfers = transfers.length;
+
+      logger.info(`✅ Split payment processed for subscription ${subscriptionId}`, {
+        invoiceId: invoice.id,
+        grossAmount: amount / 100,
+        transfersCreated: successCount,
+        transfersTotal: totalTransfers,
+        partner1Amount: splitAmounts.partner1,
+        partner2Amount: splitAmounts.partner2,
+        partner2TransferId,
+        agencyAmount: splitAmounts.agency,
+        agencyTransferId,
+        platformAmount: splitAmounts.platformAmount,
+        stripeFees: splitAmounts.stripeFees,
+        note: 'Partner 1 (main account) keeps 46% + fees. Partner 2 and Agency receive transfers if Cross-border Payouts enabled.'
+      });
+
+      return {
+        success: successCount > 0,
+        transfers,
+        ledger
+      };
     } catch (error) {
       logger.error('Error processing split payment:', error as Error);
-      throw new Error('Failed to process split payment');
+      throw error;
     }
   }
 
   /**
    * Create transfer to connected account
+   * Uses Separate Charges & Transfers pattern (Cross-border Payouts required for BR accounts)
    */
   private async createTransfer(
     destinationAccountId: string,
     amount: number,
     description: string,
     subscriptionId: string
-  ): Promise<Stripe.Transfer> {
+  ): Promise<Stripe.Transfer | null> {
     try {
       // Allow dry-run to skip real transfers during testing
       if ((process.env.STRIPE_SPLIT_DRY_RUN || '').toLowerCase() === 'true') {
@@ -375,7 +484,6 @@ export class StripeCheckoutService {
           description,
           subscriptionId,
         });
-        // Return a minimal mock-like object shape to satisfy calling code expectations
         return {
           id: 'tr_mock_dry_run',
           amount,
@@ -383,6 +491,13 @@ export class StripeCheckoutService {
           destination: destinationAccountId as any,
         } as unknown as Stripe.Transfer;
       }
+
+      // Skip transfers to main account (Partner 1 is the main account)
+      if (destinationAccountId === process.env.STRIPE_PARTNER1_ACCOUNT_ID) {
+        logger.info(`Skipping transfer to main account: ${destinationAccountId} (Partner 1 - funds remain in platform)`);
+        return null;
+      }
+
       const transfer = await this.stripe.transfers.create({
         amount,
         currency: 'usd',
@@ -391,13 +506,47 @@ export class StripeCheckoutService {
         metadata: {
           subscription_id: subscriptionId,
           transfer_type: 'subscription_split',
+          invoice_id: subscriptionId, // For idempotency and ledger tracking
         },
       });
 
+      logger.info(`✅ Transfer created: ${transfer.id} → ${destinationAccountId} ($${(amount / 100).toFixed(2)})`);
       return transfer;
     } catch (error) {
-      logger.error('Error creating transfer:', error as Error);
-      throw new Error('Failed to create transfer');
+      const stripeError = error as any;
+      
+      // Handle region restriction (Cross-border Payouts not enabled)
+      if (stripeError.code === 'transfers_not_allowed' || 
+          stripeError.message?.includes('restricted outside of your platform\'s region') ||
+          stripeError.message?.includes('cannot be set to your own account')) {
+        logger.warn(`⚠️  Transfer failed for ${destinationAccountId}: ${stripeError.message}`, {
+          errorCode: stripeError.code,
+          destinationAccountId,
+          amount: amount / 100,
+          solution: 'Enable Cross-border Payouts on US platform and verify account is Express/Custom type',
+          docs: 'https://stripe.com/docs/connect/cross-border-payouts'
+        });
+        return null; // Don't throw - allow other transfers to proceed
+      }
+
+      // Handle account type issues
+      if (stripeError.code === 'account_invalid' || stripeError.message?.includes('must be Express or Custom')) {
+        logger.error(`❌ Invalid account type for ${destinationAccountId}: Account must be Express or Custom (not Standard)`, {
+          errorCode: stripeError.code,
+          destinationAccountId,
+          solution: 'Verify account type in Stripe Dashboard → Connect → Accounts',
+          docs: 'https://stripe.com/docs/connect/account-types'
+        });
+        return null;
+      }
+
+      logger.error('Error creating transfer:', {
+        error: stripeError.message,
+        code: stripeError.code,
+        destinationAccountId,
+        amount: amount / 100,
+      });
+      return null; // Don't throw - allow other transfers to proceed
     }
   }
 
@@ -478,6 +627,8 @@ export class StripeCheckoutService {
     try {
       // Create or get product
       let productId = plan.stripe.productId;
+      const planName = mapPlanIdToPlanName(plan.id);
+
       if (!productId) {
         const product = await this.stripe.products.create({
           name: plan.displayName,
@@ -485,6 +636,11 @@ export class StripeCheckoutService {
           metadata: plan.stripe.metadata,
         });
         productId = product.id;
+
+        await supabase
+          .from('plan_rules')
+          .update({ stripe_product_id: productId })
+          .eq('plan_name', planName);
       }
 
       // Create monthly price
@@ -499,6 +655,7 @@ export class StripeCheckoutService {
           ...plan.stripe.metadata,
           billing_cycle: 'monthly',
           plan_id: plan.id,
+          plan_name: planName,
         },
       });
 
@@ -514,10 +671,20 @@ export class StripeCheckoutService {
           ...plan.stripe.metadata,
           billing_cycle: 'yearly',
           plan_id: plan.id,
+          plan_name: planName,
         },
       });
 
       logger.info(`Synced plan ${plan.id} with Stripe: Product ${productId}, Monthly ${monthlyPrice.id}, Yearly ${yearlyPrice.id}`);
+
+      await supabase
+        .from('plan_rules')
+        .update({
+          stripe_product_id: productId,
+          stripe_monthly_price_id: monthlyPrice.id,
+          stripe_yearly_price_id: yearlyPrice.id,
+        })
+        .eq('plan_name', planName);
 
       return {
         productId,
@@ -527,6 +694,76 @@ export class StripeCheckoutService {
     } catch (error) {
       logger.error('Error syncing plan with Stripe:', error as Error);
       throw new Error('Failed to sync plan with Stripe');
+    }
+  }
+
+  /**
+   * Sync all active plans from database with Stripe
+   */
+  async syncAllPlansWithStripe(): Promise<{
+    success: boolean;
+    synced: number;
+    failed: number;
+    results: Array<{
+      planId: string;
+      planName: string;
+      success: boolean;
+      productId?: string;
+      monthlyPriceId?: string;
+      yearlyPriceId?: string;
+      error?: string;
+    }>;
+  }> {
+    try {
+      const planRules = await planRulesService.getAllPlanRules();
+      const results: Array<{
+        planId: string;
+        planName: string;
+        success: boolean;
+        productId?: string;
+        monthlyPriceId?: string;
+        yearlyPriceId?: string;
+        error?: string;
+      }> = [];
+
+      let synced = 0;
+      let failed = 0;
+
+      for (const planRule of planRules) {
+        try {
+          const plan = planRulesService.convertToSubscriptionPlan(planRule);
+          const syncResult = await this.syncPlanWithStripe(plan);
+          results.push({
+            planId: plan.id,
+            planName: plan.displayName,
+            success: true,
+            productId: syncResult.productId,
+            monthlyPriceId: syncResult.monthlyPriceId,
+            yearlyPriceId: syncResult.yearlyPriceId,
+          });
+          synced += 1;
+        } catch (planError) {
+          failed += 1;
+          const errorMessage = planError instanceof Error ? planError.message : 'Failed to sync plan';
+          logger.error(`Error syncing plan ${planRule.plan_name}:`, planError as Error);
+          results.push({
+            planId: planRule.plan_name,
+            planName: planRule.display_name || planRule.plan_name,
+            success: false,
+            error: errorMessage,
+          });
+        }
+      }
+
+      return {
+        success: failed === 0,
+        synced,
+        failed,
+        results,
+      };
+    } catch (error) {
+      logger.error('Error syncing all plans with Stripe:', error as Error);
+      throw error;
     }
   }
 
@@ -562,6 +799,18 @@ export class StripeCheckoutService {
       // Re-throw with more context
       throw error;
     }
+  }
+
+  /**
+   * @deprecated This approach doesn't work for multiple recipients
+   * Payment intents only support ONE destination, which isn't sufficient for our split.
+   * Use processSplitPayment() with Separate Charges & Transfers instead.
+   * 
+   * This method is kept for reference but is no longer called.
+   */
+  async setupAutomaticSplitPaymentViaPaymentIntent(_invoice: Stripe.Invoice): Promise<boolean> {
+    logger.warn('setupAutomaticSplitPaymentViaPaymentIntent is deprecated. Use processSplitPayment() instead.');
+    return false;
   }
 }
 

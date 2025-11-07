@@ -16,6 +16,8 @@ export interface PlanRule {
   updated_at: string;
   stripe_product_id?: string;
   stripe_price_id?: string;
+  stripe_monthly_price_id?: string;
+  stripe_yearly_price_id?: string;
   stripe_metadata?: Record<string, any>;
 }
 
@@ -39,6 +41,15 @@ export const PLAN_MAPPING: Record<string, string> = {
   premium: 'studio',
   enterprise: 'business'
 };
+
+export function mapPlanIdToPlanName(planId: string): string {
+  const entry = Object.entries(PLAN_MAPPING).find(([, mappedId]) => mappedId === planId);
+  return entry ? entry[0] : planId;
+}
+
+export function mapPlanNameToPlanId(planName: string): string {
+  return PLAN_MAPPING[planName] || planName;
+}
 
 export class PlanRulesService {
   /**
@@ -67,8 +78,9 @@ export class PlanRulesService {
   /**
    * Get plan rule by plan name
    */
-  async getPlanRule(planName: string): Promise<PlanRule | null> {
+  async getPlanRule(planNameOrId: string): Promise<PlanRule | null> {
     try {
+      const planName = mapPlanIdToPlanName(planNameOrId);
       const { data, error } = await supabase
         .from('plan_rules')
         .select('*')
@@ -150,7 +162,15 @@ export class PlanRulesService {
     const isPremium = planRule.plan_name === 'premium';
     const isBasic = planRule.plan_name === 'basic';
     
-      return {
+    const metadata = planRule.stripe_metadata || {};
+    const metadataStrings: Record<string, string> = Object.fromEntries(
+      Object.entries(metadata).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? value : JSON.stringify(value)
+      ])
+    );
+
+    return {
         id: PLAN_MAPPING[planRule.plan_name] || planRule.plan_name,
         name: PLAN_MAPPING[planRule.plan_name] || planRule.plan_name,
         displayName,
@@ -191,8 +211,9 @@ export class PlanRulesService {
       },
       stripe: {
         productId: planRule.stripe_product_id,
-        monthlyPriceId: planRule.stripe_price_id,
-        metadata: planRule.stripe_metadata || {}
+        monthlyPriceId: planRule.stripe_monthly_price_id || planRule.stripe_price_id,
+        yearlyPriceId: planRule.stripe_yearly_price_id,
+        metadata: metadataStrings
       },
       billingCycle: 'monthly'
     };

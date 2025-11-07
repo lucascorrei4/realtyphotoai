@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { SUBSCRIPTION_PLANS, SubscriptionPlan, BILLING_CYCLES, formatPrice, getFeatureList } from '../config/subscriptionPlans';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { SUBSCRIPTION_PLANS, SubscriptionPlan, formatPrice, getFeatureList } from '../config/subscriptionPlans';
+import { getUserPlanFromDatabase } from '../utils/planUtils';
+import { getBackendUrl } from '../config/environment';
 
 interface StripeCheckoutProps {
   onClose: () => void;
@@ -7,23 +10,80 @@ interface StripeCheckoutProps {
 }
 
 const StripeCheckout: React.FC<StripeCheckoutProps> = ({ onClose, onSuccess }) => {
+  const { user } = useAuth();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [selectedPlan, setSelectedPlan] = useState<string>('pro');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
 
-  const plans = Object.values(SUBSCRIPTION_PLANS);
+  // Fetch plans from database and determine current plan
+  useEffect(() => {
+    const fetchPlans = async () => {
+      try {
+        // Get all active plans from database
+        const planNames = ['free', 'basic', 'premium', 'enterprise', 'ultra'];
+        const fetchedPlans: SubscriptionPlan[] = [];
+        
+        for (const planName of planNames) {
+          const dbPlan = await getUserPlanFromDatabase(planName);
+          if (dbPlan) {
+            fetchedPlans.push(dbPlan);
+          } else {
+            // Fallback to hardcoded plan if not in database
+            const fallbackPlan = SUBSCRIPTION_PLANS[planName];
+            if (fallbackPlan) {
+              fetchedPlans.push(fallbackPlan);
+            }
+          }
+        }
+        
+        // Sort plans by price
+        fetchedPlans.sort((a, b) => a.price.monthly - b.price.monthly);
+        setPlans(fetchedPlans);
+        
+        // Set current plan
+        if (user?.subscription_plan) {
+          setCurrentPlanId(user.subscription_plan);
+        }
+      } catch (err) {
+        console.error('Error fetching plans:', err);
+        // Fallback to hardcoded plans
+        setPlans(Object.values(SUBSCRIPTION_PLANS));
+        if (user?.subscription_plan) {
+          setCurrentPlanId(user.subscription_plan);
+        }
+      }
+    };
+
+    fetchPlans();
+  }, [user]);
 
   const handleSubscribe = async (planId: string) => {
-    setLoading(true);
+    // Don't allow subscribing to current plan
+    if (planId === currentPlanId) {
+      setError('You are already subscribed to this plan');
+      return;
+    }
+
+    setLoading(planId);
     setError(null);
 
     try {
-      const response = await fetch('/api/v1/stripe/checkout', {
+      // Get auth token from Supabase session
+      const supabase = (await import('../config/supabase')).default;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('Please log in to subscribe');
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           planId,
@@ -37,12 +97,11 @@ const StripeCheckout: React.FC<StripeCheckoutProps> = ({ onClose, onSuccess }) =
         throw new Error(data.error || 'Failed to create checkout session');
       }
 
-      // Redirect to Stripe Checkout
+      // Redirect to Stripe Checkout (with split payments configured in backend)
       window.location.href = data.url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
@@ -125,16 +184,29 @@ const StripeCheckout: React.FC<StripeCheckoutProps> = ({ onClose, onSuccess }) =
 
           {/* Plans Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {plans.map((plan) => (
+            {plans.filter(p => p.id !== 'free').map((plan) => {
+              const isCurrentPlan = plan.id === currentPlanId;
+              const isPopular = plan.popular || plan.id === 'premium';
+              
+              return (
               <div
                 key={plan.id}
                 className={`relative bg-white border-2 rounded-lg p-6 transition-all ${
-                  plan.popular
+                  isCurrentPlan
+                    ? 'border-green-500 shadow-lg ring-2 ring-green-200'
+                    : isPopular
                     ? 'border-red-500 shadow-lg'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                {plan.popular && (
+                {isCurrentPlan && (
+                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                    <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                      Current Plan
+                    </span>
+                  </div>
+                )}
+                {!isCurrentPlan && isPopular && (
                   <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
                     <span className="bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium">
                       Most popular
@@ -167,25 +239,35 @@ const StripeCheckout: React.FC<StripeCheckoutProps> = ({ onClose, onSuccess }) =
                 {/* Subscribe Button */}
                 <button
                   onClick={() => handleSubscribe(plan.id)}
-                  disabled={loading}
+                  disabled={loading === plan.id || isCurrentPlan}
                   className={`w-full py-3 px-4 rounded-md font-medium transition-colors ${
-                    plan.popular
+                    isCurrentPlan
+                      ? 'bg-green-500 text-white cursor-not-allowed'
+                      : isPopular
                       ? 'bg-red-500 hover:bg-red-600 text-white'
                       : 'bg-gray-900 hover:bg-gray-800 text-white'
-                  } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${loading === plan.id || isCurrentPlan ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {loading ? 'Processing...' : 'Subscribe →'}
+                  {isCurrentPlan 
+                    ? 'Current Plan ✓' 
+                    : loading === plan.id 
+                    ? 'Processing...' 
+                    : 'Subscribe →'}
                 </button>
 
                 {billingCycle === 'yearly' && (
                   <div className="mt-3 text-center">
-                    <button className="text-sm text-gray-500 hover:text-gray-700 underline">
+                    <button 
+                      onClick={() => setBillingCycle('monthly')}
+                      className="text-sm text-gray-500 hover:text-gray-700 underline"
+                    >
                       View monthly billing ⌄
                     </button>
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
 
           {/* Footer */}

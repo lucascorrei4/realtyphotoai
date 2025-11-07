@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Image,
   Clock,
@@ -15,6 +15,7 @@ import StripeCheckout from '../components/StripeCheckout';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
+import { getBackendUrl } from '../config/environment';
 
 
 interface UserStats {
@@ -55,19 +56,17 @@ interface UserStats {
   }>;
 }
 
+const SYNC_STORAGE_KEY = 'subscription-last-sync';
+const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 const Dashboard: React.FC = () => {
   const { user, loading } = useAuth();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [showPricing, setShowPricing] = useState(false);
+  const syncInFlightRef = useRef(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchUserStats();
-    }
-  }, [user]);
-
-  const fetchUserStats = async () => {
+  const fetchUserStats = useCallback(async () => {
     if (!user?.id) return;
 
     setStatsLoading(true);
@@ -114,10 +113,10 @@ const Dashboard: React.FC = () => {
 
       // Calculate actual credits used - count ONLY current month's completed generations
       // Monthly credits reset each billing cycle (reuse currentMonth from above)
-      const monthlyCompletedGenerations = userGenerations.filter(g => 
+      const monthlyCompletedGenerations = userGenerations.filter(g =>
         g.status === 'completed' && new Date(g.created_at) >= currentMonth
       );
-      
+
       let actualCreditsUsed = 0;
       monthlyCompletedGenerations.forEach(g => {
         // Check if it's a video generation (you'll need to add this field to generations table)
@@ -131,7 +130,7 @@ const Dashboard: React.FC = () => {
 
       // Get user's plan from database and calculate credit usage summary
       let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
-      
+
       if (user.subscription_plan) {
         const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
         if (dbPlan) {
@@ -166,20 +165,20 @@ const Dashboard: React.FC = () => {
       // Calculate monthly data for the last 6 months
       const monthlyData = [];
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      
+
       for (let i = 5; i >= 0; i--) {
         const date = new Date();
         date.setMonth(date.getMonth() - i);
         const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
         const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-        
+
         const monthGenerations = userGenerations.filter(g => {
           const generationDate = new Date(g.created_at);
           return generationDate >= monthStart && generationDate <= monthEnd;
         });
-        
+
         const monthSuccess = monthGenerations.filter(g => g.status === 'completed').length;
-        
+
         monthlyData.push({
           month: monthNames[date.getMonth()],
           generations: monthGenerations.length,
@@ -214,7 +213,55 @@ const Dashboard: React.FC = () => {
     } finally {
       setStatsLoading(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserStats();
+    }
+  }, [user, fetchUserStats]);
+
+  const syncSubscription = useCallback(async () => {
+    if (!user?.id || syncInFlightRef.current) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      syncInFlightRef.current = true;
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/sync-subscription`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(SYNC_STORAGE_KEY, Date.now().toString());
+        }
+        await fetchUserStats();
+      } else {
+        const data = await response.json().catch(() => null);
+        console.warn('Sync subscription failed:', data || response.statusText);
+      }
+    } catch (error) {
+      console.error('Error syncing subscription from dashboard:', error);
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, [user, fetchUserStats]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (typeof window === 'undefined') return;
+
+    const lastSync = sessionStorage.getItem(SYNC_STORAGE_KEY);
+    if (!lastSync || Date.now() - Number(lastSync) > SYNC_COOLDOWN_MS) {
+      syncSubscription();
+    }
+  }, [user, syncSubscription]);
 
 
 
@@ -260,13 +307,13 @@ const Dashboard: React.FC = () => {
                 Get more generations, faster processing, and access to premium features
               </p>
               <div className="flex space-x-3">
-                <button 
+                <button
                   onClick={() => setShowPricing(true)}
                   className="bg-white text-red-600 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
                 >
                   View Plans
                 </button>
-                <button 
+                <button
                   onClick={() => window.open('/pricing', '_blank')}
                   className="bg-transparent border-2 border-white text-white px-6 py-2 rounded-lg font-medium hover:bg-white hover:text-red-600 transition-colors"
                 >
@@ -288,7 +335,7 @@ const Dashboard: React.FC = () => {
               <p className="text-green-100 mb-4">
                 You're enjoying premium features with {userStats?.creditUsageSummary?.displayCreditsTotal.toLocaleString() || 'unlimited'} credits per month
               </p>
-              <button 
+              <button
                 onClick={() => setShowPricing(true)}
                 className="bg-white text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
               >
@@ -311,13 +358,12 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-2">
             <div
-              className={`h-3 rounded-full transition-all duration-300 ${
-                (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.9
+              className={`h-3 rounded-full transition-all duration-300 ${(userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.9
                   ? 'bg-red-500'
                   : (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.7
-                  ? 'bg-yellow-500'
-                  : 'bg-green-500'
-              }`}
+                    ? 'bg-yellow-500'
+                    : 'bg-green-500'
+                }`}
               style={{
                 width: `${Math.min(100, (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) * 100)}%`
               }}
@@ -343,6 +389,9 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Quick Actions */}
+      <QuickActions />
+
       {/* Legacy Usage Progress Bar (for backward compatibility) */}
       {userStats && !userStats.creditUsageSummary && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -354,13 +403,12 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
             <div
-              className={`h-3 rounded-full transition-all duration-300 ${
-                userStats.monthlyLimit > 0 && (userStats.monthlyUsage / userStats.monthlyLimit) > 0.9
+              className={`h-3 rounded-full transition-all duration-300 ${userStats.monthlyLimit > 0 && (userStats.monthlyUsage / userStats.monthlyLimit) > 0.9
                   ? 'bg-red-500'
                   : userStats.monthlyLimit > 0 && (userStats.monthlyUsage / userStats.monthlyLimit) > 0.7
-                  ? 'bg-yellow-500'
-                  : 'bg-green-500'
-              }`}
+                    ? 'bg-yellow-500'
+                    : 'bg-green-500'
+                }`}
               style={{
                 width: `${userStats.monthlyLimit > 0 ? Math.min(100, (userStats.monthlyUsage / userStats.monthlyLimit) * 100) : 0}%`
               }}
@@ -508,39 +556,38 @@ const Dashboard: React.FC = () => {
           ) : (
             <div className="space-y-4">
               {usageData.map((item, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  ></div>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-                    {item.name}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
                     <div
-                      className="h-2 rounded-full"
-                      style={{
-                        width: `${Math.max(0, Math.min(100, (item.value / Math.max(...usageData.map(u => u.value), 1)) * 100))}%`,
-                        backgroundColor: item.color
-                      }}
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: item.color }}
                     ></div>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                      {item.name}
+                    </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white w-8 text-right">
-                    {item.value}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (item.value / Math.max(...usageData.map(u => u.value), 1)) * 100))}%`,
+                          backgroundColor: item.color
+                        }}
+                      ></div>
+                    </div>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white w-8 text-right">
+                      {item.value}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <QuickActions />
+
 
       {/* Recent Generations Widget */}
       <RecentGenerationsWidget
@@ -610,8 +657,7 @@ const Dashboard: React.FC = () => {
           onClose={() => setShowPricing(false)}
           onSuccess={(planId) => {
             setShowPricing(false);
-            // Refresh user data or show success message
-            fetchUserStats();
+            syncSubscription().finally(() => fetchUserStats());
           }}
         />
       )}
