@@ -6,6 +6,62 @@ body {
   margin: 0;
 }
 
+/* Before/after slider range input reset */
+.before-after-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+
+.before-after-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.before-after-slider::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.before-after-slider::-ms-thumb {
+  width: 0;
+  height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.before-after-slider::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+}
+
+.before-after-slider::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+.before-after-slider::-ms-track {
+  background: transparent;
+  border: none;
+  color: transparent;
+}
+
+.before-after-slider::-ms-fill-lower,
+.before-after-slider::-ms-fill-upper {
+  background: transparent;
+  border: none;
+}
+
 /* Modern form styling that works with Tailwind */
 .form-group {
   margin-bottom: 1.5rem;

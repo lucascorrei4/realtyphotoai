@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
@@ -30,7 +31,9 @@ import {
   Sofa,
   Image as ImageIcon,
   Star,
-  BadgeCheck
+  BadgeCheck,
+  Maximize2,
+  X
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageJson from '../../package.json';
@@ -106,6 +109,10 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
 }) => {
   const [position, setPosition] = useState(52);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalPosition, setModalPosition] = useState(52);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
+  const [isModalDragging, setIsModalDragging] = useState(false);
 
   const clamp = (value: number) => Math.max(0, Math.min(100, value));
 
@@ -116,6 +123,47 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
     const percentage = clamp((relativeX / rect.width) * 100);
     setPosition(percentage);
   };
+
+  const updateModalPosition = (clientX: number) => {
+    if (!modalContainerRef.current) return;
+    const rect = modalContainerRef.current.getBoundingClientRect();
+    const relativeX = clientX - rect.left;
+    const percentage = clamp((relativeX / rect.width) * 100);
+    setModalPosition(percentage);
+  };
+
+  const handleOpenModal = useCallback(() => {
+    setModalPosition(position);
+    setIsModalOpen(true);
+  }, [position]);
+
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+    setPosition(modalPosition);
+  }, [modalPosition]);
+
+  useEffect(() => {
+    if (!isModalOpen || typeof document === 'undefined') {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleCloseModal();
+      }
+    };
+
+    const targetWindow = typeof window !== 'undefined' ? window : null;
+    targetWindow?.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      targetWindow?.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleCloseModal, isModalOpen]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -137,70 +185,211 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
     setPosition(Number(event.target.value));
   };
 
-  return (
-    <div className={`relative overflow-hidden rounded-3xl bg-slate-950/90 ${className ?? ''}`}>
-      <div
-        ref={containerRef}
-        className="relative h-full w-full cursor-ew-resize select-none"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <img
-          src={beforeSrc}
-          alt={altBefore}
-          className="absolute inset-0 h-full w-full object-cover brightness-[0.95]"
-          loading="lazy"
-        />
+  const handleModalPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    setIsModalDragging(true);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId) === false) {
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    updateModalPosition(event.clientX);
+  };
 
+  const handleModalPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isModalDragging && !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    updateModalPosition(event.clientX);
+  };
+
+  const handleModalPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    setIsModalDragging(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const handleModalRangeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setModalPosition(Number(event.target.value));
+    setIsModalDragging(false);
+  };
+
+  return (
+    <>
+      <div className={`relative overflow-hidden rounded-3xl bg-slate-950/90 ${className ?? ''}`}>
         <div
-          className="absolute inset-0 h-full w-full overflow-hidden transition-[clip-path] duration-150 ease-out"
-          style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
+          ref={containerRef}
+          className="relative h-full w-full cursor-ew-resize select-none"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           <img
-            src={afterSrc}
-            alt={altAfter}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+            src={beforeSrc}
+            alt={altBefore}
+            className="absolute inset-0 h-full w-full object-cover brightness-[0.95]"
             loading="lazy"
           />
-        </div>
 
-        <span className="absolute left-4 top-4 rounded-full bg-slate-900/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md">
-          {beforeLabel}
-        </span>
-        <span className="absolute right-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md">
-          {afterLabel}
-        </span>
-
-        <div className="pointer-events-none absolute inset-0">
           <div
-            className="absolute top-0 bottom-0 w-[2px] bg-white/80 shadow-[0_0_20px_rgba(15,23,42,0.35)] transition-opacity duration-150"
-            style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
+            className="absolute inset-0 h-full w-full overflow-hidden transition-[clip-path] duration-150 ease-out"
+            style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
           >
-            <div className="pointer-events-auto absolute top-1/2 left-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-[0_8px_30px_rgba(15,23,42,0.4)] ring-2 ring-blue-500/40">
-              <span aria-hidden className="text-xs font-semibold text-slate-700">
-                ⇆
-              </span>
+            <img
+              src={afterSrc}
+              alt={altAfter}
+              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+              loading="lazy"
+            />
+          </div>
+
+          <span className="absolute left-4 top-4 rounded-full bg-slate-900/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md">
+            {beforeLabel}
+          </span>
+          <span className="absolute right-4 top-4 rounded-full bg-emerald-500/90 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md">
+            {afterLabel}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleOpenModal}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            className="absolute bottom-4 right-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-900/80 text-white shadow-lg backdrop-blur transition hover:bg-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900/30"
+            aria-label="Open full-screen preview"
+          >
+            <Maximize2 className="h-5 w-5" aria-hidden="true" />
+          </button>
+
+          <div className="pointer-events-none absolute inset-0">
+            <div
+              className="absolute top-0 bottom-0 w-[2px] bg-white/80 shadow-[0_0_20px_rgba(15,23,42,0.35)] transition-opacity duration-150"
+              style={{ left: `${position}%`, transform: 'translateX(-50%)' }}
+            >
+              <div className="pointer-events-auto absolute top-1/2 left-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-[0_8px_30px_rgba(15,23,42,0.4)] ring-2 ring-blue-500/40">
+                <span aria-hidden className="text-xs font-semibold text-slate-700">
+                  ⇆
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={position}
-          onChange={handleRangeChange}
-          aria-label="Drag to compare the before and after result"
-          className="absolute bottom-4 left-1/2 z-10 w-2/3 -translate-x-1/2 cursor-ew-resize appearance-none bg-transparent focus:outline-none focus-visible:outline-none"
-        />
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={position}
+            onChange={handleRangeChange}
+            aria-label="Drag to see the transformation"
+            className="before-after-slider absolute bottom-4 left-1/2 z-10 w-2/3 -translate-x-1/2 cursor-ew-resize appearance-none bg-transparent focus:outline-none focus-visible:outline-none"
+          />
 
-        <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white backdrop-blur-md sm:flex">
-          Drag or use keyboard arrows to compare
+          <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs font-medium text-white backdrop-blur-md sm:flex">
+            Drag to see the transformation
+          </div>
         </div>
       </div>
-    </div>
+      {isModalOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/90 px-4 py-8 backdrop-blur"
+            onClick={handleCloseModal}
+          >
+            <div
+              className="relative w-full max-w-5xl rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-2xl backdrop-blur-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={handleCloseModal}
+                className="absolute right-6 top-6 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white shadow-lg backdrop-blur transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900/60"
+                aria-label="Close full-screen preview"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+
+              <div className="mb-6 pr-16">
+                <h3 className="text-lg font-semibold text-white">
+                  Full-screen transformation preview
+                </h3>
+                <p className="text-sm text-slate-200/80">
+                  Drag the slider or use arrow keys to compare the original and enhanced results.
+                </p>
+              </div>
+
+            <div
+              ref={modalContainerRef}
+              className="relative h-[60vh] min-h-[360px] w-full cursor-ew-resize select-none overflow-hidden rounded-3xl bg-slate-900/40"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                handleModalPointerDown(event);
+              }}
+              onPointerMove={(event) => {
+                event.preventDefault();
+                handleModalPointerMove(event);
+              }}
+              onPointerUp={(event) => {
+                event.preventDefault();
+                handleModalPointerUp(event);
+              }}
+              onPointerCancel={handleModalPointerUp}
+              onPointerLeave={handleModalPointerUp}
+            >
+                <img
+                  src={beforeSrc}
+                  alt={altBefore}
+                  className="absolute inset-0 h-full w-full object-contain"
+                />
+
+                <div
+                  className="absolute inset-0 h-full w-full overflow-hidden transition-[clip-path] duration-150 ease-out"
+                  style={{ clipPath: `inset(0 ${100 - modalPosition}% 0 0)` }}
+                >
+                  <img
+                    src={afterSrc}
+                    alt={altAfter}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+
+                <span className="absolute left-6 top-6 rounded-full bg-slate-900/80 px-4 py-1.5 text-sm font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur">
+                  {beforeLabel}
+                </span>
+                <span className="absolute right-6 top-6 rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur">
+                  {afterLabel}
+                </span>
+
+                <div className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute top-0 bottom-0 w-[2px] bg-white/80 shadow-[0_0_30px_rgba(15,23,42,0.45)]"
+                    style={{ left: `${modalPosition}%`, transform: 'translateX(-50%)' }}
+                  >
+                    <div className="absolute top-1/2 left-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-700 shadow-[0_8px_35px_rgba(15,23,42,0.45)]">
+                      ⇆
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={modalPosition}
+                  onChange={handleModalRangeChange}
+                  aria-label="Drag to compare the transformation"
+                  className="before-after-slider absolute bottom-6 left-1/2 z-20 w-1/2 -translate-x-1/2 cursor-ew-resize appearance-none bg-transparent focus:outline-none focus-visible:outline-none"
+                />
+
+                <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-slate-900/80 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur">
+                  Drag to compare • {Math.round(modalPosition)}% AI enhanced
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 };
 
@@ -211,10 +400,10 @@ const serviceShowcases: ServiceShowcase[] = [
     tagline: 'Correct lighting & color in seconds',
     description:
       'Transform raw shots into magazine-ready imagery with automated exposure, white balance, and detail recovery tuned for MLS compliance.',
-    beforeSrc: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=1600&q=80',
-    afterSrc: 'https://images.unsplash.com/photo-1616628182501-0b9c77f02a43?auto=format&fit=crop&w=1600&q=80',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761277455358_inxnid_image-1761260228284.jpg',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761279323790_yh1571_1761275559906_q0fxg6_IMG_4065.webp',
     altBefore: 'Dimly lit living room before enhancement',
-    altAfter: 'Bright living room after AI enhancement',
+    altAfter: '',
     bullets: [
       'AI tone mapping protects natural window views',
       'Batch process entire shoots with one click',
@@ -319,7 +508,7 @@ const trustSignals: TrustSignal[] = [
   },
   {
     icon: Clock,
-    label: 'Results in under 3 minutes',
+    label: 'Quick results in 12 seconds',
     description: 'Parallel render pipeline delivers staged and enhanced photos before your coffee cools.'
   },
   {
@@ -427,8 +616,8 @@ const socialProofLogos = ['Compass', 'Keller Williams', 'Coldwell Banker', 'eXp 
 
 const heroCheckmarks = [
   'No credit card required to start',
-  'MLS-ready exports in every plan',
-  'Human-validated AI quality checks'
+  'Batch process entire photo sets with one click for quick client delivery',
+  '5x faster than manual editing, giving you more time for creative work'
 ];
 
 const successMetrics = [
@@ -623,17 +812,17 @@ const LandingPage: React.FC = () => {
               <div>
                 <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
                   <Sparkles className="h-4 w-4" />
-                  <span>AI-Powered Real Estate Imagery</span>
+                  <span>AI-Powered Imagery for Real Estate & Design</span>
                 </div>
                 <h1 className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl">
-                  Convert listings faster with
+                  Sell Homes 72% Faster with
                   <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                    {' '}cinematic before &amp; after experiences
+                    {' '}AI-Enhanced Listings That Captivate Buyers
                   </span>
                 </h1>
                 <p className="mt-6 max-w-3xl text-base text-slate-600 dark:text-slate-300 sm:text-lg md:text-xl">
-                  RealVision AI enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors —
-                  all while keeping architectural integrity. Launch marketing packages in minutes and give buyers a vivid first impression.
+                  Tired of raw photos that don't impress clients or close deals? <b>RealVision AI</b> AI enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors. — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
+
                 </p>
                 <div className="mt-8 grid gap-3 sm:grid-cols-2">
                   {heroCheckmarks.map((item) => (
@@ -661,8 +850,8 @@ const LandingPage: React.FC = () => {
                       <Star className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">4.9/5 quality rating</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Validated by 500+ listing pros</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">FHD quality and ultra realistic results</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Validated real estate & design pros</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
@@ -670,8 +859,8 @@ const LandingPage: React.FC = () => {
                       <Zap className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Under 3 minutes turnaround</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">AI pipeline optimized for MLS delivery</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Only 12 seconds for full transformation</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">98% AI realism accuracy</p>
                     </div>
                   </div>
                 </div>
@@ -685,22 +874,14 @@ const LandingPage: React.FC = () => {
                     afterSrc={heroService.afterSrc}
                     altBefore={heroService.altBefore}
                     altAfter={heroService.altAfter}
-                    beforeLabel="Unedited"
+                    beforeLabel="BEFORE"
                     afterLabel="AI Enhanced"
                     className="h-64 sm:h-72 md:h-80"
                   />
-                  <div className="mt-5 grid gap-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100 sm:grid-cols-2">
+                  <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
                     <div className="flex flex-col">
-                      <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Enhance Images</span>
-                      <span className="text-xl font-semibold text-slate-900 dark:text-white">MLS ready in 110s</span>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-blue-600 shadow dark:bg-blue-500/20">
-                        <Camera className="h-5 w-5" />
-                      </div>
-                      <p className="text-xs text-slate-600 dark:text-blue-100">
-                        Balanced lighting, preserved window views, and calibrated colors without manual masking.
-                      </p>
+                      <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Stunning results in 12 seconds</span>
+                      <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
                     </div>
                   </div>
                 </div>
@@ -855,7 +1036,7 @@ const LandingPage: React.FC = () => {
                         </div>
                         <div className="flex items-center space-x-2">
                           <Shield className="h-4 w-4 text-emerald-500 dark:text-emerald-300" />
-                          <span>MLS-safe, reality anchored, and validated by human QA specialists</span>
+                          <span>Reality anchored, and validated by human QA specialists</span>
                         </div>
                       </div>
                     </div>
