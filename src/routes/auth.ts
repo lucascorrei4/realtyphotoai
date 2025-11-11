@@ -59,6 +59,10 @@ const buildConversionMetadata = (req: express.Request): Partial<ConversionEventP
     metadata.createdAt = createdAt;
   }
 
+  if (typeof req.body.externalId === 'string') {
+    metadata.externalId = req.body.externalId;
+  }
+
   return metadata;
 };
 

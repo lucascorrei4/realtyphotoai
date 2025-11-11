@@ -64,6 +64,7 @@ export class AuthService {
         const conversionPayload: ConversionEventPayload = {
           email,
           ...metadata,
+          externalId: metadata?.externalId ?? email,
         };
 
         await conversionEventService.sendConversionEvent('Lead', conversionPayload);
@@ -129,6 +130,7 @@ export class AuthService {
             email,
             createdAt: newUser.created_at,
             ...metadata,
+            externalId: metadata?.externalId ?? newUser.id,
           };
 
           await conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload);

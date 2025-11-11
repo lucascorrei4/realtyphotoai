@@ -1,10 +1,20 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { ImageController } from '../controllers/imageController';
-import { uploadMiddleware, uploadMultipleMiddleware, handleUploadError, validateUploadedFile, validateUploadedFiles } from '../middleware/uploadMiddleware';
+import {
+  uploadMiddleware,
+  uploadMultipleMiddleware,
+  handleUploadError,
+  validateUploadedFile,
+  validateUploadedFiles,
+} from '../middleware/uploadMiddleware';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authenticateToken, checkGenerationLimit, checkModelAccess } from '../middleware/authMiddleware';
 import { config } from '../config';
+import conversionEventService, {
+  ConversionEventPayload,
+  ConversionEventType,
+} from '../services/conversionEventService';
 import authRoutes from './auth';
 import adminRoutes from './admin';
 import userRoutes from './user';
@@ -15,7 +25,7 @@ const router = Router();
 const imageController = new ImageController();
 
 // Rate limiting
-const createRateLimit = (windowMs: number, max: number): ReturnType<typeof rateLimit> => 
+const createRateLimit = (windowMs: number, max: number): ReturnType<typeof rateLimit> =>
   rateLimit({
     windowMs,
     max,
@@ -35,11 +45,118 @@ const generalRateLimit = createRateLimit(config.rateLimitWindowMs, config.rateLi
 // Stricter rate limit for processing endpoints
 const processingRateLimit = createRateLimit(15 * 60 * 1000, 10); // 10 requests per 15 minutes
 
+const isValidEventType = (value: unknown): value is ConversionEventType =>
+  value === 'Lead' || value === 'CompleteRegistration';
+
+const sanitizeConversionPayload = (input: unknown): Partial<ConversionEventPayload> => {
+  if (!input || typeof input !== 'object') {
+    return {};
+  }
+
+  const candidate = input as Record<string, unknown>;
+  const sanitized: Partial<ConversionEventPayload> = {};
+
+  if (typeof candidate.email === 'string') {
+    sanitized.email = candidate.email;
+  }
+
+  if (typeof candidate.firstName === 'string') {
+    sanitized.firstName = candidate.firstName;
+  }
+
+  if (typeof candidate.lastName === 'string') {
+    sanitized.lastName = candidate.lastName;
+  }
+
+  if (typeof candidate.phone === 'string') {
+    sanitized.phone = candidate.phone;
+  }
+
+  if (typeof candidate.ip === 'string') {
+    sanitized.ip = candidate.ip;
+  }
+
+  if (typeof candidate.userAgent === 'string') {
+    sanitized.userAgent = candidate.userAgent;
+  }
+
+  if (typeof candidate.fbp === 'string') {
+    sanitized.fbp = candidate.fbp;
+  }
+
+  if (typeof candidate.fbc === 'string') {
+    sanitized.fbc = candidate.fbc;
+  }
+
+  if (typeof candidate.createdAt === 'string') {
+    sanitized.createdAt = candidate.createdAt;
+  }
+
+  if (typeof candidate.amount === 'number' && Number.isFinite(candidate.amount)) {
+    sanitized.amount = candidate.amount;
+  }
+
+  if (typeof candidate.currency === 'string') {
+    sanitized.currency = candidate.currency;
+  }
+
+  if (typeof candidate.eventIdOverride === 'string') {
+    sanitized.eventIdOverride = candidate.eventIdOverride;
+  }
+
+  if (typeof candidate.actionSource === 'string') {
+    sanitized.actionSource = candidate.actionSource;
+  }
+
+  if (typeof candidate.eventSourceUrl === 'string') {
+    sanitized.eventSourceUrl = candidate.eventSourceUrl;
+  }
+
+  if (typeof candidate.externalId === 'string') {
+    sanitized.externalId = candidate.externalId;
+  }
+
+  return sanitized;
+};
+
 // Health check endpoint (no rate limit)
 router.get('/health', asyncHandler(imageController.health));
 
 // Test endpoint
 router.get('/test', generalRateLimit, asyncHandler(imageController.test));
+
+router.post(
+  '/conversion-events/test',
+  generalRateLimit,
+  asyncHandler(async (req, res) => {
+    const eventTypeInput = req.body?.event;
+    const payloadOverrides = sanitizeConversionPayload(req.body?.payload);
+
+    const event: ConversionEventType = isValidEventType(eventTypeInput) ? eventTypeInput : 'Lead';
+
+    const result = await conversionEventService.sendTestConversionEvent(event, payloadOverrides);
+
+    const statusCode = result.success
+      ? 200
+      : result.status && result.status >= 400
+        ? result.status
+        : 502;
+
+    res.status(statusCode).json({
+      success: result.success,
+      event: result.event,
+      webhookUrl: result.webhookUrl,
+      status: result.status,
+      statusText: result.statusText,
+      durationMs: result.durationMs,
+      timestamp: result.timestamp,
+      requestBody: result.requestBody,
+      responseBody: result.responseBody ?? null,
+      rawResponseBody: result.rawResponseBody ?? null,
+      errorMessage: result.errorMessage ?? null,
+    });
+  }),
+);
 
 // Model information
 router.get('/model-info', generalRateLimit, asyncHandler(imageController.getModelInfo));
