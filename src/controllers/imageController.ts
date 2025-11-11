@@ -985,22 +985,33 @@ export class ImageController {
 
           logger.info(`📥 Enhanced image ${index + 1} URL received`, { enhancedImageUrl });
 
-          // Download the enhanced image
-          const enhancedImagePath = await FileUtils.downloadImage(enhancedImageUrl, config.outputDir);
-          tempFiles.push(enhancedImagePath);
+          // Persist enhanced result to hybrid storage (R2/local)
+          const enhancedStorageResult = await this.replicateService.downloadAndSaveToHybridStorage(
+            enhancedImageUrl,
+            `${path.parse(imageFile.originalname || imageFile.filename || 'image').name}_enhanced.png`,
+            {
+              userId,
+              generationId,
+              originalFile: imageFile.originalname || imageFile.filename || 'unknown',
+              enhancementType: req.body.enhancementType || 'luminosity',
+              enhancementStrength: req.body.enhancementStrength || 'moderate',
+            }
+          );
 
           // Update generation record with success
           await this.userStatsService.updateGenerationStatus(
             generationId,
             'completed',
-            `/outputs/${path.basename(enhancedImagePath)}`,
+            enhancedStorageResult.url,
             undefined,
             Date.now() - startTime
           );
 
           return {
             originalImage: imageStorageResult.url,
-            enhancedImage: `/outputs/${path.basename(enhancedImagePath)}`,
+            enhancedImage: enhancedStorageResult.url,
+            enhancedStorageKey: enhancedStorageResult.storageKey,
+            enhancedStorageType: enhancedStorageResult.storageType,
             filename: imageFile.filename,
             generationId
           };
@@ -1032,21 +1043,21 @@ export class ImageController {
         enhancementType: req.body.enhancementType,
       });
 
-      // Verify all files exist before returning paths
-      const fs = require('fs');
-      const verifiedResults = results.map(result => {
-        // Only check enhanced files exist (original images are in R2)
-        const enhancedExists = fs.existsSync(path.join(process.cwd(), 'outputs', path.basename(result.enhancedImage)));
+      // Verify all enhanced files exist in storage before returning paths
+      const verifiedResults = await Promise.all(results.map(async result => {
+        if (result.enhancedStorageKey) {
+          const enhancedExists = await this.storageService.fileExists(result.enhancedStorageKey);
 
-        if (!enhancedExists) {
-          logger.error('❌ Enhanced image file not found in outputs directory', { 
-            path: result.enhancedImage
-          });
-          throw new Error(`Enhanced image file not found: ${path.basename(result.enhancedImage)}`);
+          if (!enhancedExists) {
+            logger.error('❌ Enhanced image file not found in storage', { 
+              storageKey: result.enhancedStorageKey
+            });
+            throw new Error(`Enhanced image file not found: ${result.enhancedStorageKey}`);
+          }
         }
 
         return result;
-      });
+      }));
 
       logger.info('✅ All file validations passed', {
         processedCount: verifiedResults.length
@@ -1245,9 +1256,22 @@ export class ImageController {
 
       logger.info('📥 Replaced image URL received', { replacedImageUrl });
 
-      // Download the replaced image
-      const replacedImagePath = await FileUtils.downloadImage(replacedImageUrl, config.outputDir);
-      tempFiles.push(replacedImagePath);
+      const requestedOutputFormat = (req.body.outputFormat || 'jpg').toLowerCase();
+      const normalizedExtension = requestedOutputFormat.startsWith('.') ? requestedOutputFormat : `.${requestedOutputFormat}`;
+      const baseFilename = path.parse(imageFile.originalname || imageFile.filename || 'image').name;
+
+      // Persist replaced result to hybrid storage (R2/local)
+      const replacedStorageResult = await this.replicateService.downloadAndSaveToHybridStorage(
+        replacedImageUrl,
+        `${baseFilename}_replaced${normalizedExtension}`,
+        {
+          userId,
+          generationId,
+          originalFile: imageFile.originalname || imageFile.filename || 'unknown',
+          prompt: req.body.prompt,
+          outputFormat: requestedOutputFormat,
+        }
+      );
 
       const processingTime = Date.now() - startTime;
 
@@ -1255,49 +1279,49 @@ export class ImageController {
       await this.userStatsService.updateGenerationStatus(
         generationId,
         'completed',
-        `/outputs/${path.basename(replacedImagePath)}`,
+        replacedStorageResult.url,
         undefined,
         processingTime
       );
 
       logger.info('✅ Element replacement completed successfully', {
         processingTime,
-        replacedImagePath,
+        replacedImageUrl: replacedStorageResult.url,
         prompt: req.body.prompt,
         generationId,
+        storageType: replacedStorageResult.storageType,
       });
 
-      // Ensure the image paths are accessible
-      const originalImagePath = `/uploads/${imageFile.filename}`;
-      const replacedImagePathUrl = `/outputs/${path.basename(replacedImagePath)}`;
+      const originalImageUrl = imageStorageResult.url;
+      const replacedImagePublicUrl = replacedStorageResult.url;
 
-      // Verify replaced image exists (original image is in R2, so we only check replaced image)
-      const fs = require('fs');
-      const replacedExists = fs.existsSync(replacedImagePath);
+      // Verify replaced image exists in storage
+      if (replacedStorageResult.storageKey) {
+        const replacedExists = await this.storageService.fileExists(replacedStorageResult.storageKey);
 
-      if (!replacedExists) {
-        logger.error('❌ Replaced image file not found in outputs directory', { 
-          path: replacedImagePath,
-          url: replacedImagePathUrl 
-        });
-        throw new Error(`Replaced image file not found: ${path.basename(replacedImagePath)}`);
+        if (!replacedExists) {
+          logger.error('❌ Replaced image file not found in storage', { 
+            storageKey: replacedStorageResult.storageKey
+          });
+          throw new Error(`Replaced image file not found: ${replacedStorageResult.storageKey}`);
+        }
       }
 
       logger.info('✅ File validation passed', {
-        originalImage: originalImagePath,
-        replacedImage: replacedImagePathUrl,
-        replacedExists
+        originalImage: originalImageUrl,
+        replacedImage: replacedImagePublicUrl,
+        storageKey: replacedStorageResult.storageKey
       });
 
       res.json({
         success: true,
         message: 'Elements replaced successfully',
         data: {
-          originalImage: originalImagePath,
-          replacedImage: replacedImagePathUrl,
+          originalImage: originalImageUrl,
+          replacedImage: replacedImagePublicUrl,
           processingTime,
           prompt: req.body.prompt,
-          outputFormat: req.body.outputFormat || 'jpg',
+          outputFormat: requestedOutputFormat,
           modelUsed: 'Flux Kontext Pro Model (black-forest-labs/flux-kontext-pro)',
         },
         timestamp: new Date().toISOString(),
@@ -1516,24 +1540,24 @@ export class ImageController {
       );
 
       if (result.outputUrl) {
-        // Generate unique filename for the output
-        const outputFilename = `furniture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
-        const finalOutputPath = path.join(config.outputDir, outputFilename);
-        
-        // Download the result from URL
-        logger.info('📥 Downloading furniture result from URL', {
-          url: result.outputUrl,
-          outputPath: finalOutputPath
-        });
-        const fs = require('fs');
-        const downloadedPath = await FileUtils.downloadImage(result.outputUrl, config.outputDir);
-        fs.renameSync(downloadedPath, finalOutputPath);
-        const finalImagePath = finalOutputPath;
-        
+        const baseFilename = path.parse(roomImageFile.originalname || roomImageFile.filename || 'room_image').name;
+        const outputExtension = '.jpg';
+
+        const resultStorage = await this.replicateService.downloadAndSaveToHybridStorage(
+          result.outputUrl,
+          `${baseFilename}_furnished${outputExtension}`,
+          {
+            userId,
+            generationId: dbGenerationId,
+            prompt: req.body.prompt,
+            furnitureType: req.body.furnitureType || 'general',
+          }
+        );
+
         // Generate public URLs
         const roomImageUrl = roomImageStorageResult.url;
         const furnitureImageUrl = furnitureImageStorageResult?.url || null;
-        const resultImageUrl = `/outputs/${outputFilename}`;
+        const resultImageUrl = resultStorage.url;
 
         const processingTime = Date.now() - startTime;
         
@@ -1548,11 +1572,24 @@ export class ImageController {
 
         generationId = dbGenerationId;
 
+        if (resultStorage.storageKey) {
+          const resultExists = await this.storageService.fileExists(resultStorage.storageKey);
+          
+          if (!resultExists) {
+            logger.error('❌ Furniture result not found in storage', {
+              storageKey: resultStorage.storageKey
+            });
+            throw new Error(`Furniture result not found: ${resultStorage.storageKey}`);
+          }
+        }
+
         logger.info('✅ Furniture addition completed successfully', {
           processingTime,
-          resultImagePath: finalImagePath,
+          resultImageUrl,
           prompt: req.body.prompt,
-          generationId: dbGenerationId
+          generationId: dbGenerationId,
+          storageType: resultStorage.storageType,
+          storageKey: resultStorage.storageKey
         });
 
         res.json({

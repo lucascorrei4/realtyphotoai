@@ -11,6 +11,8 @@ import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
 import { useCredits } from '../contexts/CreditContext';
 
+type EnhancementTypeOption = 'luminosity' | 'color-matching' | 'lighting-improvement';
+type EnhancementStrengthOption = 'subtle' | 'moderate' | 'strong';
 
 const ImageEnhancement: React.FC = () => {
   const { user } = useAuth();
@@ -24,6 +26,8 @@ const ImageEnhancement: React.FC = () => {
   const [processingTime, setProcessingTime] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [enhancementType, setEnhancementType] = useState<EnhancementTypeOption>('luminosity');
+  const [enhancementStrength, setEnhancementStrength] = useState<EnhancementStrengthOption>('moderate');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const maxFileSize = API_CONFIG.MAX_FILE_SIZE;
@@ -175,8 +179,8 @@ const ImageEnhancement: React.FC = () => {
       }
 
       // Append enhancement settings
-      formData.append('enhancementType', 'luminosity');
-      formData.append('enhancementStrength', 'moderate');
+      formData.append('enhancementType', enhancementType);
+      formData.append('enhancementStrength', enhancementStrength);
 
       const response = await authenticatedFormDataFetch('/api/v1/image-enhancement', formData);
 
@@ -213,6 +217,8 @@ const ImageEnhancement: React.FC = () => {
         // Reset form after successful generation
         setSelectedFiles([]);
         setReferenceFile(null);
+        setEnhancementType('luminosity');
+        setEnhancementStrength('moderate');
         
         // Clear file input
         if (fileInputRef.current) {
@@ -377,7 +383,8 @@ const ImageEnhancement: React.FC = () => {
             </label>
             <select
               id="enhancementType"
-              defaultValue="luminosity"
+              value={enhancementType}
+              onChange={(e) => setEnhancementType(e.target.value as EnhancementTypeOption)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="luminosity">Luminosity Enhancement</option>
@@ -389,13 +396,14 @@ const ImageEnhancement: React.FC = () => {
             </small>
           </div>
 
-          <div className="form-group" style={{ display: 'none' }}>
+          <div className="form-group">
             <label htmlFor="enhancementStrength" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               🎯 Enhancement Strength
             </label>
             <select
               id="enhancementStrength"
-              defaultValue="moderate"
+              value={enhancementStrength}
+              onChange={(e) => setEnhancementStrength(e.target.value as EnhancementStrengthOption)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="subtle">Subtle</option>

@@ -98,6 +98,26 @@ type FAQItem = {
   answer: string;
 };
 
+type WhyChooseItem = {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+};
+
+type RoleOutcome = {
+  icon: LucideIcon;
+  role: string;
+  stat: string;
+  description: string;
+};
+
+type SubscriptionOutcome = {
+  icon: LucideIcon;
+  value: string;
+  label: string;
+  description: string;
+};
+
 const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
   beforeSrc,
   afterSrc,
@@ -112,6 +132,8 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalPosition, setModalPosition] = useState(52);
   const modalContainerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const activePointerIdRef = useRef<number | null>(null);
   const [isModalDragging, setIsModalDragging] = useState(false);
 
   const clamp = (value: number) => Math.max(0, Math.min(100, value));
@@ -166,17 +188,25 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
   }, [handleCloseModal, isModalOpen]);
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    activePointerIdRef.current = event.pointerId;
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     updatePosition(event.clientX);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (activePointerIdRef.current !== event.pointerId && !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    if (!isDragging) return;
+    event.preventDefault();
     updatePosition(event.clientX);
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    if (activePointerIdRef.current === event.pointerId) {
+      setIsDragging(false);
+      activePointerIdRef.current = null;
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
@@ -220,10 +250,12 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          style={{ touchAction: 'pan-y' }}
         >
           <img
-            src={beforeSrc}
-            alt={altBefore}
+            src={afterSrc}
+            alt={altAfter}
             className="absolute inset-0 h-full w-full object-cover brightness-[0.95]"
             loading="lazy"
           />
@@ -233,8 +265,8 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
             style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
           >
             <img
-              src={afterSrc}
-              alt={altAfter}
+              src={beforeSrc}
+              alt={altBefore}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
               loading="lazy"
             />
@@ -318,38 +350,38 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
                 </p>
               </div>
 
-            <div
-              ref={modalContainerRef}
-              className="relative h-[60vh] min-h-[360px] w-full cursor-ew-resize select-none overflow-hidden rounded-3xl bg-slate-900/40"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                handleModalPointerDown(event);
-              }}
-              onPointerMove={(event) => {
-                event.preventDefault();
-                handleModalPointerMove(event);
-              }}
-              onPointerUp={(event) => {
-                event.preventDefault();
-                handleModalPointerUp(event);
-              }}
-              onPointerCancel={handleModalPointerUp}
-              onPointerLeave={handleModalPointerUp}
-            >
-                <img
-                  src={beforeSrc}
-                  alt={altBefore}
-                  className="absolute inset-0 h-full w-full object-contain"
-                />
+              <div
+                ref={modalContainerRef}
+                className="relative h-[60vh] min-h-[360px] w-full cursor-ew-resize select-none overflow-hidden rounded-3xl bg-slate-900/40"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  handleModalPointerDown(event);
+                }}
+                onPointerMove={(event) => {
+                  event.preventDefault();
+                  handleModalPointerMove(event);
+                }}
+                onPointerUp={(event) => {
+                  event.preventDefault();
+                  handleModalPointerUp(event);
+                }}
+                onPointerCancel={handleModalPointerUp}
+                onPointerLeave={handleModalPointerUp}
+              >
 
+                <img
+                  src={afterSrc}
+                  alt={altAfter}
+                  className="h-full w-full object-contain"
+                />
                 <div
                   className="absolute inset-0 h-full w-full overflow-hidden transition-[clip-path] duration-150 ease-out"
                   style={{ clipPath: `inset(0 ${100 - modalPosition}% 0 0)` }}
                 >
                   <img
-                    src={afterSrc}
-                    alt={altAfter}
-                    className="h-full w-full object-contain"
+                    src={beforeSrc}
+                    alt={altBefore}
+                    className="absolute inset-0 h-full w-full object-contain"
                   />
                 </div>
 
@@ -395,44 +427,26 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
 
 const serviceShowcases: ServiceShowcase[] = [
   {
-    id: 'enhance-images',
-    name: 'Enhance Images',
-    tagline: 'Correct lighting & color in seconds',
-    description:
-      'Transform raw shots into magazine-ready imagery with automated exposure, white balance, and detail recovery tuned for MLS compliance.',
-    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761277455358_inxnid_image-1761260228284.jpg',
-    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761279323790_yh1571_1761275559906_q0fxg6_IMG_4065.webp',
-    altBefore: 'Dimly lit living room before enhancement',
-    altAfter: '',
-    bullets: [
-      'AI tone mapping protects natural window views',
-      'Batch process entire shoots with one click',
-      'MLS-ready exports with upright correction'
-    ],
-    metric: { value: '5× faster', label: 'than manual retouching' },
-    icon: Camera,
-    gradient: 'from-blue-500 to-indigo-500',
-    accent: 'Enhance Images'
-  },
-  {
     id: 'interior-design',
     name: 'Interior Design',
     tagline: 'Stage every room virtually',
     description:
       'Fill empty spaces with on-trend furniture, lighting, and textures generated from curated design systems that convert browsers into showings.',
-    beforeSrc: '/interior_design_before_2.jpg',
-    afterSrc: '/interior_design_after_2.jpg',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1762543751614_u45vjj_1761275559906_q0fxg6_IMG_4065.webp',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/interior_design_undefined_processed_1762543763594_8ljmmu',
     altBefore: 'Empty dining room before staging',
     altAfter: 'Furnished dining room with modern decor',
     bullets: [
-      'Library of 40+ design styles curated by top stagers',
+      'Design styles curated by top stagers',
       'Floor-aware furniture placement with correct shadows',
       'Generate multiple looks for each buyer persona'
     ],
     metric: { value: '+85%', label: 'more showing requests' },
     icon: Palette,
     gradient: 'from-purple-500 to-violet-600',
-    accent: 'Interior Design'
+    accent: 'Interior Design',
+    beforeLabel: 'Before',
+    afterLabel: 'After'
   },
   {
     id: 'replace-elements',
@@ -440,8 +454,8 @@ const serviceShowcases: ServiceShowcase[] = [
     tagline: 'Erase distractions, keep realism',
     description:
       'Remove clutter, swap finishes, and fix construction artifacts while preserving architectural accuracy and lighting continuity.',
-    beforeSrc: '/element_replacement_before_1.jpg',
-    afterSrc: '/element_replacement_after_1.jpg',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1762879685600_wjch86_1761277140390_nleq3q_image-1761260228284.jpg',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/1761277140390_nleq3q_image-1761260228284_replaced_processed_1762879695149_plkbm7.jpg',
     altBefore: 'Kitchen before unwanted elements are removed',
     altAfter: 'Kitchen after element replacement with clean surfaces',
     bullets: [
@@ -453,8 +467,8 @@ const serviceShowcases: ServiceShowcase[] = [
     icon: Wand2,
     gradient: 'from-emerald-500 to-teal-500',
     accent: 'Replace Elements',
-    beforeLabel: 'Original',
-    afterLabel: 'Refined'
+    beforeLabel: 'Before',
+    afterLabel: 'After'
   },
   {
     id: 'add-furnitures',
@@ -462,8 +476,8 @@ const serviceShowcases: ServiceShowcase[] = [
     tagline: 'Turn empty units into aspirational homes',
     description:
       'Place designer-grade furniture, art, and accessories that highlight scale, flow, and lifestyle for every room size and layout.',
-    beforeSrc: '/interior_design_before_3.jpg',
-    afterSrc: '/interior_design_after_3.jpg',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1762880195635_o416w1_image-1759341837469.jpg',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1759341837469_furnished_processed_1762880214867_fazzdm.jpg',
     altBefore: 'Unfurnished living room before virtual staging',
     altAfter: 'Living room staged with stylish furniture',
     bullets: [
@@ -474,7 +488,9 @@ const serviceShowcases: ServiceShowcase[] = [
     metric: { value: '4.9★', label: 'average buyer rating' },
     icon: Sofa,
     gradient: 'from-amber-500 to-orange-500',
-    accent: 'Add Furnitures'
+    accent: 'Add Furnitures',
+    beforeLabel: 'Before',
+    afterLabel: 'After'
   },
   {
     id: 'exterior-design',
@@ -482,8 +498,8 @@ const serviceShowcases: ServiceShowcase[] = [
     tagline: 'Refresh curb appeal from the sidewalk view',
     description:
       'Visualize landscaping, siding, and twilight conversions that help buyers picture life in the home before they ever visit.',
-    beforeSrc: 'https://images.unsplash.com/photo-1529423280540-3f6a02be8f87?auto=format&fit=crop&w=1600&q=80',
-    afterSrc: 'https://images.unsplash.com/photo-1479839672679-a46483c0e7c8?auto=format&fit=crop&w=1600&q=80',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761263932418_tpscv6_address-of-the-property-1-26-2048x1365.jpeg.webp',
+    afterSrc: 'http://localhost:8000/outputs/exterior_1761263944911_6iirpwzgd.jpg',
     altBefore: 'Exterior home before AI enhancements',
     altAfter: 'Exterior home after landscaping and lighting enhancements',
     bullets: [
@@ -495,9 +511,31 @@ const serviceShowcases: ServiceShowcase[] = [
     icon: Building2,
     gradient: 'from-cyan-500 to-sky-500',
     accent: 'Exterior Design',
-    beforeLabel: 'Original Exterior',
-    afterLabel: 'AI Refresh'
-  }
+    beforeLabel: 'Before',
+    afterLabel: 'After'
+  },
+  {
+    id: 'enhance-images',
+    name: 'Enhance Images',
+    tagline: 'Correct lighting & color in seconds',
+    description:
+      'Transform raw shots into magazine-ready imagery using domain-trained AI built for real estate and interior design teams.',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1762879328372_pktlqe_IMG_5685.PNG',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/IMG_5685_enhanced_processed_1762879343417_w0dmzz.png',
+    altBefore: 'Dimly lit living room before enhancement',
+    altAfter: '',
+    bullets: [
+      'AI tone mapping protects natural window views',
+      'Batch process entire shoots with one click',
+      'Portfolio-ready exports with horizon correction for property tours'
+    ],
+    metric: { value: '5× faster', label: 'than manual retouching' },
+    icon: Camera,
+    gradient: 'from-blue-500 to-indigo-500',
+    accent: 'Enhance Images',
+    beforeLabel: 'Before',
+    afterLabel: 'After'
+  },
 ];
 
 const trustSignals: TrustSignal[] = [
@@ -514,15 +552,15 @@ const trustSignals: TrustSignal[] = [
   {
     icon: TrendingUp,
     label: '+72% more qualified leads',
-    description: 'Listings featuring RealVision AI visuals outperform traditional photos across MLS markets.'
+    description: 'Listings featuring RealVision AI visuals outperform traditional photos across leading real estate marketplaces.'
   }
 ];
 
 const featureHighlights: Highlight[] = [
   {
     icon: Camera,
-    title: 'MLS-compliant outputs',
-    description: 'Automatic straightening, noise reduction, and web + print aspect ratios ready to publish instantly.'
+    title: 'AI-optimized outputs',
+    description: 'Automatic straightening, noise reduction, and AI model selection tuned for real estate deliver web + print assets instantly.'
   },
   {
     icon: Wand2,
@@ -555,7 +593,7 @@ const workflowSteps: WorkflowStep[] = [
   {
     icon: TrendingUp,
     title: 'Publish & track',
-    description: 'Export MLS-ready files, share galleries, and monitor engagement with built-in analytics.'
+    description: 'Export market-ready files, share galleries, and monitor engagement with built-in analytics powered by our real estate AI.'
   }
 ];
 
@@ -570,15 +608,6 @@ const testimonials: Testimonial[] = [
     rating: 5
   },
   {
-    name: 'Marcus Chen',
-    title: 'Broker / Owner',
-    company: 'Skylane Realty',
-    quote:
-      'We replaced three different vendors. The before/after quality is unmatched, and my photographers love how fast they can turn jobs around.',
-    result: 'Cut photo turnaround from 48 hours to 12 minutes',
-    rating: 5
-  },
-  {
     name: 'Ashley Patel',
     title: 'Marketing Director',
     company: 'UrbanNest Developments',
@@ -586,6 +615,15 @@ const testimonials: Testimonial[] = [
       'Exterior design previews helped us lock pre-sales faster. Buyers see the future community before the first brick is laid.',
     result: 'Secured 40% more pre-sales reservations',
     rating: 5
+  },
+  {
+    name: 'Devon Hart',
+    title: 'Director of Marketing Ops',
+    company: 'Harbor & Key Realty',
+    quote:
+      'RealVision AI’s success team built our templates, trained every agent, and checks in weekly. Support is the reason we transitioned our entire photo program in two weeks.',
+    result: 'Onboarded 12 agents and 4 photographers in the first week',
+    rating: 4
   }
 ];
 
@@ -606,9 +644,9 @@ const faqs: FAQItem[] = [
       'Yes. Invite unlimited teammates, set approvals, leave timestamped comments, and lock versions. Every action is tracked so you stay audit-ready for enterprise clients.'
   },
   {
-    question: 'Is the service MLS compliant?',
+    question: 'What makes RealVision AI models stand out?',
     answer:
-      'Absolutely. We follow RESO standards, watermark policies, and maintain metadata so your assets upload cleanly to every MLS and portal.'
+      'Our AI stack blends diffusion, upscaling, and structure-aware models that are trained on real estate and interior design datasets, so your assets stay architecturally accurate while delivering polished, client-ready visuals every time.'
   }
 ];
 
@@ -618,6 +656,29 @@ const heroCheckmarks = [
   'No credit card required to start',
   'Batch process entire photo sets with one click for quick client delivery',
   '5x faster than manual editing, giving you more time for creative work'
+];
+
+const whyChooseBullets: WhyChooseItem[] = [
+  {
+    icon: Sparkles,
+    title: 'Specialized real estate AI',
+    description: 'Domain-trained models respect architecture, layout, and decor styles across residential and commercial spaces.'
+  },
+  {
+    icon: Shield,
+    title: 'Guided onboarding & support',
+    description: 'Dedicated success architects configure styles, workflows, and QA reviews so your team ships confidently on day one.'
+  },
+  {
+    icon: Clock,
+    title: '12-second production speed',
+    description: 'Parallel rendering keeps photographers and marketers ahead of deadlines without sacrificing polish.'
+  },
+  {
+    icon: Users,
+    title: 'Built for cross-team collaboration',
+    description: 'Invite agents, designers, and developers with approval flows, version history, and comments in a single workspace.'
+  }
 ];
 
 const successMetrics = [
@@ -642,9 +703,63 @@ const successMetrics = [
 ];
 
 const ctaHighlights = [
-  'Unlimited before/after previews',
-  'Launch pricing locked for life',
-  'Dedicated success architect on day one'
+  'Kick off with 100 free credits across every AI transformation',
+  'Unlimited before/after previews to showcase client-ready proofs',
+  'Dedicated success architect onboarding your team in 48 hours'
+];
+
+const roleOutcomes: RoleOutcome[] = [
+  {
+    icon: TrendingUp,
+    role: 'Realtors',
+    stat: '3× more signed listings',
+    description: 'Win seller trust with instant AI staging proofs and marketing decks tailored to each property.'
+  },
+  {
+    icon: Users,
+    role: 'Designers',
+    stat: '60% quicker concept approvals',
+    description: 'Prototype multiple interior looks in minutes and lock sourcing-ready mood boards with clients.'
+  },
+  {
+    icon: Award,
+    role: 'Agents',
+    stat: '+45% premium package upsell',
+    description: 'Bundle AI visuals with concierge services to increase commission opportunities and repeat referrals.'
+  },
+  {
+    icon: Camera,
+    role: 'Photographers',
+    stat: '4h saved per shoot',
+    description: 'Automate retouching, twilight conversions, and clutter removal so you can book more sessions weekly.'
+  },
+  {
+    icon: Rocket,
+    role: 'Developers',
+    stat: '2× faster pre-sales velocity',
+    description: 'Render future amenities and exterior transformations that accelerate investor buy-in and buyer reservations.'
+  }
+];
+
+const subscriptionOutcomes: SubscriptionOutcome[] = [
+  {
+    icon: TrendingUp,
+    value: '+28%',
+    label: 'higher premium package attach rate',
+    description: 'Convert more sellers to top-tier marketing plans with AI visuals that justify pricing.'
+  },
+  {
+    icon: Users,
+    value: '2.5×',
+    label: 'increase in qualified prospect demos',
+    description: 'Send interactive before/after links that turn curious leads into booked consultations.'
+  },
+  {
+    icon: Shield,
+    value: '-35%',
+    label: 'reduction in churn across teams',
+    description: 'Deliver consistent AI results with onboarding, governance, and success reviews baked into every plan.'
+  }
 ];
 
 const LandingPage: React.FC = () => {
@@ -751,7 +866,26 @@ const LandingPage: React.FC = () => {
     document.getElementById(anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const heroService = serviceShowcases[0];
+  const heroService = {
+    id: 'enhance-images',
+    name: 'Main highlight',
+    tagline: 'Correct lighting & color in seconds',
+    description:
+      'Transform raw shots into magazine-ready imagery using domain-trained AI built for real estate and interior design teams.',
+    beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761279323790_yh1571_1761275559906_q0fxg6_IMG_4065.webp',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761277455358_inxnid_image-1761260228284.jpg',
+    altBefore: 'Dimly lit living room before enhancement',
+    altAfter: '',
+    bullets: [
+      'AI tone mapping protects natural window views',
+      'Batch process entire shoots with one click',
+      'Portfolio-ready exports with horizon correction for property tours'
+    ],
+    metric: { value: '5× faster', label: 'than manual retouching' },
+    icon: Camera,
+    gradient: 'from-blue-500 to-indigo-500',
+    accent: 'Main highlight'
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -786,7 +920,7 @@ const LandingPage: React.FC = () => {
           </div>
           <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="hidden items-center rounded-full border border-amber-200/80 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-600 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 sm:flex">
-              Limited founder pricing
+              Limited pricing
             </div>
             <button
               onClick={toggleTheme}
@@ -835,6 +969,24 @@ const LandingPage: React.FC = () => {
                     </div>
                   ))}
                 </div>
+                <div className="mt-8 rounded-3xl border border-blue-200/70 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-blue-500/30 dark:bg-slate-900/70">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                    Why teams choose RealVision AI
+                  </h3>
+                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                    {whyChooseBullets.map(({ icon: Icon, title, description }) => (
+                      <li key={title} className="flex items-start gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300">
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{description}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
                   <button
                     onClick={scrollToAuth}
@@ -874,8 +1026,8 @@ const LandingPage: React.FC = () => {
                     afterSrc={heroService.afterSrc}
                     altBefore={heroService.altBefore}
                     altAfter={heroService.altAfter}
-                    beforeLabel="BEFORE"
-                    afterLabel="AI Enhanced"
+                    beforeLabel="Before"
+                    afterLabel="After"
                     className="h-64 sm:h-72 md:h-80"
                   />
                   <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
@@ -1097,6 +1249,72 @@ const LandingPage: React.FC = () => {
                   <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">{description}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="px-4 py-20 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mx-auto max-w-3xl text-center">
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl">
+                Role-based results you can forecast
+              </h2>
+              <p className="mt-4 text-lg text-slate-600 dark:text-slate-300">
+                Whether you sell, shoot, design, or build, RealVision AI subscriptions tie directly to KPIs that matter for each discipline.
+              </p>
+            </div>
+            <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {roleOutcomes.map(({ icon: Icon, role, stat, description }) => (
+                <div
+                  key={role}
+                  className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/80"
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300">
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">{role}</h3>
+                  <p className="mt-2 text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                    {stat}
+                  </p>
+                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="px-4 pb-20 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-6xl rounded-3xl border border-emerald-200/70 bg-white/90 p-10 shadow-xl dark:border-emerald-500/30 dark:bg-slate-900/80">
+            <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+              <div>
+                <span className="inline-flex items-center space-x-2 rounded-full bg-emerald-500/10 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  <TrendingUp className="h-4 w-4" />
+                  <span>AI tool outcomes</span>
+                </span>
+                <h2 className="mt-5 text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl">
+                  Tool that grow revenue, not just image quality
+                </h2>
+                <p className="mt-4 text-base text-slate-600 dark:text-slate-300">
+                  Better images, faster production, and higher close rates. Wait for close rates, faster upsells, and steadier renewals once RealVision AI automates visual production across every listing and project.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {subscriptionOutcomes.map(({ icon: Icon, value, label, description }) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-950/80"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-300">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="mt-4 text-2xl font-semibold text-slate-900 dark:text-white">{value}</div>
+                    <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      {label}
+                    </div>
+                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{description}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -1366,11 +1584,11 @@ const LandingPage: React.FC = () => {
                 onClick={scrollToAuth}
                 className="inline-flex items-center space-x-2 rounded-xl bg-white px-8 py-4 text-base font-semibold text-blue-600 shadow-lg shadow-blue-900/40 transition-all hover:-translate-y-0.5 hover:bg-blue-50"
               >
-                Join the launch waitlist
+                Start now
                 <ArrowRight className="h-5 w-5" />
               </button>
               <span className="text-xs uppercase tracking-wide text-blue-100/80">
-                Limited seats for early access cohorts
+                Sign up now and get 100 credits free
               </span>
             </div>
           </div>
@@ -1400,7 +1618,7 @@ const LandingPage: React.FC = () => {
             <div>
               <h3 className="mb-3 text-base font-semibold sm:text-lg">Company</h3>
               <ul className="space-y-2 text-sm text-gray-400 sm:text-base">
-                <li><a href="mailto:hello@realvision.ai" className="transition-colors hover:text-white">Contact</a></li>
+                <li><a href="mailto:contact@realvisionaire.com" className="transition-colors hover:text-white">Contact</a></li>
                 <li><a href="#testimonials-section" className="transition-colors hover:text-white">Customers</a></li>
                 <li><a href="#faq-section" className="transition-colors hover:text-white">FAQ</a></li>
               </ul>
@@ -1409,7 +1627,6 @@ const LandingPage: React.FC = () => {
               <h3 className="mb-3 text-base font-semibold sm:text-lg">Resources</h3>
               <ul className="space-y-2 text-sm text-gray-400 sm:text-base">
                 <li><a href="#auth-section" className="transition-colors hover:text-white">Sign In</a></li>
-                <li><a href="mailto:press@realvision.ai" className="transition-colors hover:text-white">Press</a></li>
                 <li><a href="/privacy" className="transition-colors hover:text-white">Privacy</a></li>
               </ul>
             </div>

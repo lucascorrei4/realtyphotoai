@@ -16,6 +16,7 @@ import Auth from './pages/Auth';
 import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 import Pricing from './pages/Pricing';
+import Privacy from './pages/Privacy';
 import './App.css';
 
 // Protected Route Component
@@ -96,6 +97,7 @@ function AppRoutes() {
       {/* Public Routes */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <Auth />} />
       <Route path="/auth/callback" element={<AuthCallbackHandler />} />
       
