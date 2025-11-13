@@ -70,7 +70,7 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
   }
 
   // Check if plan exists in SUBSCRIPTION_PLANS (fallback to database check if needed)
-  const plan = SUBSCRIPTION_PLANS[planId];
+  let plan = SUBSCRIPTION_PLANS[planId];
   if (!plan) {
     // Try to get plan from database as fallback
     const { data: planRule, error: planError } = await supabase
@@ -108,7 +108,7 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
 
   // Extract user name components
   const fullName = userProfile?.name || '';
-  const nameParts = fullName.split(' ').filter(part => part.length > 0);
+  const nameParts = fullName.split(' ').filter((part: string) => part.length > 0);
   const firstName = nameParts[0] || '';
   const lastName = nameParts.slice(1).join(' ') || '';
 
@@ -153,34 +153,59 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
   }
 
   // Get plan amount for custom_data
-  const plan = SUBSCRIPTION_PLANS[planId];
   const planAmount = plan ? (billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly) : 0;
 
-  // Build user_data
+  // Build user_data - only include defined values
   const userData: UserData = {
-    first_name: firstName || undefined,
-    last_name: lastName || undefined,
     email: userEmail,
-    phone: userProfile?.phone || undefined,
-    ip: ipCandidate || undefined,
-    user_agent: userAgent || undefined,
-    fbp: fbp || undefined,
-    fbc: fbc || undefined,
     external_id: userId,
   };
 
-  // Build custom_data
+  if (firstName) {
+    userData.first_name = firstName;
+  }
+  if (lastName) {
+    userData.last_name = lastName;
+  }
+  if (userProfile?.phone) {
+    userData.phone = userProfile.phone;
+  }
+  if (ipCandidate) {
+    userData.ip = ipCandidate;
+  }
+  if (userAgent) {
+    userData.user_agent = userAgent;
+  }
+  if (fbp) {
+    userData.fbp = fbp;
+  }
+  if (fbc) {
+    userData.fbc = fbc;
+  }
+
+  // Build custom_data - only include defined values
   const customData: CustomData = {
     value: planAmount,
     currency: 'USD',
     event_id: 'Purchase',
     external_id: userId,
-    utm_source: finalUtmSource || undefined,
-    utm_medium: finalUtmMedium || undefined,
-    utm_campaign: finalUtmCampaign || undefined,
-    utm_content: finalUtmContent || undefined,
-    utm_term: finalUtmTerm || undefined,
   };
+
+  if (finalUtmSource) {
+    customData.utm_source = finalUtmSource;
+  }
+  if (finalUtmMedium) {
+    customData.utm_medium = finalUtmMedium;
+  }
+  if (finalUtmCampaign) {
+    customData.utm_campaign = finalUtmCampaign;
+  }
+  if (finalUtmContent) {
+    customData.utm_content = finalUtmContent;
+  }
+  if (finalUtmTerm) {
+    customData.utm_term = finalUtmTerm;
+  }
 
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   
