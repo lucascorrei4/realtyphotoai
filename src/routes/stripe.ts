@@ -1,6 +1,6 @@
 import express from 'express';
 import Stripe from 'stripe';
-import stripeCheckoutService from '../services/stripeCheckoutService';
+import stripeCheckoutService, { CheckoutSessionData, UserData, CustomData } from '../services/stripeCheckoutService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -99,9 +99,92 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
     return;
   }
 
+  // Get user profile for additional user data
+  const { data: userProfile } = await supabase
+    .from('user_profiles')
+    .select('name, phone')
+    .eq('id', userId)
+    .single();
+
+  // Extract user name components
+  const fullName = userProfile?.name || '';
+  const nameParts = fullName.split(' ').filter(part => part.length > 0);
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || '';
+
+  // Extract conversion tracking data from request
+  const forwardedForHeader = req.headers['x-forwarded-for'];
+  const forwardedFor = Array.isArray(forwardedForHeader) ? forwardedForHeader[0] : forwardedForHeader;
+  const ipCandidate = forwardedFor?.split(',')[0]?.trim() ?? req.ip ?? '';
+  const userAgent = req.get('User-Agent') || '';
+  const refererHeader = req.headers.referer || req.headers.referrer;
+  const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
+
+  // Extract UTM parameters from query string and body
+  const utmSource = req.query.utm_source || req.body.utmSource || '';
+  const utmMedium = req.query.utm_medium || req.body.utmMedium || '';
+  const utmCampaign = req.query.utm_campaign || req.body.utmCampaign || '';
+  const utmContent = req.query.utm_content || req.body.utmContent || '';
+  const utmTerm = req.query.utm_term || req.body.utmTerm || '';
+
+  // Extract Facebook Pixel data from request body
+  const fbp = req.body.fbp || '';
+  const fbc = req.body.fbc || '';
+
+  // Extract UTM from referer if not in query/body
+  let finalUtmSource = utmSource as string;
+  let finalUtmMedium = utmMedium as string;
+  let finalUtmCampaign = utmCampaign as string;
+  let finalUtmContent = utmContent as string;
+  let finalUtmTerm = utmTerm as string;
+
+  if (referer && !finalUtmSource && !finalUtmMedium && !finalUtmCampaign) {
+    try {
+      const urlObj = new URL(referer as string);
+      const params = urlObj.searchParams;
+      finalUtmSource = params.get('utm_source') || finalUtmSource;
+      finalUtmMedium = params.get('utm_medium') || finalUtmMedium;
+      finalUtmCampaign = params.get('utm_campaign') || finalUtmCampaign;
+      finalUtmContent = params.get('utm_content') || finalUtmContent;
+      finalUtmTerm = params.get('utm_term') || finalUtmTerm;
+    } catch (error) {
+      // Invalid URL, ignore
+    }
+  }
+
+  // Get plan amount for custom_data
+  const plan = SUBSCRIPTION_PLANS[planId];
+  const planAmount = plan ? (billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly) : 0;
+
+  // Build user_data
+  const userData: UserData = {
+    first_name: firstName || undefined,
+    last_name: lastName || undefined,
+    email: userEmail,
+    phone: userProfile?.phone || undefined,
+    ip: ipCandidate || undefined,
+    user_agent: userAgent || undefined,
+    fbp: fbp || undefined,
+    fbc: fbc || undefined,
+    external_id: userId,
+  };
+
+  // Build custom_data
+  const customData: CustomData = {
+    value: planAmount,
+    currency: 'USD',
+    event_id: 'Purchase',
+    external_id: userId,
+    utm_source: finalUtmSource || undefined,
+    utm_medium: finalUtmMedium || undefined,
+    utm_campaign: finalUtmCampaign || undefined,
+    utm_content: finalUtmContent || undefined,
+    utm_term: finalUtmTerm || undefined,
+  };
+
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   
-  const sessionData = {
+  const sessionData: CheckoutSessionData = {
     planId,
     billingCycle,
     userId,
@@ -110,8 +193,9 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
     cancelUrl: `${baseUrl}/pricing?subscription=cancelled`,
     metadata: {
       source: 'web_app',
-      user_agent: req.get('User-Agent') || 'unknown'
-    }
+    },
+    userData,
+    customData,
   };
 
   const { sessionId, url } = await stripeCheckoutService.createCheckoutSession(sessionData);

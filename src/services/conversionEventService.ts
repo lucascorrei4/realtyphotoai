@@ -4,6 +4,14 @@ import { logger } from '../utils/logger';
 
 export type ConversionEventType = 'Lead' | 'CompleteRegistration';
 
+export interface UtmParameters {
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+}
+
 export interface ConversionEventPayload {
   email: string;
   firstName?: string;
@@ -20,6 +28,11 @@ export interface ConversionEventPayload {
   actionSource?: string;
   eventSourceUrl?: string;
   externalId?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
 }
 
 interface N8nWebhookPayload {
@@ -38,6 +51,11 @@ interface N8nWebhookPayload {
   action_source?: string;
   event_source_url?: string;
   external_id?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
 }
 
 export interface ConversionEventTestResult {
@@ -54,11 +72,58 @@ export interface ConversionEventTestResult {
   timestamp: string;
 }
 
-class ConversionEventService {
+export class ConversionEventService {
   private readonly webhookUrl: string;
 
   constructor() {
     this.webhookUrl = config.n8nWebhookUrl;
+  }
+
+  /**
+   * Extracts UTM parameters from a URL string
+   * Supports both query string format and full URLs
+   */
+  static extractUtmParameters(url: string | undefined | null): UtmParameters {
+    if (!url) {
+      return {};
+    }
+
+    try {
+      const urlObj = url.startsWith('http') ? new URL(url) : new URL(`https://example.com?${url}`);
+      const params = urlObj.searchParams;
+
+      const utm: UtmParameters = {};
+
+      const utmSource = params.get('utm_source');
+      if (utmSource) {
+        utm.utm_source = utmSource;
+      }
+
+      const utmMedium = params.get('utm_medium');
+      if (utmMedium) {
+        utm.utm_medium = utmMedium;
+      }
+
+      const utmCampaign = params.get('utm_campaign');
+      if (utmCampaign) {
+        utm.utm_campaign = utmCampaign;
+      }
+
+      const utmContent = params.get('utm_content');
+      if (utmContent) {
+        utm.utm_content = utmContent;
+      }
+
+      const utmTerm = params.get('utm_term');
+      if (utmTerm) {
+        utm.utm_term = utmTerm;
+      }
+
+      return utm;
+    } catch (error) {
+      logger.debug('Failed to parse URL for UTM parameters:', { url, error });
+      return {};
+    }
   }
 
   async sendConversionEvent(event: ConversionEventType, payload: ConversionEventPayload): Promise<void> {
@@ -133,6 +198,26 @@ class ConversionEventService {
     }
 
     effectivePayload.externalId = payloadOverrides.externalId ?? effectivePayload.email;
+
+    if (payloadOverrides.utmSource !== undefined) {
+      effectivePayload.utmSource = payloadOverrides.utmSource;
+    }
+
+    if (payloadOverrides.utmMedium !== undefined) {
+      effectivePayload.utmMedium = payloadOverrides.utmMedium;
+    }
+
+    if (payloadOverrides.utmCampaign !== undefined) {
+      effectivePayload.utmCampaign = payloadOverrides.utmCampaign;
+    }
+
+    if (payloadOverrides.utmContent !== undefined) {
+      effectivePayload.utmContent = payloadOverrides.utmContent;
+    }
+
+    if (payloadOverrides.utmTerm !== undefined) {
+      effectivePayload.utmTerm = payloadOverrides.utmTerm;
+    }
 
     const requestPayload = this.buildRequestPayload(event, effectivePayload);
     const timestamp = new Date().toISOString();
@@ -215,9 +300,38 @@ class ConversionEventService {
       actionSource,
       eventSourceUrl,
       externalId,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      utmTerm,
     } = payload;
 
     const now = new Date().toISOString();
+
+    // Extract UTM parameters from eventSourceUrl if not explicitly provided
+    let finalUtm: UtmParameters = {};
+    if (eventSourceUrl) {
+      const urlUtm = ConversionEventService.extractUtmParameters(eventSourceUrl);
+      finalUtm = urlUtm;
+    }
+
+    // Explicit UTM parameters override URL-extracted ones
+    if (utmSource) {
+      finalUtm.utm_source = utmSource;
+    }
+    if (utmMedium) {
+      finalUtm.utm_medium = utmMedium;
+    }
+    if (utmCampaign) {
+      finalUtm.utm_campaign = utmCampaign;
+    }
+    if (utmContent) {
+      finalUtm.utm_content = utmContent;
+    }
+    if (utmTerm) {
+      finalUtm.utm_term = utmTerm;
+    }
 
     const body: N8nWebhookPayload = {
       first_name: firstName ?? 'Unknown',
@@ -244,6 +358,23 @@ class ConversionEventService {
 
     if (externalId) {
       body.external_id = externalId;
+    }
+
+    // Add UTM parameters if any are present
+    if (finalUtm.utm_source) {
+      body.utm_source = finalUtm.utm_source;
+    }
+    if (finalUtm.utm_medium) {
+      body.utm_medium = finalUtm.utm_medium;
+    }
+    if (finalUtm.utm_campaign) {
+      body.utm_campaign = finalUtm.utm_campaign;
+    }
+    if (finalUtm.utm_content) {
+      body.utm_content = finalUtm.utm_content;
+    }
+    if (finalUtm.utm_term) {
+      body.utm_term = finalUtm.utm_term;
     }
 
     return body;

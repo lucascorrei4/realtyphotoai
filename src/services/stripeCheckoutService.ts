@@ -22,6 +22,30 @@ export interface SplitPaymentConfig {
   };
 }
 
+export interface UserData {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  ip?: string;
+  user_agent?: string;
+  fbp?: string;
+  fbc?: string;
+  external_id?: string;
+}
+
+export interface CustomData {
+  value?: number;
+  currency?: string;
+  event_id?: string;
+  external_id?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+}
+
 export interface CheckoutSessionData {
   planId: string;
   billingCycle: 'monthly' | 'yearly';
@@ -30,6 +54,8 @@ export interface CheckoutSessionData {
   successUrl: string;
   cancelUrl: string;
   metadata?: Record<string, string>;
+  userData?: UserData;
+  customData?: CustomData;
 }
 
 export class StripeCheckoutService {
@@ -110,6 +136,67 @@ export class StripeCheckoutService {
       // Get price ID for the plan and billing cycle
       const priceId = await this.getPriceId(plan, data.billingCycle);
 
+      // Get plan amount for custom_data
+      const planAmount = data.billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly;
+
+      // Build user_data metadata from provided data or defaults
+      const userData: UserData = {
+        email: data.userEmail,
+        external_id: data.userId,
+        ...data.userData,
+      };
+
+      // Build custom_data metadata from provided data or plan defaults
+      const customData: CustomData = {
+        value: data.customData?.value ?? planAmount,
+        currency: data.customData?.currency ?? 'USD',
+        event_id: data.customData?.event_id ?? 'Purchase',
+        external_id: data.customData?.external_id ?? data.userId,
+        ...data.customData,
+      };
+
+      // Convert user_data and custom_data objects to metadata strings (Stripe metadata only accepts strings)
+      // No prefix - fields are added directly to metadata for easier parsing in n8n
+      const buildMetadataFromObject = (obj: Record<string, any>): Record<string, string> => {
+        const metadata: Record<string, string> = {};
+        Object.entries(obj).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            // Stringify objects/arrays, convert numbers to strings
+            const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            metadata[key] = stringValue;
+          }
+        });
+        return metadata;
+      };
+
+      const userDataMetadata = buildMetadataFromObject(userData);
+      const customDataMetadata = buildMetadataFromObject(customData);
+
+      // Merge all metadata
+      const sessionMetadata = {
+        plan_id: data.planId,
+        billing_cycle: data.billingCycle,
+        user_id: data.userId,
+        ...userDataMetadata,
+        ...customDataMetadata,
+        ...data.metadata,
+      };
+
+      const subscriptionMetadata = {
+        plan_id: data.planId,
+        billing_cycle: data.billingCycle,
+        user_id: data.userId,
+        ...userDataMetadata,
+        ...customDataMetadata,
+        // Only include partner account IDs if split payments are enabled
+        ...(process.env.ENABLE_SPLIT_PAYMENTS === 'true' ? {
+          partner1_account: this.splitConfig.partner1.accountId,
+          partner2_account: this.splitConfig.partner2.accountId,
+          agency_account: this.splitConfig.agency.accountId,
+        } : {}),
+        ...data.metadata,
+      };
+
       // Note: Split amounts are calculated in webhook processing after payment
 
       // Create checkout session with application fee and transfers
@@ -125,25 +212,9 @@ export class StripeCheckoutService {
         mode: 'subscription',
         success_url: data.successUrl,
         cancel_url: data.cancelUrl,
-        metadata: {
-          plan_id: data.planId,
-          billing_cycle: data.billingCycle,
-          user_id: data.userId,
-          ...data.metadata
-        },
+        metadata: sessionMetadata,
         subscription_data: {
-          metadata: {
-            plan_id: data.planId,
-            billing_cycle: data.billingCycle,
-            user_id: data.userId,
-            // Only include partner account IDs if split payments are enabled
-            ...(process.env.ENABLE_SPLIT_PAYMENTS === 'true' ? {
-              partner1_account: this.splitConfig.partner1.accountId,
-              partner2_account: this.splitConfig.partner2.accountId,
-              agency_account: this.splitConfig.agency.accountId,
-            } : {}),
-            ...data.metadata
-          },
+          metadata: subscriptionMetadata,
           // Note: Using Separate Charges and Transfers model (if enabled)
           // Payment goes to platform account, then transfers to connected accounts (if ENABLE_SPLIT_PAYMENTS=true)
           // If split payments disabled, all funds remain in platform account

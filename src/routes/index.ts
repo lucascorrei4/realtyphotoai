@@ -116,6 +116,26 @@ const sanitizeConversionPayload = (input: unknown): Partial<ConversionEventPaylo
     sanitized.externalId = candidate.externalId;
   }
 
+  if (typeof candidate.utmSource === 'string') {
+    sanitized.utmSource = candidate.utmSource;
+  }
+
+  if (typeof candidate.utmMedium === 'string') {
+    sanitized.utmMedium = candidate.utmMedium;
+  }
+
+  if (typeof candidate.utmCampaign === 'string') {
+    sanitized.utmCampaign = candidate.utmCampaign;
+  }
+
+  if (typeof candidate.utmContent === 'string') {
+    sanitized.utmContent = candidate.utmContent;
+  }
+
+  if (typeof candidate.utmTerm === 'string') {
+    sanitized.utmTerm = candidate.utmTerm;
+  }
+
   return sanitized;
 };
 

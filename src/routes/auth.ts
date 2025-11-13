@@ -1,6 +1,7 @@
 import express from 'express';
 import authService from '../services/authService';
 import { ConversionEventPayload } from '../services/conversionEventService';
+import { ConversionEventService } from '../services/conversionEventService';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
 
@@ -11,6 +12,8 @@ const buildConversionMetadata = (req: express.Request): Partial<ConversionEventP
   const forwardedFor = Array.isArray(forwardedForHeader) ? forwardedForHeader[0] : forwardedForHeader;
   const userAgentHeader = req.headers['user-agent'];
   const userAgent = Array.isArray(userAgentHeader) ? userAgentHeader[0] : userAgentHeader;
+  const refererHeader = req.headers.referer || req.headers.referrer;
+  const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
 
   const ipCandidate = forwardedFor?.split(',')[0]?.trim() ?? req.ip;
   const amount = typeof req.body.amount === 'number' ? req.body.amount : undefined;
@@ -61,6 +64,66 @@ const buildConversionMetadata = (req: express.Request): Partial<ConversionEventP
 
   if (typeof req.body.externalId === 'string') {
     metadata.externalId = req.body.externalId;
+  }
+
+  // Extract UTM parameters from query string
+  const queryUtm = req.query;
+  if (typeof queryUtm.utm_source === 'string') {
+    metadata.utmSource = queryUtm.utm_source;
+  }
+  if (typeof queryUtm.utm_medium === 'string') {
+    metadata.utmMedium = queryUtm.utm_medium;
+  }
+  if (typeof queryUtm.utm_campaign === 'string') {
+    metadata.utmCampaign = queryUtm.utm_campaign;
+  }
+  if (typeof queryUtm.utm_content === 'string') {
+    metadata.utmContent = queryUtm.utm_content;
+  }
+  if (typeof queryUtm.utm_term === 'string') {
+    metadata.utmTerm = queryUtm.utm_term;
+  }
+
+  // Also check request body for UTM parameters
+  if (typeof req.body.utmSource === 'string') {
+    metadata.utmSource = req.body.utmSource;
+  }
+  if (typeof req.body.utmMedium === 'string') {
+    metadata.utmMedium = req.body.utmMedium;
+  }
+  if (typeof req.body.utmCampaign === 'string') {
+    metadata.utmCampaign = req.body.utmCampaign;
+  }
+  if (typeof req.body.utmContent === 'string') {
+    metadata.utmContent = req.body.utmContent;
+  }
+  if (typeof req.body.utmTerm === 'string') {
+    metadata.utmTerm = req.body.utmTerm;
+  }
+
+  // Extract UTM from referer URL if no explicit UTM parameters found
+  if (referer && !metadata.utmSource && !metadata.utmMedium && !metadata.utmCampaign) {
+    const refererUtm = ConversionEventService.extractUtmParameters(referer);
+    if (refererUtm.utm_source) {
+      metadata.utmSource = refererUtm.utm_source;
+    }
+    if (refererUtm.utm_medium) {
+      metadata.utmMedium = refererUtm.utm_medium;
+    }
+    if (refererUtm.utm_campaign) {
+      metadata.utmCampaign = refererUtm.utm_campaign;
+    }
+    if (refererUtm.utm_content) {
+      metadata.utmContent = refererUtm.utm_content;
+    }
+    if (refererUtm.utm_term) {
+      metadata.utmTerm = refererUtm.utm_term;
+    }
+  }
+
+  // Set eventSourceUrl if referer is present
+  if (referer) {
+    metadata.eventSourceUrl = referer;
   }
 
   return metadata;
