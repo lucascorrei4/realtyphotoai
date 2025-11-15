@@ -1996,4 +1996,117 @@ export class ImageController {
       });
     }
   };
+
+  /**
+   * Proxy image download from R2 to bypass CORS
+   * This endpoint allows the frontend to download images without CORS issues
+   */
+  public proxyImageDownload = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const { url } = req.query;
+
+      if (!url || typeof url !== 'string') {
+        res.status(400).json({
+          success: false,
+          message: 'Image URL is required',
+          error: 'MISSING_URL',
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      logger.info('📥 Proxying image download', { url });
+
+      // Check if it's an R2 URL
+      const isR2Url = url.includes('r2.dev') || url.includes(config.r2PublicUrl || '');
+      
+      if (isR2Url && this.storageService) {
+        // Extract key from R2 URL
+        const r2PublicUrl = config.r2PublicUrl || '';
+        let key = '';
+        
+        if (url.includes(r2PublicUrl)) {
+          key = url.replace(r2PublicUrl + '/', '');
+        } else {
+          // Try to extract key from full R2 URL
+          const urlParts = url.split('/');
+          const keyIndex = urlParts.findIndex(part => part.includes('processed') || part.includes('uploads'));
+          if (keyIndex >= 0) {
+            key = urlParts.slice(keyIndex).join('/');
+          } else {
+            // Fallback: use last part of URL
+            key = urlParts[urlParts.length - 1];
+          }
+        }
+
+        logger.info('📦 Extracted R2 key', { key, originalUrl: url });
+
+        try {
+          // Get file from R2 via HybridStorageService
+          // Check if storage service has R2 enabled
+          const storageServiceAny = this.storageService as any;
+          if (storageServiceAny.useR2 && storageServiceAny.r2Service) {
+            const { buffer, contentType } = await storageServiceAny.r2Service.getFileBuffer(key);
+            
+            // Set CORS headers
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET');
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', buffer.length);
+            res.setHeader('Content-Disposition', `attachment; filename="${key.split('/').pop() || 'image.jpg'}"`);
+            
+            res.send(buffer);
+            return;
+          }
+        } catch (r2Error) {
+          logger.warn('Failed to get from R2, falling back to direct fetch', {
+            error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+            key
+          });
+        }
+      }
+
+      // Fallback: fetch from URL directly (for local files or if R2 fails)
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+        // Set CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', buffer.length);
+        res.setHeader('Content-Disposition', `attachment; filename="image-${Date.now()}.jpg"`);
+
+        res.send(buffer);
+      } catch (fetchError) {
+        logger.error('Failed to proxy image download', {
+          error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+          url
+        });
+        res.status(500).json({
+          success: false,
+          message: 'Failed to download image',
+          error: 'DOWNLOAD_FAILED',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      logger.error('Error in proxyImageDownload', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  };
 } 

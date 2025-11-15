@@ -291,6 +291,12 @@ router.post('/convert-heic',
   asyncHandler(imageController.convertHeic)
 );
 
+// Image download proxy endpoint (bypasses CORS)
+router.get('/proxy-image', 
+  authenticateToken,
+  asyncHandler(imageController.proxyImageDownload)
+);
+
 // Authentication routes
 router.use('/auth', authRoutes);
 

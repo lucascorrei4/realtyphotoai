@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X } from 'lucide-react';
 import { getBackendUrl } from '../config/api';
+import { supabase } from '../config/supabase';
 
 export interface Generation {
   id: string;
@@ -367,7 +368,24 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
     const handleDownload = async () => {
       try {
-        const response = await fetch(src);
+        // Use backend proxy to bypass CORS issues with R2
+        const backendUrl = getBackendUrl();
+        const proxyUrl = `${backendUrl}/api/v1/proxy-image?url=${encodeURIComponent(src)}`;
+        
+        // Get auth token for authenticated request
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        const response = await fetch(proxyUrl, {
+          headers: token ? {
+            'Authorization': `Bearer ${token}`
+          } : {}
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+        }
+
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -380,6 +398,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         document.body.removeChild(a);
       } catch (error) {
         console.error('Failed to download image:', error);
+        // Show error toast if available
+        if (typeof window !== 'undefined' && (window as any).toast) {
+          (window as any).toast.error('Failed to download image. Please try again.');
+        }
       }
     };
 

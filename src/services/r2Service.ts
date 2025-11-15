@@ -199,6 +199,52 @@ export class R2Service {
   }
 
   /**
+   * Get a file buffer from R2 (for proxying/serving)
+   */
+  public async getFileBuffer(key: string): Promise<{ buffer: Buffer; contentType: string }> {
+    try {
+      logger.info('Getting file buffer from R2', { key });
+
+      const command = new GetObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+
+      const result = await this.s3Client.send(command);
+      
+      if (!result.Body) {
+        throw new Error('No body returned from R2');
+      }
+
+      // Convert stream to buffer
+      const chunks: Uint8Array[] = [];
+      const stream = result.Body as Readable;
+      
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      
+      const buffer = Buffer.concat(chunks);
+      const contentType = result.ContentType || this.getContentTypeFromExtension(key);
+
+      logger.info('File buffer retrieved from R2', {
+        key,
+        size: buffer.length,
+        contentType,
+      });
+
+      return { buffer, contentType };
+
+    } catch (error) {
+      logger.error('Failed to get file buffer from R2', {
+        error: error instanceof Error ? error.message : String(error),
+        key,
+      });
+      throw new Error(`Failed to get file buffer: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
    * Get a signed URL for private access
    */
   public async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
