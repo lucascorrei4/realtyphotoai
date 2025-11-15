@@ -47,7 +47,8 @@ interface N8nWebhookPayload {
   created_at: string;
   amount: number;
   currency: string;
-  event_id: string;
+  event_name: string;
+  event_id?: string;
   action_source?: string;
   event_source_url?: string;
   external_id?: string;
@@ -333,6 +334,10 @@ export class ConversionEventService {
       finalUtm.utm_term = utmTerm;
     }
 
+    // event_name is the event type (Lead or CompleteRegistration)
+    // event_id can be used for custom event identifiers if needed
+    const eventName = eventIdOverride ?? event;
+
     const body: N8nWebhookPayload = {
       first_name: firstName ?? 'Unknown',
       last_name: lastName ?? 'User',
@@ -345,8 +350,13 @@ export class ConversionEventService {
       created_at: createdAt ?? now,
       amount: amount ?? 0,
       currency: currency ?? 'USD',
-      event_id: eventIdOverride ?? event,
+      event_name: eventName,
     };
+
+    // Include event_id if eventIdOverride is provided (for custom event tracking)
+    if (eventIdOverride && eventIdOverride !== event) {
+      body.event_id = eventIdOverride;
+    }
 
     if (actionSource) {
       body.action_source = actionSource;
