@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import supabase from '../config/supabase';
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  Crown, 
-  BarChart3, 
-  Image, 
+import {
+  User,
+  Mail,
+  Phone,
+  Crown,
+  BarChart3,
+  Image,
   Settings as SettingsIcon,
   LogOut,
   Edit3,
@@ -100,7 +100,7 @@ const Settings: React.FC = () => {
 
       const now = new Date();
       const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthlyCompletedGenerations = userGenerations.filter(g => 
+      const monthlyCompletedGenerations = userGenerations.filter(g =>
         g.status === 'completed' && new Date(g.created_at) >= currentMonth
       );
 
@@ -154,7 +154,7 @@ const Settings: React.FC = () => {
 
   const fetchSubscription = useCallback(async () => {
     if (!user) return;
-    
+
     try {
       setSubscriptionLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -212,18 +212,18 @@ const Settings: React.FC = () => {
 
   const handleSaveProfile = async () => {
     if (!user) return;
-    
+
     setSaving(true);
     setSaveError(null);
-    
+
     try {
       // Get the current session from Supabase
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError) {
         throw new Error('Failed to get authentication session');
       }
-      
+
       if (!session?.access_token) {
         throw new Error('No authentication token found. Please sign in again.');
       }
@@ -231,7 +231,7 @@ const Settings: React.FC = () => {
       const apiUrl = `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000'}/api/v1/auth/profile`;
       console.log('Making API call to:', apiUrl);
       console.log('Request body:', { name: editForm.name, phone: editForm.phone });
-      
+
       const response = await fetch(apiUrl, {
         method: 'PUT',
         headers: {
@@ -246,7 +246,7 @@ const Settings: React.FC = () => {
 
       console.log('Response status:', response.status);
       console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-      
+
       if (!response.ok) {
         let errorData;
         try {
@@ -259,10 +259,10 @@ const Settings: React.FC = () => {
       }
 
       const updatedProfile = await response.json();
-      
+
       // Update the user context with the new profile data
       console.log('Profile updated successfully:', updatedProfile);
-      
+
       // Refresh the user data in AuthContext to reflect the changes
       try {
         await refreshUser();
@@ -271,17 +271,17 @@ const Settings: React.FC = () => {
         console.warn('Failed to refresh user context:', error);
         // Don't fail the save operation if context refresh fails
       }
-      
+
       setEditing(false);
       setSaveSuccess(true);
-      
+
       // Hide success message after 3 seconds
       setTimeout(() => {
         setSaveSuccess(false);
       }, 3000);
-      
+
       console.log('Profile saved successfully!');
-      
+
     } catch (error) {
       console.error('Error updating profile:', error);
       setSaveError(error instanceof Error ? error.message : 'Failed to save profile');
@@ -468,7 +468,7 @@ const Settings: React.FC = () => {
     add_furnitures: '#F59E0B'
   };
 
-  const modelBreakdownData = stats?.model_breakdown ? 
+  const modelBreakdownData = stats?.model_breakdown ?
     Object.entries(stats.model_breakdown).map(([model, count]) => ({
       name: model.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
       value: count,
@@ -483,20 +483,19 @@ const Settings: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div>
+        <div className="flex items-center justify-between mb-4">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Manage your account and view usage statistics</p>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+          >
+            <LogOut className="h-5 w-5" />
+            <span>Sign Out</span>
+          </button>
         </div>
-        <button
-          onClick={handleSignOut}
-          className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
-        >
-          <LogOut className="h-5 w-5" />
-          <span>Sign Out</span>
-        </button>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">Manage your account and view usage statistics</p>
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column */}
         <div className="lg:col-span-1 space-y-6">
@@ -588,11 +587,11 @@ const Settings: React.FC = () => {
               <div className="flex items-center space-x-3">
                 <Crown className="h-5 w-5 text-gray-400" />
                 <span className={`px-2 py-1 rounded-full text-sm font-medium ${planColors[user.subscription_plan]}`}>
-                  {user.subscription_plan.charAt(0).toUpperCase() + user.subscription_plan.slice(1)} Plan
+                  {PLAN_DISPLAY_NAMES[user.subscription_plan] || user.subscription_plan.charAt(0).toUpperCase() + user.subscription_plan.slice(1)} Plan
                 </span>
               </div>
             </div>
-            
+
             {/* Success Message */}
             {saveSuccess && (
               <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
@@ -602,7 +601,7 @@ const Settings: React.FC = () => {
                 </p>
               </div>
             )}
-            
+
             {/* Error Message */}
             {saveError && (
               <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -628,19 +627,19 @@ const Settings: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Current Plan</span>
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${planColors[(subscription?.plan_name || user.subscription_plan) as keyof typeof planColors] || planColors.free}`}>
-                      {(subscription?.plan_name || user.subscription_plan || 'Free').charAt(0).toUpperCase() + (subscription?.plan_name || user.subscription_plan || 'Free').slice(1)}
+                      {PLAN_DISPLAY_NAMES[subscription?.plan_name || user.subscription_plan || 'free'] ||
+                        (subscription?.plan_name || user.subscription_plan || 'Free').charAt(0).toUpperCase() + (subscription?.plan_name || user.subscription_plan || 'Free').slice(1)}
                     </span>
                   </div>
-                  
+
                   {subscription && (
                     <>
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          subscription.status === 'active' 
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${subscription.status === 'active'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                          }`}>
                           {subscription.status.charAt(0).toUpperCase() + subscription.status.slice(1)}
                         </span>
                       </div>
@@ -666,7 +665,7 @@ const Settings: React.FC = () => {
                   )}
 
                   {!subscription && user.subscription_plan && user.subscription_plan !== 'free' && (
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                       <p className="text-sm text-blue-600 dark:text-blue-400 mb-2">
                         You have a {user.subscription_plan} plan. Use "Manage Subscription" to cancel or modify your plan.
                       </p>
@@ -742,11 +741,11 @@ const Settings: React.FC = () => {
                     >
                       <X className="h-4 w-4" />
                       <span className="font-medium">
-                        {subscription?.cancel_at_period_end 
-                          ? 'Subscription Cancelling' 
+                        {subscription?.cancel_at_period_end
+                          ? 'Subscription Cancelling'
                           : subscription?.status === 'active'
-                          ? 'Cancel Subscription'
-                          : 'Cancel Plan'}
+                            ? 'Cancel Subscription'
+                            : 'Cancel Plan'}
                       </span>
                     </button>
                   )}
@@ -834,19 +833,6 @@ const Settings: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 dark:bg-slate-900/30 rounded-lg p-4">
-                    <div className="flex items-center space-x-3">
-                      <SettingsIcon className="h-6 w-6 text-slate-600 dark:text-slate-300" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-600 dark:text-slate-300">Actual Credits Used</p>
-                        <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                          {stats.actual_usage?.toLocaleString() || '0'}
-                          <span className="text-base text-slate-500 dark:text-slate-300"> / {stats.actual_limit?.toLocaleString() || '0'}</span>
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-300">Real billing credits consumed this cycle</p>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Charts */}
@@ -928,7 +914,7 @@ const Settings: React.FC = () => {
               </button>
             </div>
             <div className="p-6">
-              <StripeCheckout 
+              <StripeCheckout
                 onClose={() => {
                   setShowPlanModal(false);
                   setSaveError(null);
@@ -951,10 +937,10 @@ const Settings: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">Cancel Subscription</h3>
               </div>
-              
+
               <p className="text-gray-600 dark:text-gray-400 mb-6">
                 Are you sure you want to cancel your subscription? Your subscription will remain active until{' '}
-                {subscription?.current_period_end 
+                {subscription?.current_period_end
                   ? new Date(subscription.current_period_end).toLocaleDateString()
                   : 'the end of your billing period'
                 }, and you'll continue to have access to all features until then.

@@ -169,6 +169,7 @@ export class ExteriorDesignService {
 
   /**
    * Generate enhanced prompt based on design type and style
+   * CRITICAL: Must preserve original building structure, shape, size, and layout
    */
   private generateExteriorPrompt(
     originalPrompt: string,
@@ -215,7 +216,15 @@ export class ExteriorDesignService {
         break;
     }
 
-    return `${stylePrefix}${originalPrompt}${designSuffix}. Transform the existing building with this exterior design concept.`;
+    // CRITICAL: Add preservation instructions to maintain original building structure
+    const preservationInstructions = 
+      ' PRESERVE the exact original building structure, shape, size, dimensions, roof lines, window positions, door locations, and overall architectural layout. ' +
+      'ONLY modify exterior materials, colors, textures, finishes, and design elements. ' +
+      'Maintain the same camera angle, perspective, and building footprint. ' +
+      'Keep all structural elements (walls, roof shape, foundation) identical to the original. ' +
+      'Apply the design transformation while keeping the building structure completely unchanged.';
+
+    return `${stylePrefix}${originalPrompt}${designSuffix}. Transform the existing building with this exterior design concept.${preservationInstructions}`;
   }
 
   /**

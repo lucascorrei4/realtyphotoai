@@ -1801,41 +1801,59 @@ export class ImageController {
       );
 
       if (result.outputUrl) {
-        // Generate unique filename for the output
-        const outputFilename = `exterior_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
-        const finalOutputPath = path.join(config.outputDir, outputFilename);
-        
-        // Download the result from URL
-        logger.info('📥 Downloading exterior design result from URL', {
-          url: result.outputUrl,
-          outputPath: finalOutputPath
-        });
-        const fs = require('fs');
-        const downloadedPath = await FileUtils.downloadImage(result.outputUrl, config.outputDir);
-        fs.renameSync(downloadedPath, finalOutputPath);
-        const finalImagePath = finalOutputPath;
-        
-        // Generate public URLs
-        const buildingImageUrl = `/uploads/${buildingImageFile.filename}`;
-        const resultImageUrl = `/outputs/${outputFilename}`;
+        // Generate filename for the output (consistent with other services)
+        const baseFilename = path.parse(buildingImageFile.originalname || buildingImageFile.filename || 'building_image').name;
+        const outputExtension = '.jpg';
+
+        // Download and save processed image to hybrid storage (R2/local) - unified approach
+        const resultStorage = await this.replicateService.downloadAndSaveToHybridStorage(
+          result.outputUrl,
+          `${baseFilename}_exterior${outputExtension}`,
+          {
+            requestId: result.metadata?.requestId,
+            userId: req.user?.id || 'anonymous',
+            generationId: dbGenerationId,
+            originalFile: buildingImageFile.originalname || buildingImageFile.filename || 'unknown',
+            designPrompt: req.body.designPrompt,
+            designType: req.body.designType || 'modern',
+            style: req.body.style || 'architectural',
+          }
+        );
 
         const processingTime = Date.now() - startTime;
-        
-        // Update generation record with success
+
+        // Update generation record with success using R2 URL
         await this.userStatsService.updateGenerationStatus(
           dbGenerationId,
           'completed',
-          resultImageUrl,
+          resultStorage.url,
           undefined,
           processingTime
         );
 
+        // Verify result image exists in storage (consistent with other services)
+        if (resultStorage.storageKey) {
+          const resultExists = await this.storageService.fileExists(resultStorage.storageKey);
+          
+          if (!resultExists) {
+            logger.error('❌ Exterior design result not found in storage', {
+              storageKey: resultStorage.storageKey
+            });
+            throw new Error(`Exterior design result not found: ${resultStorage.storageKey}`);
+          }
+        }
+
         logger.info('✅ Exterior design generation completed successfully', {
           processingTime,
-          resultImagePath: finalImagePath,
+          resultImageUrl: resultStorage.url,
           designPrompt: req.body.designPrompt,
-          generationId: dbGenerationId
+          generationId: dbGenerationId,
+          storageType: resultStorage.storageType,
         });
+
+        // Use storage URLs (consistent with other services)
+        const buildingImageUrl = buildingImageStorageResult.url;
+        const resultImageUrl = resultStorage.url;
 
         res.json({
           success: true,

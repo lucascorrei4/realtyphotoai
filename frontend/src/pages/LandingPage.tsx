@@ -135,6 +135,7 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const activePointerIdRef = useRef<number | null>(null);
   const [isModalDragging, setIsModalDragging] = useState(false);
+  const activeModalPointerIdRef = useRef<number | null>(null);
 
   const clamp = (value: number) => Math.max(0, Math.min(100, value));
 
@@ -216,20 +217,24 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
   };
 
   const handleModalPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    activeModalPointerIdRef.current = event.pointerId;
     setIsModalDragging(true);
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId) === false) {
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    }
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     updateModalPosition(event.clientX);
   };
 
   const handleModalPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isModalDragging && !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    if (activeModalPointerIdRef.current !== event.pointerId && !event.currentTarget.hasPointerCapture?.(event.pointerId)) return;
+    if (!isModalDragging) return;
+    event.preventDefault();
     updateModalPosition(event.clientX);
   };
 
   const handleModalPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    setIsModalDragging(false);
+    if (activeModalPointerIdRef.current === event.pointerId) {
+      setIsModalDragging(false);
+      activeModalPointerIdRef.current = null;
+    }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -353,6 +358,7 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
               <div
                 ref={modalContainerRef}
                 className="relative h-[60vh] min-h-[360px] w-full cursor-ew-resize select-none overflow-hidden rounded-3xl bg-slate-900/40"
+                style={{ touchAction: 'pan-y' }}
                 onPointerDown={(event) => {
                   event.preventDefault();
                   handleModalPointerDown(event);
@@ -958,6 +964,22 @@ const LandingPage: React.FC = () => {
                   Tired of raw photos that don't impress clients or close deals? <b>RealVision AI</b> AI enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors. — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
 
                 </p>
+                <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
+                  <button
+                    onClick={scrollToAuth}
+                    className="flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/35 transition-all hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 sm:w-auto"
+                  >
+                    <span>Start Free Trial</span>
+                    <ArrowRight className="h-5 w-5" />
+                  </button>
+                  <button
+                    onClick={() => handleAnchorNavigation('showcase-section')}
+                    className="flex w-full items-center justify-center gap-2 text-sm font-medium text-slate-600 underline-offset-4 transition-colors hover:text-blue-600 hover:underline dark:text-slate-300 dark:hover:text-blue-400 sm:w-auto"
+                  >
+                    <Play className="h-4 w-4" />
+                    <span>See Live Demos</span>
+                  </button>
+                </div>
                 <div className="mt-8 grid gap-3 sm:grid-cols-2">
                   {heroCheckmarks.map((item) => (
                     <div
@@ -986,15 +1008,6 @@ const LandingPage: React.FC = () => {
                       </li>
                     ))}
                   </ul>
-                </div>
-                <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
-                  <button
-                    onClick={scrollToAuth}
-                    className="flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/35 transition-all hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 sm:w-auto"
-                  >
-                    <span>Start Free Trial</span>
-                    <ArrowRight className="h-5 w-5" />
-                  </button>
                 </div>
                 <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                   <div className="flex items-center space-x-3">
@@ -1036,6 +1049,14 @@ const LandingPage: React.FC = () => {
                       <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleAnchorNavigation('showcase-section')}
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-400 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800 sm:text-base"
+                  >
+                    <ImageIcon className="h-5 w-5" />
+                    <span>View All Transformations</span>
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </div>

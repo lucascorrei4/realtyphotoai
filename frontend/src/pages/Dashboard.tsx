@@ -16,6 +16,7 @@ import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tool
 import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { getBackendUrl } from '../config/environment';
+import { useToast } from '../hooks/useToast';
 
 
 interface UserStats {
@@ -60,7 +61,8 @@ const SYNC_STORAGE_KEY = 'subscription-last-sync';
 const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 const Dashboard: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
+  const { showLoading, showSuccess, showError, updateToast, dismiss } = useToast();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [showPricing, setShowPricing] = useState(false);
@@ -130,27 +132,49 @@ const Dashboard: React.FC = () => {
 
       // Get user's plan from database and calculate credit usage summary
       let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
+      let planLoadError = null;
 
       if (user.subscription_plan) {
-        const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
-        if (dbPlan) {
-          userPlan = dbPlan;
-        } else {
-          // Fallback to hardcoded plans if database plan not found
-          const planMap: Record<string, string> = {
-            free: 'explorer',
-            basic: 'creator',
-            premium: 'studio',
-            enterprise: 'business'
-          };
-          const mappedPlan = planMap[user.subscription_plan];
-          userPlan = mappedPlan && SUBSCRIPTION_PLANS[mappedPlan as keyof typeof SUBSCRIPTION_PLANS]
-            ? SUBSCRIPTION_PLANS[mappedPlan as keyof typeof SUBSCRIPTION_PLANS]
-            : SUBSCRIPTION_PLANS.starter;
+        try {
+          const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
+          if (dbPlan) {
+            userPlan = dbPlan;
+            console.log(`[Dashboard] ✅ Loaded plan from database:`, {
+              planName: user.subscription_plan,
+              displayName: dbPlan.displayName,
+              displayCredits: dbPlan.features.displayCredits,
+              monthlyCredits: dbPlan.features.monthlyCredits
+            });
+          } else {
+            planLoadError = `Plan rule not found in database for: ${user.subscription_plan}`;
+            console.error(`[Dashboard] ❌ ${planLoadError}. Using default starter plan.`);
+            // Silently refresh user data in case subscription_plan is stale
+            // Don't await - let it refresh in background
+            if (refreshUser) {
+              refreshUser().catch(err => {
+                console.warn('[Dashboard] Background user refresh failed:', err);
+              });
+            }
+          }
+        } catch (error) {
+          planLoadError = `Error loading plan: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          console.error(`[Dashboard] ❌ ${planLoadError}`);
         }
+      } else {
+        console.warn('[Dashboard] ⚠️ User has no subscription_plan set');
       }
 
       const creditUsageSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+      console.log(`[Dashboard] 📊 Credit usage summary:`, {
+        userPlanId: user.subscription_plan,
+        planDisplayName: userPlan.displayName,
+        actualCreditsUsed,
+        actualCreditsTotal: userPlan.features.monthlyCredits,
+        displayCreditsTotal: creditUsageSummary.displayCreditsTotal,
+        displayCreditsUsed: creditUsageSummary.displayCreditsUsed,
+        displayCreditsRemaining: creditUsageSummary.displayCreditsRemaining,
+        planLoadError: planLoadError || 'none'
+      });
 
       // Count by model type
       const generationsByType = {
@@ -215,11 +239,29 @@ const Dashboard: React.FC = () => {
     }
   }, [user]);
 
+  // Track previous subscription plan to detect changes
+  const prevSubscriptionPlanRef = useRef<string | undefined>(user?.subscription_plan);
+
   useEffect(() => {
     if (user) {
-      fetchUserStats();
+      // If subscription plan changed, refresh user data first
+      if (prevSubscriptionPlanRef.current !== user.subscription_plan) {
+        prevSubscriptionPlanRef.current = user.subscription_plan;
+        if (refreshUser) {
+          refreshUser().then(() => {
+            fetchUserStats();
+          }).catch(() => {
+            // If refresh fails, still fetch stats with current user data
+            fetchUserStats();
+          });
+        } else {
+          fetchUserStats();
+        }
+      } else {
+        fetchUserStats();
+      }
     }
-  }, [user, fetchUserStats]);
+  }, [user, fetchUserStats, refreshUser]);
 
   const syncSubscription = useCallback(async () => {
     if (!user?.id || syncInFlightRef.current) return;
@@ -263,7 +305,131 @@ const Dashboard: React.FC = () => {
     }
   }, [user, syncSubscription]);
 
+  // Auto-refresh user data when subscription_plan might have changed
+  useEffect(() => {
+    if (!user?.id) return;
 
+    let visibilityTimeout: NodeJS.Timeout | null = null;
+
+    // Refresh user data when component becomes visible (user returns to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Clear any pending timeout
+        if (visibilityTimeout) {
+          clearTimeout(visibilityTimeout);
+        }
+        // Small delay to avoid too frequent refreshes
+        visibilityTimeout = setTimeout(() => {
+          if (refreshUser) {
+            refreshUser().then(() => {
+              fetchUserStats();
+            }).catch(err => {
+              console.warn('[Dashboard] Auto-refresh on visibility change failed:', err);
+            });
+          }
+        }, 1000);
+      }
+    };
+
+    // Refresh when returning from Stripe portal or checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    const portalSuccess = urlParams.get('portal') === 'success';
+    const subscriptionSuccess = urlParams.get('subscription') === 'success';
+    
+    if (portalSuccess || subscriptionSuccess) {
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+      
+      // For subscription success, sync subscription first, then refresh
+      // For portal success, just refresh (portal changes are handled by webhooks)
+      if (subscriptionSuccess) {
+        console.log('[Dashboard] Detected subscription=success, syncing subscription and refreshing...');
+        
+        // Show loading toast
+        const loadingToastId = showLoading('Processing your subscription... Please wait while we update your account.');
+        
+        // Sync subscription first to ensure database is updated
+        syncSubscription().then(() => {
+          // Update toast to show we're waiting for webhook
+          updateToast(loadingToastId, 'Syncing subscription data...', 'loading');
+          
+          // Then refresh user data and stats after a delay to ensure webhook processed
+          setTimeout(() => {
+            if (refreshUser) {
+              refreshUser().then(() => {
+                fetchUserStats();
+                // Update toast to success
+                updateToast(loadingToastId, 'Subscription activated successfully! Your plan has been updated.', 'success');
+                // Dismiss after 3 seconds
+                setTimeout(() => dismiss(loadingToastId), 3000);
+              }).catch(err => {
+                console.warn('[Dashboard] Auto-refresh after subscription success failed:', err);
+                updateToast(loadingToastId, 'Subscription updated, but there was an error refreshing your data. Please refresh the page.', 'error');
+                setTimeout(() => dismiss(loadingToastId), 5000);
+              });
+            } else {
+              fetchUserStats();
+              updateToast(loadingToastId, 'Subscription activated successfully!', 'success');
+              setTimeout(() => dismiss(loadingToastId), 3000);
+            }
+          }, 3000); // Longer delay for checkout webhook processing
+        }).catch(err => {
+          console.warn('[Dashboard] Subscription sync failed, refreshing anyway:', err);
+          updateToast(loadingToastId, 'Syncing subscription...', 'loading');
+          
+          // Even if sync fails, refresh user data
+          setTimeout(() => {
+            if (refreshUser) {
+              refreshUser().then(() => {
+                fetchUserStats();
+                updateToast(loadingToastId, 'Subscription updated. If you don\'t see changes, please refresh the page.', 'success');
+                setTimeout(() => dismiss(loadingToastId), 4000);
+              }).catch(() => {
+                updateToast(loadingToastId, 'Unable to refresh subscription data. Please refresh the page manually.', 'error');
+                setTimeout(() => dismiss(loadingToastId), 5000);
+              });
+            } else {
+              fetchUserStats();
+              updateToast(loadingToastId, 'Subscription updated.', 'success');
+              setTimeout(() => dismiss(loadingToastId), 3000);
+            }
+          }, 2000);
+        });
+      } else if (portalSuccess) {
+        // Portal success - just refresh after delay
+        setTimeout(() => {
+          if (refreshUser) {
+            refreshUser().then(() => {
+              fetchUserStats();
+            }).catch(err => {
+              console.warn('[Dashboard] Auto-refresh after portal return failed:', err);
+            });
+          }
+        }, 2000);
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also set up periodic refresh every 2 minutes when tab is visible
+    const refreshInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && refreshUser) {
+        refreshUser().then(() => {
+          fetchUserStats();
+        }).catch(err => {
+          console.warn('[Dashboard] Periodic auto-refresh failed:', err);
+        });
+      }
+    }, 2 * 60 * 1000); // 2 minutes
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (visibilityTimeout) {
+        clearTimeout(visibilityTimeout);
+      }
+      clearInterval(refreshInterval);
+    };
+  }, [user, refreshUser, fetchUserStats, syncSubscription]);
 
   const usageData = [
     { name: 'Interior Design', value: userStats?.generationsByType?.interiorDesign || 0, color: '#8B5CF6' },
@@ -312,12 +478,6 @@ const Dashboard: React.FC = () => {
                   className="bg-white text-red-600 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
                 >
                   View Plans
-                </button>
-                <button
-                  onClick={() => window.open('/pricing', '_blank')}
-                  className="bg-transparent border-2 border-white text-white px-6 py-2 rounded-lg font-medium hover:bg-white hover:text-red-600 transition-colors"
-                >
-                  Full Pricing Page
                 </button>
               </div>
             </div>
@@ -655,9 +815,14 @@ const Dashboard: React.FC = () => {
       {showPricing && (
         <StripeCheckout
           onClose={() => setShowPricing(false)}
-          onSuccess={(planId) => {
+          onSuccess={async (planId) => {
             setShowPricing(false);
-            syncSubscription().finally(() => fetchUserStats());
+            // Refresh user data first, then sync and fetch stats
+            if (refreshUser) {
+              await refreshUser();
+            }
+            await syncSubscription();
+            await fetchUserStats();
           }}
         />
       )}

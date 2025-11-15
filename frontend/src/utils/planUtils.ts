@@ -40,6 +40,75 @@ export function calculateCreditsFromPrice(price: number): { monthlyCredits: numb
 }
 
 /**
+ * Get all active plans from database
+ */
+export async function getAllPlansFromDatabase(): Promise<SubscriptionPlan[]> {
+  try {
+    const { data: planRules, error } = await supabase
+      .from('plan_rules')
+      .select('*')
+      .eq('is_active', true)
+      .order('price_per_month', { ascending: true });
+
+    if (error) {
+      console.error('[getAllPlansFromDatabase] Error fetching plan rules:', error);
+      return [];
+    }
+
+    if (!planRules || planRules.length === 0) {
+      console.warn('[getAllPlansFromDatabase] No active plan rules found in database');
+      return [];
+    }
+
+    const plans: SubscriptionPlan[] = planRules.map((planRule) => {
+      const displayCredits = planRule.monthly_generations_limit || 0;
+      const price = planRule.price_per_month || 0;
+      let monthlyCredits = 0;
+      if (price === 0) {
+        monthlyCredits = 10; // Free plan
+      } else {
+        const maxCost = price / 3.0;
+        monthlyCredits = Math.floor(maxCost / 0.039);
+      }
+
+      const displayName = planRule.display_name || PLAN_DISPLAY_NAMES[planRule.plan_name] || planRule.plan_name;
+      const planDescription = planRule.description || `The ${displayName} plan with ${displayCredits.toLocaleString()} credits per month`;
+
+      return {
+        id: planRule.plan_name,
+        name: planRule.plan_name,
+        displayName,
+        description: planDescription,
+        price: {
+          monthly: price,
+          yearly: Math.round(price * 12 * 0.5)
+        },
+        features: {
+          monthlyCredits,
+          displayCredits
+        },
+        limits: {
+          monthlyCredits,
+          monthlyGenerations: monthlyCredits
+        },
+        stripe: {
+          productId: planRule.stripe_product_id || undefined,
+          monthlyPriceId: planRule.stripe_price_id || undefined,
+          metadata: planRule.stripe_metadata || {}
+        },
+        billingCycle: 'monthly'
+      };
+    });
+
+    console.log(`[getAllPlansFromDatabase] Found ${plans.length} active plans:`, plans.map(p => p.id));
+    return plans;
+  } catch (error) {
+    console.error('[getAllPlansFromDatabase] Error:', error);
+    return [];
+  }
+}
+
+/**
  * Get user's subscription plan from database plan_rules
  */
 export async function getUserPlanFromDatabase(planName: string): Promise<SubscriptionPlan | null> {
@@ -51,10 +120,21 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
       .eq('is_active', true)
       .single();
 
-    if (error || !planRule) {
-      console.error('Plan rule not found:', planName);
+    if (error) {
+      console.error(`[getUserPlanFromDatabase] Error fetching plan rule for "${planName}":`, error);
       return null;
     }
+
+    if (!planRule) {
+      console.error(`[getUserPlanFromDatabase] Plan rule not found in database for: "${planName}"`);
+      return null;
+    }
+
+    console.log(`[getUserPlanFromDatabase] Found plan rule for "${planName}":`, {
+      monthly_generations_limit: planRule.monthly_generations_limit,
+      price_per_month: planRule.price_per_month,
+      display_name: planRule.display_name
+    });
 
     // Use monthly_generations_limit from database as display credits (what users see)
     // This is the single source of truth from the database
@@ -81,7 +161,7 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
     // Use description from database if available
     const planDescription = planRule.description || `The ${displayName} plan with ${displayCredits.toLocaleString()} credits per month`;
     
-    return {
+    const plan: SubscriptionPlan = {
       id: planName,
       name: planName,
       displayName,
@@ -105,6 +185,14 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
       },
       billingCycle: 'monthly'
     };
+
+    console.log(`[getUserPlanFromDatabase] Returning plan for "${planName}":`, {
+      displayName: plan.displayName,
+      displayCredits: plan.features.displayCredits,
+      monthlyCredits: plan.features.monthlyCredits
+    });
+
+    return plan;
   } catch (error) {
     console.error('Error fetching plan from database:', error);
     return null;

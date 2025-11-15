@@ -6,7 +6,7 @@ import {
   formatPrice,
   getFeatureList,
 } from '../config/subscriptionPlans';
-import { getUserPlanFromDatabase } from '../utils/planUtils';
+import { getUserPlanFromDatabase, getAllPlansFromDatabase } from '../utils/planUtils';
 import { getBackendUrl } from '../config/environment';
 
 export type SubscriptionPlansVariant = 'modal' | 'page';
@@ -28,40 +28,46 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>(() => Object.values(SUBSCRIPTION_PLANS));
   const [currentPlanId, setCurrentPlanId] = useState<string | null>(null);
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   const isModal = variant === 'modal';
 
   useEffect(() => {
     const fetchPlans = async () => {
       try {
-        const planIds = Object.keys(SUBSCRIPTION_PLANS);
-        const fetchedPlans: SubscriptionPlan[] = [];
-
-        for (const planId of planIds) {
-          const dbPlan = await getUserPlanFromDatabase(planId);
-          if (dbPlan) {
-            fetchedPlans.push(dbPlan);
-          } else {
-            const fallbackPlan = SUBSCRIPTION_PLANS[planId];
-            if (fallbackPlan) {
-              fetchedPlans.push(fallbackPlan);
-            }
-          }
-        }
-
-        if (fetchedPlans.length === 0) {
-          setPlans(Object.values(SUBSCRIPTION_PLANS));
+        // First, try to fetch all plans from database (source of truth)
+        const dbPlans = await getAllPlansFromDatabase();
+        
+        if (dbPlans.length > 0) {
+          // Filter out free plan and sort by price
+          const paidPlans = dbPlans
+            .filter(plan => plan.id !== 'free')
+            .sort((a, b) => a.price.monthly - b.price.monthly);
+          
+          setPlans(paidPlans);
+          console.log('[SubscriptionPlans] Loaded plans from database:', paidPlans.map(p => ({ id: p.id, displayName: p.displayName })));
         } else {
-          fetchedPlans.sort((a, b) => a.price.monthly - b.price.monthly);
-          setPlans(fetchedPlans);
+          // Fallback to hardcoded plans if database fetch fails
+          console.warn('[SubscriptionPlans] No plans found in database, using hardcoded plans');
+          const hardcodedPlans = Object.values(SUBSCRIPTION_PLANS)
+            .filter(plan => plan.id !== 'free')
+            .sort((a, b) => a.price.monthly - b.price.monthly);
+          setPlans(hardcodedPlans);
         }
 
+        // Set current plan ID from user's subscription_plan
         if (user?.subscription_plan) {
           setCurrentPlanId(user.subscription_plan);
+          console.log('[SubscriptionPlans] Current plan ID set to:', user.subscription_plan);
         }
       } catch (err) {
-        console.error('Error fetching plans:', err);
-        setPlans(Object.values(SUBSCRIPTION_PLANS));
+        console.error('[SubscriptionPlans] Error fetching plans:', err);
+        // Fallback to hardcoded plans on error
+        const hardcodedPlans = Object.values(SUBSCRIPTION_PLANS)
+          .filter(plan => plan.id !== 'free')
+          .sort((a, b) => a.price.monthly - b.price.monthly);
+        setPlans(hardcodedPlans);
         if (user?.subscription_plan) {
           setCurrentPlanId(user.subscription_plan);
         }
@@ -71,9 +77,88 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
     fetchPlans();
   }, [user]);
 
+  // Check if user has an active subscription
+  useEffect(() => {
+    const checkActiveSubscription = async () => {
+      if (!user?.id) {
+        setHasActiveSubscription(false);
+        return;
+      }
+
+      try {
+        const supabase = (await import('../config/supabase')).default;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setHasActiveSubscription(false);
+          return;
+        }
+
+        const response = await fetch(`${getBackendUrl()}/api/v1/stripe/subscription`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setHasActiveSubscription(data.subscription?.status === 'active' || false);
+        } else {
+          setHasActiveSubscription(false);
+        }
+      } catch (error) {
+        console.error('Error checking active subscription:', error);
+        setHasActiveSubscription(false);
+      }
+    };
+
+    checkActiveSubscription();
+  }, [user]);
+
+  const handleOpenCustomerPortal = async () => {
+    setPortalLoading(true);
+    setError(null);
+
+    try {
+      const supabase = (await import('../config/supabase')).default;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('Please log in to manage subscription');
+      }
+
+      const response = await fetch(`${getBackendUrl()}/api/v1/stripe/portal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to open customer portal');
+      }
+
+      window.location.href = data.url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open customer portal');
+      setPortalLoading(false);
+    }
+  };
+
   const handleSubscribe = async (planId: string) => {
     if (planId === currentPlanId) {
       setError('You are already subscribed to this plan');
+      return;
+    }
+
+    // If user has an active subscription, direct them to customer portal
+    if (hasActiveSubscription) {
+      setError('You have an active subscription. Please use "Manage Subscription" to change your plan.');
+      // Optionally auto-open portal
+      // handleOpenCustomerPortal();
       return;
     }
 
@@ -212,6 +297,23 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
           <p className="text-red-600">{error}</p>
+          {hasActiveSubscription && error.includes('active subscription') && (
+            <button
+              onClick={handleOpenCustomerPortal}
+              disabled={portalLoading}
+              className="mt-3 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {portalLoading ? 'Opening...' : 'Open Customer Portal to Manage Subscription'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {hasActiveSubscription && (
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
+          <p className="text-blue-800 text-sm">
+            <strong>You have an active subscription.</strong> To change your plan, please use the "Manage Subscription" button below or click on any plan to open the customer portal.
+          </p>
         </div>
       )}
 
@@ -270,18 +372,28 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
                 <div className="mb-6">{renderFeatureList(plan)}</div>
 
                 <button
-                  onClick={() => handleSubscribe(plan.id)}
-                  disabled={loading === plan.id || isCurrentPlan}
+                  onClick={() => {
+                    if (hasActiveSubscription && !isCurrentPlan) {
+                      handleOpenCustomerPortal();
+                    } else {
+                      handleSubscribe(plan.id);
+                    }
+                  }}
+                  disabled={(loading === plan.id || portalLoading) && !isCurrentPlan}
                   className={`w-full py-3 px-4 rounded-md font-medium transition-colors ${
                     isCurrentPlan
                       ? 'bg-green-500 text-white cursor-not-allowed'
+                      : hasActiveSubscription
+                      ? 'bg-blue-500 hover:bg-blue-600 text-white'
                       : isPopular
                       ? 'bg-red-500 hover:bg-red-600 text-white'
                       : 'bg-gray-900 hover:bg-gray-800 text-white'
-                  } ${loading === plan.id || isCurrentPlan ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${(loading === plan.id || portalLoading) && !isCurrentPlan ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {isCurrentPlan
                     ? 'Current Plan ✓'
+                    : hasActiveSubscription
+                    ? 'Manage Subscription →'
                     : loading === plan.id
                     ? 'Processing...'
                     : 'Subscribe →'}

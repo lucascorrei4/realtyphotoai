@@ -259,7 +259,7 @@ router.post('/portal', authenticateToken, async (req: AuthenticatedRequest, res)
     }
 
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const returnUrl = `${baseUrl}/settings?portal=success`;
+    const returnUrl = `${baseUrl}/dashboard?portal=success`;
 
     const { url } = await stripeCheckoutService.createCustomerPortalSession(
       user.stripe_customer_id,
