@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import supabase from '../config/supabase';
+import { sendConversionEvent } from '../utils/conversionTracking';
 
 export interface User {
   id: string;
@@ -351,6 +352,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!supabaseAnonKey || !supabaseUrl) {
         // Demo mode - simulate successful code sending
         console.log('Demo mode: Simulating OTP code sent to:', email);
+        // Still send conversion event even in demo mode
+        sendConversionEvent('send-code', email).catch(() => {
+          // Ignore errors in demo mode
+        });
         return { success: true, message: '6-digit code sent to your email! (Demo mode)' };
       }
 
@@ -373,6 +378,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('Error sending OTP code:', error);
         return { success: false, message: error.message };
       }
+
+      // Send Lead conversion event to backend (fire and forget)
+      // The backend will check if user exists and send Lead event for new users
+      sendConversionEvent('send-code', email).catch(() => {
+        // Silently ignore errors - conversion tracking should not block user flow
+      });
 
       return { success: true, message: '6-digit code sent to your email!' };
     } catch (error) {
@@ -405,6 +416,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           updated_at: new Date().toISOString()
         };
         setUser(demoUser);
+        // Still send conversion event even in demo mode
+        sendConversionEvent('verify-code', email, code).catch(() => {
+          // Ignore errors in demo mode
+        });
         return { success: true, message: 'Successfully signed in! (Demo mode)' };
       }
 
@@ -420,6 +435,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (data.user) {
+        // Send CompleteRegistration conversion event to backend (fire and forget)
+        // The backend will check if user exists and send CompleteRegistration event for new users
+        sendConversionEvent('verify-code', email, code).catch(() => {
+          // Silently ignore errors - conversion tracking should not block user flow
+        });
+
         // Set user immediately from session, don't wait for profile fetch
         setUserFromSession(data.user);
 

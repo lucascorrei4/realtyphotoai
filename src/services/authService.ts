@@ -54,24 +54,42 @@ export class AuthService {
       // This is a simplified version - in production, send actual email
       logger.info(`Auth code for ${email}: ${code} (expires: ${codeExpiry})`);
 
-      if (existingUser) {
-        return {
-          success: true,
-          message: 'Login code sent to your email',
-          code: code // Remove this in production
-        };
+      // Check if this is a new signup (profile doesn't exist OR was just created)
+      let isNewSignup = false;
+      if (!existingUser) {
+        // Profile doesn't exist - definitely a new signup
+        isNewSignup = true;
       } else {
+        // Profile exists - check if it was just created (within last 2 minutes)
+        // This handles the case where frontend creates profile when email is entered
+        const profileCreatedAt = new Date(existingUser.created_at);
+        const now = new Date();
+        const secondsSinceCreation = (now.getTime() - profileCreatedAt.getTime()) / 1000;
+        isNewSignup = secondsSinceCreation < 120; // 2 minutes window
+      }
+
+      if (isNewSignup) {
+        // New signup - send Lead event
         const conversionPayload: ConversionEventPayload = {
           email,
           ...metadata,
           externalId: metadata?.externalId ?? email,
         };
 
+        logger.info(`Sending Lead event for ${email} (new signup)`);
         await conversionEventService.sendConversionEvent('Lead', conversionPayload);
 
         return {
           success: true,
           message: 'Signup code sent to your email',
+          code: code // Remove this in production
+        };
+      } else {
+        // Existing user - no Lead event needed
+        logger.info(`Skipping Lead event for ${email} (existing user)`);
+        return {
+          success: true,
+          message: 'Login code sent to your email',
           code: code // Remove this in production
         };
       }
@@ -98,56 +116,68 @@ export class AuthService {
         };
       }
 
-      // Check if user exists
+      // Check if user exists in user_profiles
       const { data: existingUser } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('email', email)
         .single();
 
-      if (existingUser) {
-        // User exists - login
-        if (!existingUser.is_active) {
-          return {
-            success: false,
-            message: 'Account is deactivated'
-          };
-        }
-
-        const token = this.generateToken(existingUser);
+      if (!existingUser) {
+        // Profile doesn't exist - this shouldn't happen if frontend creates it
+        // But if it does, we can't create it without Supabase Auth user ID
+        logger.warn(`User profile not found for email: ${email}. Profile should be created by frontend when email is entered.`);
         return {
-          success: true,
-          message: 'Login successful',
-          user: existingUser,
-          token
+          success: false,
+          message: 'User profile not found. Please try again.'
         };
-      } else {
-        // User doesn't exist - create new account
-        const newUser = await this.createUser(email);
-        if (newUser) {
-          const token = this.generateToken(newUser);
-          const conversionPayload: ConversionEventPayload = {
-            email,
-            createdAt: newUser.created_at,
-            ...metadata,
-            externalId: metadata?.externalId ?? newUser.id,
-          };
-
-          await conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload);
-
-          return {
-            success: true,
-            message: 'Account created and login successful',
-            user: newUser,
-            token
-          };
-        } else {
-          return {
-            success: false,
-            message: 'Failed to create account'
-          };
-        }
       }
+
+      // User exists - check if this is a new signup or existing user login
+      // Profile was created recently (within 10 minutes) = new signup (first sign-in)
+      // This detects the case where profile was created when email was entered
+      const profileCreatedAt = new Date(existingUser.created_at);
+      const now = new Date();
+      const minutesSinceCreation = (now.getTime() - profileCreatedAt.getTime()) / (1000 * 60);
+      // If profile was created within last 10 minutes, it's a new signup
+      // This covers: email entry (creates profile) → code verification (user might take a few minutes)
+      const isFirstSignIn = minutesSinceCreation < 10; // 10 minutes window
+
+      logger.info(`Code verification for ${email}: profile created ${minutesSinceCreation.toFixed(2)} minutes ago, isFirstSignIn: ${isFirstSignIn}`);
+
+      if (!existingUser.is_active) {
+        return {
+          success: false,
+          message: 'Account is deactivated'
+        };
+      }
+
+      // Send CompleteRegistration event only on first sign-in (for Meta Conversion API)
+      // This ensures the sequence: Lead (email entry) → CompleteRegistration (code verification)
+      if (isFirstSignIn) {
+        const conversionPayload: ConversionEventPayload = {
+          email,
+          createdAt: existingUser.created_at,
+          ...metadata,
+          externalId: metadata?.externalId ?? existingUser.id,
+        };
+
+        logger.info(`Sending CompleteRegistration event for ${email} (new signup)`);
+        // Send CompleteRegistration event to webhook (fire and forget)
+        conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload).catch((error) => {
+          logger.error('Failed to send CompleteRegistration event:', error);
+        });
+      } else {
+        logger.info(`Skipping CompleteRegistration event for ${email} (existing user login)`);
+      }
+
+      const token = this.generateToken(existingUser);
+      return {
+        success: true,
+        message: isFirstSignIn ? 'Account created and login successful' : 'Login successful',
+        user: existingUser,
+        token
+      };
     } catch (error) {
       logger.error('Error verifying code:', error as Error);
       return {
@@ -157,36 +187,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Create new user profile
-   */
-  private async createUser(email: string): Promise<UserProfile | null> {
-    try {
-      // Create user in Supabase Auth (this would normally be done by the frontend)
-      // For now, we'll create just the profile
-      const { data: newUser, error } = await supabase
-        .from('user_profiles')
-        .insert({
-          email,
-          role: 'user',
-          subscription_plan: 'free',
-          monthly_generations_limit: 10,
-          is_active: true
-        })
-        .select()
-        .single();
-
-      if (error) {
-        logger.error('Error creating user profile:', error);
-        return null;
-      }
-
-      return newUser;
-    } catch (error) {
-      logger.error('Error creating user:', error as Error);
-      return null;
-    }
-  }
 
   /**
    * Generate JWT token
