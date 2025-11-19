@@ -7,27 +7,20 @@
  * Create a preview URL for an image file, converting HEIC/HEIF to WebP for display
  */
 export async function createImagePreview(file: File): Promise<string> {
-  console.log('Creating preview for file:', file.name, 'Type:', file.type);
-  
   // Check if it's a HEIC/HEIF file
   const fileExtension = file.name.toLowerCase().split('.').pop();
   const isHeicFile = fileExtension === 'heic' || fileExtension === 'heif';
   
-  console.log('File extension:', fileExtension, 'Is HEIC:', isHeicFile);
-  
   if (!isHeicFile) {
     // For non-HEIC files, use the standard URL.createObjectURL
     const url = URL.createObjectURL(file);
-    console.log('Created standard preview URL:', url);
     return url;
   }
   
   // For HEIC files, try server-side conversion
   try {
-    console.log('Attempting server-side HEIC conversion...');
     const convertedUrl = await convertHeicOnServer(file);
     if (convertedUrl) {
-      console.log('Successfully converted HEIC on server:', convertedUrl);
       return convertedUrl;
     }
   } catch (error) {
@@ -36,18 +29,15 @@ export async function createImagePreview(file: File): Promise<string> {
   
   // Try direct browser loading as fallback
   try {
-    console.log('Trying direct browser loading as fallback...');
     const directUrl = URL.createObjectURL(file);
     
     // Test if the browser can load it
     const testImg = new Image();
     await new Promise((resolve, reject) => {
       testImg.onload = () => {
-        console.log('Browser can load HEIC directly!');
         resolve(directUrl);
       };
       testImg.onerror = () => {
-        console.log('Browser cannot load HEIC directly');
         reject(new Error('Browser cannot load HEIC'));
       };
       testImg.src = directUrl;
@@ -55,19 +45,17 @@ export async function createImagePreview(file: File): Promise<string> {
     
     return directUrl;
   } catch (error) {
-    console.log('Direct browser loading failed:', error);
+    // Direct browser loading failed, continue to fallback
   }
   
   // Final fallback: enhanced placeholder
   try {
     const preview = await createEnhancedHeicPlaceholder(file);
-    console.log('Created enhanced HEIC placeholder preview:', preview);
     return preview;
   } catch (error) {
     console.error('Error creating HEIC preview:', error);
     // Ultimate fallback to a simple data URL
     const fallback = createSimpleDataUrl(file);
-    console.log('Using fallback preview:', fallback);
     return fallback;
   }
 }

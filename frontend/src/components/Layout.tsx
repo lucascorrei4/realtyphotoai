@@ -9,6 +9,7 @@ import {
   Replace,
   Sofa,
   Building2,
+  Sparkles,
   Users,
   Settings,
   Shield,
@@ -23,6 +24,7 @@ import { PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { Crown } from 'lucide-react';
 import packageJson from '../../package.json';
 import { CreditProvider, useCredits } from '../contexts/CreditContext';
+import VideoGenerationNotification from './VideoGenerationNotification';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -43,6 +45,7 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
 
   const navigation = [
     { path: '/dashboard', label: 'Dashboard', icon: Home },
+    { path: '/smart-effects', label: 'Smart Effects', icon: Sparkles },
     { path: '/add-furnitures', label: 'Add Furnitures', icon: Sofa },
     { path: '/interior-design', label: 'Interior Design', icon: Palette },
     { path: '/exterior-design', label: 'Exterior Design', icon: Building2 },
@@ -311,6 +314,9 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
         <main className="p-6">
           {children}
         </main>
+
+        {/* Global Video Generation Notification */}
+        <VideoGenerationNotification />
       </div>
     </div>
   );

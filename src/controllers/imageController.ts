@@ -6,6 +6,8 @@ import { ReplicateService } from '../services/replicateService';
 import { InteriorDesignService } from '../services/interiorDesignService';
 import { AddFurnitureService } from '../services/addFurnitureService';
 import { ExteriorDesignService } from '../services/exteriorDesignService';
+import { SmartEffectsService, EffectType } from '../services/smartEffectsService';
+import { VideoMotionService, VideoMotionType } from '../services/videoMotionService';
 import { HybridStorageService } from '../services/hybridStorageService';
 import { FileUtils } from '../utils/fileUtils';
 import { logger } from '../utils/logger';
@@ -18,6 +20,8 @@ export class ImageController {
   private interiorDesignService: InteriorDesignService;
   private addFurnitureService: AddFurnitureService;
   private exteriorDesignService: ExteriorDesignService;
+  private smartEffectsService: SmartEffectsService;
+  private videoMotionService: VideoMotionService;
   private userStatsService: UserStatisticsService;
   private storageService: HybridStorageService;
 
@@ -26,6 +30,8 @@ export class ImageController {
     this.interiorDesignService = new InteriorDesignService();
     this.addFurnitureService = new AddFurnitureService();
     this.exteriorDesignService = new ExteriorDesignService();
+    this.smartEffectsService = new SmartEffectsService();
+    this.videoMotionService = new VideoMotionService();
     this.userStatsService = new UserStatisticsService();
     this.storageService = new HybridStorageService();
   }
@@ -1913,6 +1919,470 @@ export class ImageController {
         success: false,
         message: 'Internal server error during exterior design generation',
         error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    } finally {
+      // Clean up temporary files
+      for (const tempFile of tempFiles) {
+        try {
+          const fs = require('fs');
+          fs.unlinkSync(tempFile);
+        } catch (error) {
+          logger.warn('Failed to clean up temp file:', { tempFile });
+        }
+      }
+    }
+  };
+
+  /**
+   * Generate smart effects for houses
+   */
+  public smartEffects = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    const tempFiles: string[] = [];
+    let generationId: string | undefined;
+
+    try {
+      const houseImageFile = req.file;
+      
+      if (!houseImageFile) {
+        res.status(400).json({
+          success: false,
+          message: 'House image file is required',
+          error: 'NO_HOUSE_IMAGE_FILE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      if (!req.body?.effectType) {
+        res.status(400).json({
+          success: false,
+          message: 'Effect type is required for smart effects',
+          error: 'MISSING_EFFECT_TYPE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      // Validate effect type
+      const validEffectTypes: EffectType[] = ['dusk', 'balloons', 'helicopter', 'gift_bow', 'fireworks', 'confetti', 'holiday_lights', 'snow', 'sunrise'];
+      const effectType = req.body.effectType as string;
+      if (!validEffectTypes.includes(effectType as EffectType)) {
+        res.status(400).json({
+          success: false,
+          message: `Invalid effect type: ${effectType}. Valid types are: ${validEffectTypes.join(', ')}`,
+          error: 'INVALID_EFFECT_TYPE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      logger.info('✨ Starting smart effect generation', {
+        houseImageFile: houseImageFile.filename,
+        houseImageOriginalName: houseImageFile.originalname,
+        houseImageMimetype: houseImageFile.mimetype,
+        houseImageSize: houseImageFile.size,
+        hasBuffer: !!houseImageFile.buffer,
+        bufferSize: houseImageFile.buffer ? houseImageFile.buffer.length : 0,
+        effectType: effectType,
+        customPrompt: req.body.customPrompt || undefined,
+        userId
+      });
+
+      // Upload original house image to hybrid storage first
+      let houseImageStorageResult;
+      let houseImageProcessingPath: string | Buffer = houseImageFile.path; // Default to disk path
+      
+      if (houseImageFile.buffer) {
+        // File is in memory (R2 mode)
+        // Ensure filename matches MIME type (fix for HEIC conversion)
+        let houseStorageFilename = houseImageFile.originalname;
+        if (houseImageFile.mimetype === 'image/webp' && !houseStorageFilename.endsWith('.webp')) {
+          houseStorageFilename = houseStorageFilename.replace(/\.[^.]+$/, '.webp');
+        }
+        
+        logger.info('📤 Uploading house image buffer to storage', {
+          bufferSize: houseImageFile.buffer.length,
+          filename: houseStorageFilename,
+          mimetype: houseImageFile.mimetype
+        });
+        
+        houseImageStorageResult = await this.storageService.uploadBuffer(
+          houseImageFile.buffer,
+          this.storageService.generateKey(houseStorageFilename),
+          houseImageFile.mimetype,
+          {
+            originalName: houseStorageFilename,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+        
+        logger.info('✅ House image uploaded to storage successfully', {
+          storageUrl: houseImageStorageResult.url,
+          key: houseImageStorageResult.key
+        });
+        
+        // Use buffer directly for processing - no temp file needed
+        houseImageProcessingPath = houseImageFile.buffer;
+      } else {
+        // File is on disk (local mode)
+        houseImageStorageResult = await this.storageService.uploadFile(
+          houseImageFile.path,
+          undefined, // Let storage service generate key
+          houseImageFile.mimetype,
+          {
+            originalName: houseImageFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            userId: req.user?.id || 'anonymous',
+          }
+        );
+      }
+
+      // Create generation record in database with actual image URL
+      const dbGenerationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: 'smart_effects',
+        status: 'processing',
+        input_image_url: houseImageStorageResult.url,
+        prompt: effectType + (req.body.customPrompt ? `: ${req.body.customPrompt}` : '')
+      });
+      generationId = dbGenerationId;
+
+      logger.info('🚀 Calling smart effects service', {
+        processingPathType: typeof houseImageProcessingPath,
+        processingPathIsBuffer: Buffer.isBuffer(houseImageProcessingPath),
+        processingPathSize: Buffer.isBuffer(houseImageProcessingPath) ? houseImageProcessingPath.length : 'N/A',
+        effectType: effectType,
+        customPrompt: req.body.customPrompt || undefined
+      });
+
+      // Process the smart effect
+      const result = await this.smartEffectsService.generateSmartEffect(
+        houseImageProcessingPath,
+        effectType as EffectType,
+        req.body.customPrompt || undefined
+      );
+
+      if (result.outputUrl) {
+        // Generate filename for the output (consistent with other services)
+        const baseFilename = path.parse(houseImageFile.originalname || houseImageFile.filename || 'house_image').name;
+        const outputExtension = '.jpg';
+
+        // Download and save processed image to hybrid storage (R2/local) - unified approach
+        const resultStorage = await this.replicateService.downloadAndSaveToHybridStorage(
+          result.outputUrl,
+          `${baseFilename}_effect_${effectType}${outputExtension}`,
+          {
+            requestId: result.metadata?.requestId,
+            userId: req.user?.id || 'anonymous',
+            generationId: dbGenerationId,
+            originalFile: houseImageFile.originalname || houseImageFile.filename || 'unknown',
+            effectType: effectType,
+            customPrompt: req.body.customPrompt || undefined,
+          }
+        );
+
+        const processingTime = Date.now() - startTime;
+
+        // Update generation record with success using R2 URL
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'completed',
+          resultStorage.url,
+          undefined,
+          processingTime
+        );
+
+        // Verify result image exists in storage (consistent with other services)
+        if (resultStorage.storageKey) {
+          const resultExists = await this.storageService.fileExists(resultStorage.storageKey);
+          
+          if (!resultExists) {
+            logger.error('❌ Smart effect result not found in storage', {
+              storageKey: resultStorage.storageKey
+            });
+            throw new Error(`Smart effect result not found: ${resultStorage.storageKey}`);
+          }
+        }
+
+        logger.info('✅ Smart effect generation completed successfully', {
+          processingTime,
+          resultImageUrl: resultStorage.url,
+          effectType: req.body.effectType,
+          generationId: dbGenerationId,
+          storageType: resultStorage.storageType,
+        });
+
+        // Use storage URLs (consistent with other services)
+        const houseImageUrl = houseImageStorageResult.url;
+        const resultImageUrl = resultStorage.url;
+
+        res.json({
+          success: true,
+          message: 'Smart effect applied successfully',
+          data: {
+            originalHouseImage: houseImageUrl,
+            resultImage: resultImageUrl,
+            effectType: effectType,
+            customPrompt: req.body.customPrompt || undefined,
+            processingTime,
+            generationId: dbGenerationId
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        // Update generation record with failure
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'failed',
+          undefined,
+          'No output URL received from model',
+          Date.now() - startTime
+        );
+
+        logger.error('❌ Smart effect generation failed', {
+          error: 'No output URL received from model',
+          processingTime: Date.now() - startTime
+        });
+
+        res.status(500).json({
+          success: false,
+          message: 'Smart effect generation failed',
+          error: 'NO_OUTPUT_URL',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
+    } catch (error) {
+      logger.error('🚨 Error in smartEffects:', error as Error);
+      
+      // Update generation record with failure if we have a generation ID
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            Date.now() - startTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation status:', updateError as Error);
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during smart effect generation',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        timestamp: new Date().toISOString(),
+      } as ApiResponse);
+    } finally {
+      // Clean up temporary files
+      for (const tempFile of tempFiles) {
+        try {
+          const fs = require('fs');
+          fs.unlinkSync(tempFile);
+        } catch (error) {
+          logger.warn('Failed to clean up temp file:', { tempFile });
+        }
+      }
+    }
+  };
+
+  /**
+   * Generate video motion from an image
+   */
+  public generateVideoMotion = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    const tempFiles: string[] = [];
+    let generationId: string | undefined;
+
+    try {
+      const { imageUrl, motionType, options } = req.body;
+
+      if (!imageUrl) {
+        res.status(400).json({
+          success: false,
+          message: 'Image URL is required for video generation',
+          error: 'MISSING_IMAGE_URL',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      if (!motionType || motionType !== 'veo3_fast') {
+        res.status(400).json({
+          success: false,
+          message: 'Only veo3_fast motion type is supported',
+          error: 'INVALID_MOTION_TYPE',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+        return;
+      }
+
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User authentication required',
+          error: 'UNAUTHORIZED'
+        });
+        return;
+      }
+
+      logger.info('🎬 Starting video motion generation', {
+        imageUrl,
+        motionType,
+        options,
+        userId
+      });
+
+      // Create generation record in database first
+      const dbGenerationId = await this.userStatsService.createGenerationRecord({
+        user_id: userId,
+        model_type: `video_${motionType}`,
+        status: 'processing',
+        input_image_url: imageUrl,
+        prompt: options?.prompt || 'Add a impressive ultrarealistic movement to this image'
+      });
+      generationId = dbGenerationId;
+
+      // Generate video using veo3_fast
+      // Pass the URL directly to Replicate (it accepts URLs for images)
+      // This avoids unnecessary download/upload cycles
+      const result = await this.videoMotionService.generateVideo(
+        motionType as VideoMotionType,
+        imageUrl, // Pass URL directly - Replicate accepts URLs
+        options || {}
+      );
+
+      if (result.outputUrl) {
+        // Generate filename for the output video
+        // Remove model names from filename for compliance
+        const baseFilename = path.parse(imageUrl.split('/').pop() || 'image').name;
+        const outputExtension = '.mp4';
+        
+        // Remove any existing model type suffixes from base filename
+        const cleanBaseFilename = baseFilename
+          .replace(/_veo3_fast$/, '')
+          .replace(/_video$/, '');
+
+        // Download and save processed video to hybrid storage (R2/local)
+        const resultStorage = await this.replicateService.downloadAndSaveVideoToHybridStorage(
+          result.outputUrl,
+          `${cleanBaseFilename}_video${outputExtension}`,
+          {
+            requestId: result.metadata?.requestId,
+            userId: req.user?.id || 'anonymous',
+            generationId: dbGenerationId,
+            originalImageUrl: imageUrl,
+            motionType,
+            ...options,
+          }
+        );
+
+        const processingTime = Date.now() - startTime;
+
+        // Update generation record with success using R2 URL
+        // Use output_image_url for video URL to keep compatibility
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'completed',
+          resultStorage.url, // Video URL stored in output_image_url field
+          undefined,
+          processingTime
+        );
+
+        // Verify result video exists in storage
+        if (resultStorage.storageKey) {
+          const resultExists = await this.storageService.fileExists(resultStorage.storageKey);
+          
+          if (!resultExists) {
+            logger.error('❌ Video result not found in storage', {
+              storageKey: resultStorage.storageKey
+            });
+            throw new Error(`Video result not found: ${resultStorage.storageKey}`);
+          }
+        }
+
+        logger.info('✅ Video motion generation completed successfully', {
+          processingTime,
+          resultVideoUrl: resultStorage.url,
+          motionType,
+          generationId: dbGenerationId,
+          storageType: resultStorage.storageType,
+        });
+
+        res.json({
+          success: true,
+          message: 'Video generated successfully',
+          data: {
+            originalImageUrl: imageUrl,
+            resultVideoUrl: resultStorage.url,
+            motionType,
+            options: options || {},
+            processingTime,
+            generationId: dbGenerationId
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        // Update generation record with failure
+        await this.userStatsService.updateGenerationStatus(
+          dbGenerationId,
+          'failed',
+          undefined,
+          'No output URL received from model',
+          Date.now() - startTime
+        );
+
+        logger.error('❌ Video motion generation failed', {
+          error: 'No output URL received from model',
+          processingTime: Date.now() - startTime
+        });
+
+        res.status(500).json({
+          success: false,
+          message: 'Video generation failed',
+          error: 'NO_OUTPUT_URL',
+          timestamp: new Date().toISOString(),
+        } as ApiResponse);
+      }
+    } catch (error) {
+      logger.error('🚨 Error in generateVideoMotion:', error as Error);
+      
+      // Update generation record with failure if we have a generation ID
+      if (generationId) {
+        try {
+          await this.userStatsService.updateGenerationStatus(
+            generationId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : 'Unknown error',
+            Date.now() - startTime
+          );
+        } catch (updateError) {
+          logger.error('Failed to update generation status:', updateError as Error);
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during video generation',
+        error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        ...(generationId && { data: { generationId } }), // Include generationId if available so frontend can track it
         timestamp: new Date().toISOString(),
       } as ApiResponse);
     } finally {

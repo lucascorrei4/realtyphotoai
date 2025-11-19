@@ -14,6 +14,12 @@ export const PLAN_DISPLAY_NAMES: Record<string, string> = {
 
 /**
  * Calculate credits for a plan based on price (200% margin)
+ * 
+ * Pricing Strategy:
+ * - 200% margin: Revenue = 3.0 × Cost, so Max Cost = Price ÷ 3.0
+ * - Credits maintain 200% margin for both images and videos:
+ *   - Image: 1 credit = $0.039 cost (200% margin maintained)
+ *   - Video: 12 credits/second = ~$0.15 cost/second × 3.0 = $0.45/second (200% margin maintained)
  */
 export function calculateCreditsFromPrice(price: number): { monthlyCredits: number; displayCredits: number } {
   if (price === 0) {
@@ -22,6 +28,7 @@ export function calculateCreditsFromPrice(price: number): { monthlyCredits: numb
 
   // 200% margin: Revenue = 3.0 × Cost, so Max Cost = Price ÷ 3.0
   const maxCost = price / 3.0;
+  // Credits are universal and maintain 200% margin for both images and videos
   const monthlyCredits = Math.floor(maxCost / 0.039); // $0.039 per image
 
   // Calculate display credits with multipliers
@@ -100,7 +107,6 @@ export async function getAllPlansFromDatabase(): Promise<SubscriptionPlan[]> {
       };
     });
 
-    console.log(`[getAllPlansFromDatabase] Found ${plans.length} active plans:`, plans.map(p => p.id));
     return plans;
   } catch (error) {
     console.error('[getAllPlansFromDatabase] Error:', error);
@@ -129,12 +135,6 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
       console.error(`[getUserPlanFromDatabase] Plan rule not found in database for: "${planName}"`);
       return null;
     }
-
-    console.log(`[getUserPlanFromDatabase] Found plan rule for "${planName}":`, {
-      monthly_generations_limit: planRule.monthly_generations_limit,
-      price_per_month: planRule.price_per_month,
-      display_name: planRule.display_name
-    });
 
     // Use monthly_generations_limit from database as display credits (what users see)
     // This is the single source of truth from the database
@@ -185,12 +185,6 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
       },
       billingCycle: 'monthly'
     };
-
-    console.log(`[getUserPlanFromDatabase] Returning plan for "${planName}":`, {
-      displayName: plan.displayName,
-      displayCredits: plan.features.displayCredits,
-      monthlyCredits: plan.features.monthlyCredits
-    });
 
     return plan;
   } catch (error) {

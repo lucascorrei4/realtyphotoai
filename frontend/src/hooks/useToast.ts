@@ -14,7 +14,7 @@ export const useToast = () => {
   };
 
   const showInfo = (message: string) => {
-    toast(message, {
+    return toast(message, {
       icon: 'ℹ️',
       style: {
         background: '#3B82F6',
@@ -24,7 +24,7 @@ export const useToast = () => {
   };
 
   const showWarning = (message: string) => {
-    toast(message, {
+    return toast(message, {
       icon: '⚠️',
       style: {
         background: '#F59E0B',
@@ -41,8 +41,19 @@ export const useToast = () => {
     }
   };
 
-  const updateToast = (toastId: string, message: string, type: 'success' | 'error' | 'loading' = 'success') => {
-    toast[type](message, { id: toastId });
+  const updateToast = (toastId: string, message: string, type: 'success' | 'error' | 'loading' | 'warning' = 'success') => {
+    if (type === 'warning') {
+      toast(message, { 
+        id: toastId,
+        icon: '⚠️',
+        style: {
+          background: '#F59E0B',
+          color: '#fff',
+        },
+      });
+    } else {
+      toast[type](message, { id: toastId });
+    }
   };
 
   return {

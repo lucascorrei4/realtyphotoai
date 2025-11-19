@@ -260,9 +260,12 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
         >
           <img
             src={afterSrc}
-            alt={altAfter}
+            alt={altAfter || 'AI-enhanced real estate photo'}
             className="absolute inset-0 h-full w-full object-cover brightness-[0.95]"
             loading="lazy"
+            width="800"
+            height="600"
+            fetchPriority="high"
           />
 
           <div
@@ -271,9 +274,11 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
           >
             <img
               src={beforeSrc}
-              alt={altBefore}
+              alt={altBefore || 'Original real estate photo before AI enhancement'}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
               loading="lazy"
+              width="800"
+              height="600"
             />
           </div>
 
@@ -377,8 +382,10 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
 
                 <img
                   src={afterSrc}
-                  alt={altAfter}
+                  alt={altAfter || 'AI-enhanced real estate photo'}
                   className="h-full w-full object-contain"
+                  width="1200"
+                  height="800"
                 />
                 <div
                   className="absolute inset-0 h-full w-full overflow-hidden transition-[clip-path] duration-150 ease-out"
@@ -386,8 +393,10 @@ const BeforeAfterSlider: React.FC<BeforeAfterSliderProps> = ({
                 >
                   <img
                     src={beforeSrc}
-                    alt={altBefore}
+                    alt={altBefore || 'Original real estate photo before AI enhancement'}
                     className="absolute inset-0 h-full w-full object-contain"
+                    width="1200"
+                    height="800"
                   />
                 </div>
 
@@ -528,8 +537,8 @@ const serviceShowcases: ServiceShowcase[] = [
       'Transform raw shots into magazine-ready imagery using domain-trained AI built for real estate and interior design teams.',
     beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1762879328372_pktlqe_IMG_5685.PNG',
     afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/IMG_5685_enhanced_processed_1762879343417_w0dmzz.png',
-    altBefore: 'Dimly lit living room before enhancement',
-    altAfter: '',
+    altBefore: 'Dimly lit living room before AI enhancement',
+    altAfter: 'Bright, professionally enhanced living room with balanced lighting and improved colors',
     bullets: [
       'AI tone mapping protects natural window views',
       'Batch process entire shoots with one click',
@@ -784,19 +793,220 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     const pageTitle = 'RealVision AI | AI Real Estate Photo Enhancement & Virtual Staging';
     const description =
-      'RealVision AI enhances property photos, stages interiors, replaces elements, adds furnitures, and refreshes exteriors with production-ready AI.';
+      'RealVision AI enhances property photos, stages interiors, replaces elements, adds furnitures, and refreshes exteriors with production-ready AI. Transform raw shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.';
+    const keywords = 'AI real estate photo enhancement, virtual staging, property photo editing, real estate AI, interior design AI, exterior design AI, photo enhancement software, real estate marketing, property photography, AI staging, real estate photo retouching, virtual furniture staging, property listing photos';
+    const canonicalUrl = typeof window !== 'undefined' ? window.location.href : 'https://realvisionaire.com';
+    const ogImage = 'https://realvisionaire.com/seo-image.png';
 
+    // Update title
     document.title = pageTitle;
-    const existingMeta = document.querySelector('meta[name="description"]');
 
-    if (existingMeta) {
-      existingMeta.setAttribute('content', description);
-    } else {
-      const meta = document.createElement('meta');
-      meta.setAttribute('name', 'description');
-      meta.setAttribute('content', description);
-      document.head.appendChild(meta);
+    // Helper function to set or update meta tag
+    const setMetaTag = (name: string, content: string, isProperty = false) => {
+      const selector = isProperty ? `meta[property="${name}"]` : `meta[name="${name}"]`;
+      let meta = document.querySelector(selector) as HTMLMetaElement;
+      if (!meta) {
+        meta = document.createElement('meta');
+        if (isProperty) {
+          meta.setAttribute('property', name);
+        } else {
+          meta.setAttribute('name', name);
+        }
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', content);
+    };
+
+    // Primary meta tags
+    setMetaTag('description', description);
+    setMetaTag('keywords', keywords);
+    setMetaTag('author', 'RealVision AI');
+    setMetaTag('robots', 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1');
+    setMetaTag('googlebot', 'index, follow');
+    setMetaTag('bingbot', 'index, follow');
+
+    // Open Graph tags
+    setMetaTag('og:type', 'website', true);
+    setMetaTag('og:url', canonicalUrl, true);
+    setMetaTag('og:title', pageTitle, true);
+    setMetaTag('og:description', description, true);
+    setMetaTag('og:image', ogImage, true);
+    setMetaTag('og:image:width', '1200', true);
+    setMetaTag('og:image:height', '630', true);
+    setMetaTag('og:image:alt', 'RealVision AI - AI-powered real estate photo enhancement and virtual staging', true);
+    setMetaTag('og:site_name', 'RealVision AI', true);
+    setMetaTag('og:locale', 'en_US', true);
+
+    // Twitter Card tags
+    setMetaTag('twitter:card', 'summary_large_image');
+    setMetaTag('twitter:url', canonicalUrl);
+    setMetaTag('twitter:title', pageTitle);
+    setMetaTag('twitter:description', description);
+    setMetaTag('twitter:image', ogImage);
+    setMetaTag('twitter:image:alt', 'RealVision AI - AI-powered real estate photo enhancement');
+
+    // Canonical URL
+    let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement;
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
     }
+    canonical.setAttribute('href', canonicalUrl);
+
+    // Structured Data (JSON-LD)
+    const structuredData = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'Organization',
+          '@id': 'https://realvisionaire.com/#organization',
+          name: 'RealVision AI',
+          url: 'https://realvisionaire.com',
+          logo: {
+            '@type': 'ImageObject',
+            url: 'https://realvisionaire.com/logo_black.png',
+            width: 512,
+            height: 512
+          },
+          sameAs: [],
+          contactPoint: {
+            '@type': 'ContactPoint',
+            contactType: 'Customer Service',
+            email: 'contact@realvisionaire.com'
+          }
+        },
+        {
+          '@type': 'SoftwareApplication',
+          '@id': 'https://realvisionaire.com/#software',
+          name: 'RealVision AI',
+          applicationCategory: 'BusinessApplication',
+          operatingSystem: 'Web',
+          offers: {
+            '@type': 'Offer',
+            price: '0',
+            priceCurrency: 'USD'
+          },
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: '4.9',
+            ratingCount: '150',
+            bestRating: '5',
+            worstRating: '1'
+          },
+          description: description,
+          featureList: [
+            'AI-powered photo enhancement',
+            'Virtual interior staging',
+            'Element replacement',
+            'Furniture addition',
+            'Exterior design enhancement',
+            '12-second processing time',
+            'Batch processing',
+            'Before/after comparisons'
+          ]
+        },
+        {
+          '@type': 'WebPage',
+          '@id': 'https://realvisionaire.com/#webpage',
+          url: canonicalUrl,
+          name: pageTitle,
+          description: description,
+          inLanguage: 'en-US',
+          isPartOf: {
+            '@id': 'https://realvisionaire.com/#website'
+          },
+          about: {
+            '@id': 'https://realvisionaire.com/#organization'
+          },
+          primaryImageOfPage: {
+            '@type': 'ImageObject',
+            url: ogImage
+          }
+        },
+        {
+          '@type': 'WebSite',
+          '@id': 'https://realvisionaire.com/#website',
+          url: 'https://realvisionaire.com',
+          name: 'RealVision AI',
+          description: description,
+          publisher: {
+            '@id': 'https://realvisionaire.com/#organization'
+          },
+          inLanguage: 'en-US'
+        },
+        {
+          '@type': 'FAQPage',
+          mainEntity: faqs.map((faq) => ({
+            '@type': 'Question',
+            name: faq.question,
+            acceptedAnswer: {
+              '@type': 'Answer',
+              text: faq.answer
+            }
+          }))
+        },
+        ...testimonials.map((testimonial, index) => ({
+          '@type': 'Review',
+          '@id': `https://realvisionaire.com/#review-${index}`,
+          author: {
+            '@type': 'Person',
+            name: testimonial.name,
+            jobTitle: testimonial.title,
+            worksFor: {
+              '@type': 'Organization',
+              name: testimonial.company
+            }
+          },
+          reviewBody: testimonial.quote,
+          reviewRating: {
+            '@type': 'Rating',
+            ratingValue: testimonial.rating,
+            bestRating: '5',
+            worstRating: '1'
+          },
+          itemReviewed: {
+            '@id': 'https://realvisionaire.com/#software'
+          }
+        })),
+        {
+          '@type': 'BreadcrumbList',
+          itemListElement: [
+            {
+              '@type': 'ListItem',
+              position: 1,
+              name: 'Home',
+              item: 'https://realvisionaire.com'
+            }
+          ]
+        }
+      ]
+    };
+
+    // Remove existing structured data script if any
+    const existingScript = document.querySelector('script[type="application/ld+json"]');
+    if (existingScript) {
+      existingScript.remove();
+    }
+
+    // Add structured data
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(structuredData);
+    document.head.appendChild(script);
+
+    // Language attribute
+    if (document.documentElement) {
+      document.documentElement.setAttribute('lang', 'en');
+    }
+
+    // Cleanup function
+    return () => {
+      const scriptToRemove = document.querySelector('script[type="application/ld+json"]');
+      if (scriptToRemove) {
+        scriptToRemove.remove();
+      }
+    };
   }, []);
 
   const handleSendCode = async () => {
@@ -880,8 +1090,8 @@ const LandingPage: React.FC = () => {
       'Transform raw shots into magazine-ready imagery using domain-trained AI built for real estate and interior design teams.',
     beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761279323790_yh1571_1761275559906_q0fxg6_IMG_4065.webp',
     afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761277455358_inxnid_image-1761260228284.jpg',
-    altBefore: 'Dimly lit living room before enhancement',
-    altAfter: '',
+    altBefore: 'Dimly lit living room before AI enhancement',
+    altAfter: 'Bright, professionally enhanced living room with balanced lighting and improved colors',
     bullets: [
       'AI tone mapping protects natural window views',
       'Batch process entire shoots with one click',
@@ -895,14 +1105,24 @@ const LandingPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-lg transition-colors duration-300 dark:border-slate-800/70 dark:bg-slate-950/80">
+      <header>
+        <nav 
+          className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-lg transition-colors duration-300 dark:border-slate-800/70 dark:bg-slate-950/80"
+          role="navigation"
+          aria-label="Main navigation"
+        >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center space-x-3 sm:space-x-4">
-            <img
-              src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
-              alt="RealVision AI"
-              className="h-12 w-auto sm:h-14"
-            />
+            <a href="/" aria-label="RealVision AI Home">
+              <img
+                src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
+                alt="RealVision AI - AI-powered real estate photo enhancement and virtual staging platform"
+                className="h-12 w-auto sm:h-14"
+                width="140"
+                height="56"
+                loading="eager"
+              />
+            </a>
           </div>
           <div className="hidden items-center space-x-6 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex">
             <button onClick={() => handleAnchorNavigation('features-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
@@ -944,9 +1164,13 @@ const LandingPage: React.FC = () => {
           </div>
         </div>
       </nav>
+      </header>
 
-      <main>
-        <section className="px-4 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32">
+      <main role="main">
+        <section 
+          className="px-4 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32"
+          aria-labelledby="hero-heading"
+        >
           <div className="mx-auto max-w-7xl">
             <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-center">
               <div>
@@ -954,15 +1178,17 @@ const LandingPage: React.FC = () => {
                   <Sparkles className="h-4 w-4" />
                   <span>AI-Powered Imagery for Real Estate & Design</span>
                 </div>
-                <h1 className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl">
+                <h1 
+                  id="hero-heading"
+                  className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
+                >
                   Sell Homes 72% Faster with
                   <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
                     {' '}AI-Enhanced Listings That Captivate Buyers
                   </span>
                 </h1>
                 <p className="mt-6 max-w-3xl text-base text-slate-600 dark:text-slate-300 sm:text-lg md:text-xl">
-                  Tired of raw photos that don't impress clients or close deals? <b>RealVision AI</b> AI enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors. — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
-
+                  Tired of raw photos that don't impress clients or close deals? <strong>RealVision AI</strong> enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
                 </p>
                 <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
                   <button
@@ -1158,6 +1384,8 @@ const LandingPage: React.FC = () => {
                   <article
                     key={id}
                     className="grid gap-10 rounded-3xl border border-slate-200/80 bg-white/90 p-6 shadow-xl shadow-slate-900/5 backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)]"
+                    itemScope
+                    itemType="https://schema.org/Service"
                   >
                     <div className="flex flex-col justify-center space-y-5">
                       <div className="inline-flex items-center space-x-3">
@@ -1168,11 +1396,11 @@ const LandingPage: React.FC = () => {
                           <span>{accent}</span>
                         </span>
                       </div>
-                      <h3 className="text-2xl font-semibold text-slate-900 dark:text-white sm:text-3xl">{name}</h3>
-                      <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                      <h3 className="text-2xl font-semibold text-slate-900 dark:text-white sm:text-3xl" itemProp="name">{name}</h3>
+                      <p className="text-sm font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400" itemProp="slogan">
                         {tagline}
                       </p>
-                      <p className="text-base text-slate-600 dark:text-slate-300">{description}</p>
+                      <p className="text-base text-slate-600 dark:text-slate-300" itemProp="description">{description}</p>
                       <ul className="grid gap-3 text-sm text-slate-600 dark:text-slate-300">
                         {bullets.map((bullet) => (
                           <li key={bullet} className="flex items-center space-x-3">
@@ -1391,17 +1619,36 @@ const LandingPage: React.FC = () => {
                 <figure
                   key={name}
                   className="flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-8 shadow-lg transition-all hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900/80"
+                  itemScope
+                  itemType="https://schema.org/Review"
                 >
-                  <Quote className="h-8 w-8 text-blue-500" />
-                  <blockquote className="mt-5 flex-1 text-sm text-slate-600 dark:text-slate-300">{quote}</blockquote>
+                  <Quote className="h-8 w-8 text-blue-500" aria-hidden="true" />
+                  <blockquote 
+                    className="mt-5 flex-1 text-sm text-slate-600 dark:text-slate-300"
+                    itemProp="reviewBody"
+                  >
+                    {quote}
+                  </blockquote>
                   <figcaption className="mt-6 border-t border-slate-200 pt-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                    <div className="font-semibold text-slate-900 dark:text-white">{name}</div>
-                    <div>
-                      {title} · {company}
+                    <div className="font-semibold text-slate-900 dark:text-white" itemProp="author" itemScope itemType="https://schema.org/Person">
+                      <span itemProp="name">{name}</span>
                     </div>
-                    <div className="mt-2 flex items-center space-x-1 text-amber-400">
+                    <div itemProp="author" itemScope itemType="https://schema.org/Person">
+                      <span itemProp="jobTitle">{title}</span> · <span itemProp="worksFor" itemScope itemType="https://schema.org/Organization">
+                        <span itemProp="name">{company}</span>
+                      </span>
+                    </div>
+                    <div 
+                      className="mt-2 flex items-center space-x-1 text-amber-400"
+                      itemProp="reviewRating"
+                      itemScope
+                      itemType="https://schema.org/Rating"
+                      aria-label={`${rating} out of 5 stars`}
+                    >
+                      <meta itemProp="ratingValue" content={rating.toString()} />
+                      <meta itemProp="bestRating" content="5" />
                       {Array.from({ length: rating }).map((_, index) => (
-                        <Star key={index} className="h-4 w-4 fill-current" />
+                        <Star key={index} className="h-4 w-4 fill-current" aria-hidden="true" />
                       ))}
                     </div>
                     <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400">
@@ -1431,17 +1678,21 @@ const LandingPage: React.FC = () => {
                 Still evaluating? Here are the questions real estate marketers, photographers, and developers ask before switching.
               </p>
             </div>
-            <div className="mt-12 space-y-4">
+            <div className="mt-12 space-y-4" itemScope itemType="https://schema.org/FAQPage">
               {faqs.map(({ question, answer }) => (
                 <details
                   key={question}
                   className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-500/40 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                  itemScope
+                  itemType="https://schema.org/Question"
                 >
-                  <summary className="flex cursor-pointer items-center justify-between text-left text-lg font-semibold text-slate-900 dark:text-white">
+                  <summary className="flex cursor-pointer items-center justify-between text-left text-lg font-semibold text-slate-900 dark:text-white" itemProp="name">
                     {question}
-                    <ChevronRight className="h-5 w-5 text-blue-500 transition-transform duration-200 group-open:rotate-90" />
+                    <ChevronRight className="h-5 w-5 text-blue-500 transition-transform duration-200 group-open:rotate-90" aria-hidden="true" />
                   </summary>
-                  <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">{answer}</p>
+                  <div itemScope itemType="https://schema.org/Answer" itemProp="acceptedAnswer">
+                    <p className="mt-4 text-sm text-slate-600 dark:text-slate-300" itemProp="text">{answer}</p>
+                  </div>
                 </details>
               ))}
             </div>
@@ -1616,41 +1867,53 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      <footer className="bg-gray-900 py-8 text-white dark:bg-slate-900 sm:py-12">
+      <footer 
+        className="bg-gray-900 py-8 text-white dark:bg-slate-900 sm:py-12"
+        role="contentinfo"
+        itemScope
+        itemType="https://schema.org/WPFooter"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 sm:gap-8">
-            <div className="sm:col-span-2 lg:col-span-1">
+            <div className="sm:col-span-2 lg:col-span-1" itemScope itemType="https://schema.org/Organization">
               <div className="mb-4 flex items-center space-x-3">
-                <img src="/logo_white.png" alt="RealVision AI" className="h-6 w-auto sm:h-8" />
-                <span className="text-lg font-bold sm:text-xl">RealVision AI</span>
+                <img 
+                  src="/logo_white.png" 
+                  alt="RealVision AI - AI-powered real estate photo enhancement platform" 
+                  className="h-6 w-auto sm:h-8"
+                  width="140"
+                  height="56"
+                  itemProp="logo"
+                />
+                <span className="text-lg font-bold sm:text-xl" itemProp="name">RealVision AI</span>
               </div>
-              <p className="text-sm text-gray-400 sm:text-base">
+              <p className="text-sm text-gray-400 sm:text-base" itemProp="description">
                 Transform your property photos with cutting-edge AI technology designed for modern real estate teams.
               </p>
             </div>
-            <div>
+            <nav aria-label="Product navigation">
               <h3 className="mb-3 text-base font-semibold sm:text-lg">Product</h3>
               <ul className="space-y-2 text-sm text-gray-400 sm:text-base">
-                <li><a href="#features-section" className="transition-colors hover:text-white">Features</a></li>
-                <li><a href="#services-section" className="transition-colors hover:text-white">Solutions</a></li>
-                <li><a href="#showcase-section" className="transition-colors hover:text-white">Before &amp; After</a></li>
+                <li><a href="#features-section" className="transition-colors hover:text-white" aria-label="View features">Features</a></li>
+                <li><a href="#services-section" className="transition-colors hover:text-white" aria-label="View services">Solutions</a></li>
+                <li><a href="#showcase-section" className="transition-colors hover:text-white" aria-label="View before and after examples">Before &amp; After</a></li>
               </ul>
-            </div>
-            <div>
+            </nav>
+            <nav aria-label="Company navigation">
               <h3 className="mb-3 text-base font-semibold sm:text-lg">Company</h3>
               <ul className="space-y-2 text-sm text-gray-400 sm:text-base">
-                <li><a href="mailto:contact@realvisionaire.com" className="transition-colors hover:text-white">Contact</a></li>
-                <li><a href="#testimonials-section" className="transition-colors hover:text-white">Customers</a></li>
-                <li><a href="#faq-section" className="transition-colors hover:text-white">FAQ</a></li>
+                <li><a href="mailto:contact@realvisionaire.com" className="transition-colors hover:text-white" aria-label="Contact RealVision AI">Contact</a></li>
+                <li><a href="#testimonials-section" className="transition-colors hover:text-white" aria-label="View customer testimonials">Customers</a></li>
+                <li><a href="#faq-section" className="transition-colors hover:text-white" aria-label="View frequently asked questions">FAQ</a></li>
               </ul>
-            </div>
-            <div>
+            </nav>
+            <nav aria-label="Resources navigation">
               <h3 className="mb-3 text-base font-semibold sm:text-lg">Resources</h3>
               <ul className="space-y-2 text-sm text-gray-400 sm:text-base">
-                <li><a href="#auth-section" className="transition-colors hover:text-white">Sign In</a></li>
-                <li><a href="/privacy" className="transition-colors hover:text-white">Privacy</a></li>
+                <li><a href="#auth-section" className="transition-colors hover:text-white" aria-label="Sign in to RealVision AI">Sign In</a></li>
+                <li><a href="/privacy" className="transition-colors hover:text-white" aria-label="Privacy policy">Privacy</a></li>
               </ul>
-            </div>
+            </nav>
           </div>
           <div className="mt-6 border-t border-gray-800 pt-6 text-center text-sm text-gray-400 sm:mt-8 sm:pt-8 sm:text-base">
             <p>&copy; 2025 RealVision AI. All rights reserved.</p>

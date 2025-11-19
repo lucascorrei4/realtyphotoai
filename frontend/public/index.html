@@ -34,6 +34,9 @@
 
   <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo_black.png" />
   <!-- <link rel="manifest" href="%PUBLIC_URL%/manifest.webmanifest" /> -->
+  
+  <!-- Sitemap -->
+  <link rel="sitemap" type="application/xml" href="%PUBLIC_URL%/sitemap.xml" />
   <!-- Google Tag Manager -->
   <script>(function (w, d, s, l, i) {
       w[l] = w[l] || []; w[l].push({
@@ -58,8 +61,13 @@
       s.parentNode.insertBefore(t, s)
     }(window, document, 'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', '931350623376385');
-    fbq('track', 'PageView');
+    
+    // Prevent duplicate pixel initialization
+    if (!window._fbPixelInitialized) {
+      window._fbPixelInitialized = true;
+      fbq('init', '931350623376385');
+      fbq('track', 'PageView');
+    }
   </script>
   <noscript><img height="1" width="1" style="display:none"
       src="https://www.facebook.com/tr?id=931350623376385&ev=PageView&noscript=1" /></noscript>

@@ -14,11 +14,12 @@ interface GenerationStats {
     replaceElements: number;
     addFurnitures: number;
     exteriorDesign: number;
+    smartEffects: number;
   };
 }
 
 interface StatsWidgetProps {
-  modelType: 'interior_design' | 'image_enhancement' | 'element_replacement' | 'add_furnitures' | 'exterior_design';
+  modelType: 'interior_design' | 'image_enhancement' | 'element_replacement' | 'add_furnitures' | 'exterior_design' | 'smart_effects';
   title?: string;
   description?: string;
   userId?: string; // Optional user ID for fetching user-specific stats
@@ -65,7 +66,8 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
               imageEnhancement: 0,
               replaceElements: 0,
               addFurnitures: 0,
-              exteriorDesign: 0
+              exteriorDesign: 0,
+              smartEffects: 0
             }
           });
         }
@@ -91,7 +93,8 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
               imageEnhancement: 0,
               replaceElements: 0,
               addFurnitures: 0,
-              exteriorDesign: 0
+              exteriorDesign: 0,
+              smartEffects: 0
             }
           });
           setError(null); // Don't show error for network issues
@@ -110,7 +113,8 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
               imageEnhancement: 0,
               replaceElements: 0,
               addFurnitures: 0,
-              exteriorDesign: 0
+              exteriorDesign: 0,
+              smartEffects: 0
             }
           });
         }
@@ -198,7 +202,8 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
       imageEnhancement: 0,
       replaceElements: 0,
       addFurnitures: 0,
-      exteriorDesign: 0
+      exteriorDesign: 0,
+      smartEffects: 0
     }
   };
 
@@ -215,6 +220,8 @@ const StatsWidget: React.FC<StatsWidgetProps> = ({
         return currentStats.generationsByType.addFurnitures;
       case 'exterior_design':
         return currentStats.generationsByType.exteriorDesign;
+      case 'smart_effects':
+        return currentStats.generationsByType.smartEffects;
       default:
         return 0;
     }

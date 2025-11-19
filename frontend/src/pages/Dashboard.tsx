@@ -6,14 +6,16 @@ import {
   AlertCircle,
   PlayCircle,
   Target,
-  Crown
+  Crown,
+  ExternalLink,
+  Video as VideoIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import { RecentGenerationsWidget, QuickActions } from '../components';
 import StripeCheckout from '../components/StripeCheckout';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
-import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
+import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits, SubscriptionPlan } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { getBackendUrl } from '../config/environment';
 import { useToast } from '../hooks/useToast';
@@ -54,6 +56,8 @@ interface UserStats {
     status: string;
     timestamp: string;
     model: string;
+    output_url?: string;
+    processing_time_ms?: number;
   }>;
 }
 
@@ -67,6 +71,7 @@ const Dashboard: React.FC = () => {
   const [statsLoading, setStatsLoading] = useState(true);
   const [showPricing, setShowPricing] = useState(false);
   const syncInFlightRef = useRef(false);
+  const lastValidPlanRef = useRef<SubscriptionPlan | null>(null);
 
   const fetchUserStats = useCallback(async () => {
     if (!user?.id) return;
@@ -131,50 +136,49 @@ const Dashboard: React.FC = () => {
       });
 
       // Get user's plan from database and calculate credit usage summary
-      let userPlan = SUBSCRIPTION_PLANS.starter; // Default fallback
+      // Use last valid plan as fallback to prevent resetting to default when database lookup fails
+      let userPlan: SubscriptionPlan = lastValidPlanRef.current || SUBSCRIPTION_PLANS.starter;
       let planLoadError = null;
 
       if (user.subscription_plan) {
         try {
+          console.log(`[Dashboard] 🔍 Loading plan for: ${user.subscription_plan}`);
           const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
           if (dbPlan) {
             userPlan = dbPlan;
-            console.log(`[Dashboard] ✅ Loaded plan from database:`, {
-              planName: user.subscription_plan,
-              displayName: dbPlan.displayName,
-              displayCredits: dbPlan.features.displayCredits,
-              monthlyCredits: dbPlan.features.monthlyCredits
-            });
+            lastValidPlanRef.current = dbPlan; // Store successful plan load
+            console.log(`[Dashboard] ✅ Successfully loaded plan: ${dbPlan.displayName} (${dbPlan.features.displayCredits} display credits, ${dbPlan.features.monthlyCredits} monthly credits)`);
           } else {
             planLoadError = `Plan rule not found in database for: ${user.subscription_plan}`;
-            console.error(`[Dashboard] ❌ ${planLoadError}. Using default starter plan.`);
-            // Silently refresh user data in case subscription_plan is stale
-            // Don't await - let it refresh in background
-            if (refreshUser) {
-              refreshUser().catch(err => {
-                console.warn('[Dashboard] Background user refresh failed:', err);
-              });
+            console.warn(`[Dashboard] ⚠️ ${planLoadError}. Using last valid plan or default.`);
+            // If we have a last valid plan and it matches the user's subscription_plan, keep using it
+            if (lastValidPlanRef.current && lastValidPlanRef.current.id === user.subscription_plan) {
+              userPlan = lastValidPlanRef.current;
+              console.log(`[Dashboard] ✅ Using cached plan: ${userPlan.displayName} (${userPlan.features.displayCredits} display credits)`);
+            } else {
+              // Silently refresh user data in case subscription_plan is stale
+              // Don't await - let it refresh in background
+              if (refreshUser) {
+                refreshUser().catch(err => {
+                  console.warn('[Dashboard] Background user refresh failed:', err);
+                });
+              }
             }
           }
         } catch (error) {
           planLoadError = `Error loading plan: ${error instanceof Error ? error.message : 'Unknown error'}`;
           console.error(`[Dashboard] ❌ ${planLoadError}`);
+          // Use last valid plan if available
+          if (lastValidPlanRef.current && lastValidPlanRef.current.id === user.subscription_plan) {
+            userPlan = lastValidPlanRef.current;
+            console.log(`[Dashboard] ✅ Using cached plan after error: ${userPlan.displayName} (${userPlan.features.displayCredits} display credits)`);
+          }
         }
       } else {
         console.warn('[Dashboard] ⚠️ User has no subscription_plan set');
       }
 
       const creditUsageSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
-      console.log(`[Dashboard] 📊 Credit usage summary:`, {
-        userPlanId: user.subscription_plan,
-        planDisplayName: userPlan.displayName,
-        actualCreditsUsed,
-        actualCreditsTotal: userPlan.features.monthlyCredits,
-        displayCreditsTotal: creditUsageSummary.displayCreditsTotal,
-        displayCreditsUsed: creditUsageSummary.displayCreditsUsed,
-        displayCreditsRemaining: creditUsageSummary.displayCreditsRemaining,
-        planLoadError: planLoadError || 'none'
-      });
 
       // Count by model type
       const generationsByType = {
@@ -210,13 +214,47 @@ const Dashboard: React.FC = () => {
         });
       }
 
+      // Helper function to convert model type to user-friendly label
+      const getActivityTypeLabel = (modelType: string): string => {
+        // Convert to user-friendly labels (hide technical model names like veo3_fast)
+        const labels: Record<string, string> = {
+          'interior_design': 'Interior Design',
+          'exterior_design': 'Exterior Design',
+          'image_enhancement': 'Image Enhancement',
+          'element_replacement': 'Replace Elements',
+          'add_furnitures': 'Add Furniture',
+          'general_furniture': 'Add Furniture',
+          'video_veo3_fast': 'Video',
+          'video_minimax_director': 'Video',
+          'video': 'Video',
+          'smart_effects': 'Smart Effects'
+        };
+        
+        // Check if exact match exists first
+        if (labels[modelType]) {
+          return labels[modelType];
+        }
+        
+        // If it's a video type, normalize to just 'Video'
+        if (modelType.startsWith('video_')) {
+          return 'Video';
+        }
+        
+        // Otherwise, format the model type nicely
+        return modelType.split('_').map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+      };
+
       // Recent activity (last 10 generations)
       const recentActivity = userGenerations.slice(0, 10).map(g => ({
         id: g.id,
-        type: g.model_type.replace('_', ' '),
+        type: getActivityTypeLabel(g.model_type),
         status: g.status,
         timestamp: g.created_at,
-        model: g.model_type
+        model: g.model_type,
+        output_url: g.output_image_url || g.output_video_url,
+        processing_time_ms: g.processing_time_ms
       }));
 
       setUserStats({
@@ -244,8 +282,10 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      // If subscription plan changed, refresh user data first
+      // If subscription plan changed, clear cached plan and refresh user data first
       if (prevSubscriptionPlanRef.current !== user.subscription_plan) {
+        console.log(`[Dashboard] 🔄 Subscription plan changed from "${prevSubscriptionPlanRef.current}" to "${user.subscription_plan}". Clearing cached plan.`);
+        lastValidPlanRef.current = null; // Clear cached plan when plan changes
         prevSubscriptionPlanRef.current = user.subscription_plan;
         if (refreshUser) {
           refreshUser().then(() => {
@@ -343,8 +383,6 @@ const Dashboard: React.FC = () => {
       // For subscription success, sync subscription first, then refresh
       // For portal success, just refresh (portal changes are handled by webhooks)
       if (subscriptionSuccess) {
-        console.log('[Dashboard] Detected subscription=success, syncing subscription and refreshing...');
-        
         // Show loading toast
         const loadingToastId = showLoading('Processing your subscription... Please wait while we update your account.');
         
@@ -768,44 +806,87 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="p-6">
             <div className="space-y-4">
-              {userStats.recentActivity.map((activity) => (
-                <div key={activity.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className={`p-2 rounded-full ${activity.status === 'completed'
-                      ? 'bg-green-100 dark:bg-green-900'
-                      : activity.status === 'processing'
-                        ? 'bg-yellow-100 dark:bg-yellow-900'
-                        : 'bg-red-100 dark:bg-red-900'
-                      }`}>
-                      {activity.status === 'completed' ? (
-                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                      ) : activity.status === 'processing' ? (
-                        <PlayCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+              {userStats.recentActivity.map((activity) => {
+                const isVideo = activity.model?.startsWith('video_');
+                const outputUrl = activity.output_url;
+                const getAbsoluteUrl = (path: string | undefined) => {
+                  if (!path || path.trim() === '') return '';
+                  if (path.startsWith('http://') || path.startsWith('https://')) {
+                    return path;
+                  }
+                  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+                  return `${getBackendUrl()}/${cleanPath}`;
+                };
+                const absoluteOutputUrl = outputUrl ? getAbsoluteUrl(outputUrl) : null;
+
+                return (
+                  <div key={activity.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                    <div className="flex items-center space-x-4 flex-1 min-w-0">
+                      <div className={`p-2 rounded-full flex-shrink-0 ${activity.status === 'completed'
+                        ? 'bg-green-100 dark:bg-green-900'
+                        : activity.status === 'processing'
+                          ? 'bg-yellow-100 dark:bg-yellow-900'
+                          : 'bg-red-100 dark:bg-red-900'
+                        }`}>
+                        {activity.status === 'completed' ? (
+                          isVideo ? (
+                            <VideoIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          )
+                        ) : activity.status === 'processing' ? (
+                          <PlayCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {activity.type}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            {new Date(activity.timestamp).toLocaleDateString()} at {new Date(activity.timestamp).toLocaleTimeString()}
+                          </p>
+                          {activity.processing_time_ms && activity.status === 'completed' && (
+                            <p className="text-xs text-gray-500 dark:text-gray-500">
+                              • {(activity.processing_time_ms / 1000).toFixed(1)}s
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      {absoluteOutputUrl && activity.status === 'completed' && (
+                        <a
+                          href={absoluteOutputUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md transition-colors"
+                          onClick={(e) => {
+                            if (isVideo) {
+                              // For videos, try to open in a way that allows download
+                              e.preventDefault();
+                              window.open(absoluteOutputUrl, '_blank');
+                            }
+                          }}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {isVideo ? 'View Video' : 'View Output'}
+                        </a>
                       )}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
-                        {activity.type}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {new Date(activity.timestamp).toLocaleDateString()} at {new Date(activity.timestamp).toLocaleTimeString()}
-                      </p>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${activity.status === 'completed'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                        : activity.status === 'processing'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+                          : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        }`}>
+                        {activity.status}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${activity.status === 'completed'
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                      : activity.status === 'processing'
-                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
-                        : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                      }`}>
-                      {activity.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

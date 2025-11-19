@@ -11,6 +11,7 @@ import InteriorDesign from './pages/InteriorDesign';
 import ReplaceElements from './pages/ReplaceElements';
 import AddFurnitures from './pages/AddFurnitures';
 import ExteriorDesign from './pages/ExteriorDesign';
+import SmartEffects from './pages/SmartEffects';
 import Users from './pages/Users';
 import Auth from './pages/Auth';
 import Settings from './pages/Settings';
@@ -141,6 +142,13 @@ function AppRoutes() {
         <ProtectedRoute>
           <Layout>
             <ExteriorDesign />
+          </Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/smart-effects" element={
+        <ProtectedRoute>
+          <Layout>
+            <SmartEffects />
           </Layout>
         </ProtectedRoute>
       } />

@@ -1,3 +1,43 @@
-# https://www.robotstxt.org/robotstxt.html
+# robots.txt for RealVision AI
+# https://realvisionaire.com/robots.txt
+
 User-agent: *
-Disallow:
+Allow: /
+Allow: /pricing
+Allow: /privacy
+Disallow: /dashboard
+Disallow: /auth
+Disallow: /admin
+Disallow: /settings
+Disallow: /image-enhancement
+Disallow: /interior-design
+Disallow: /replace-elements
+Disallow: /add-furnitures
+Disallow: /exterior-design
+Disallow: /smart-effects
+Disallow: /users
+
+# Sitemap location
+Sitemap: https://realvisionaire.com/sitemap.xml
+
+# Crawl-delay (optional, helps prevent server overload)
+Crawl-delay: 1
+
+# Specific bot instructions
+User-agent: Googlebot
+Allow: /
+Disallow: /dashboard
+Disallow: /auth
+Disallow: /admin
+
+User-agent: Bingbot
+Allow: /
+Disallow: /dashboard
+Disallow: /auth
+Disallow: /admin
+
+User-agent: Slurp
+Allow: /
+Disallow: /dashboard
+Disallow: /auth
+Disallow: /admin

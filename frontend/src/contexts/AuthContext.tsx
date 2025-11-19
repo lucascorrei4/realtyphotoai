@@ -99,7 +99,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     const mappedUser = mapSessionUserToUser(sessionUser);
-    console.log('👤 Hydrating user from session state:', mappedUser.id, mappedUser.email);
 
     setUser(prev => {
       if (prev?.id === mappedUser.id) {
@@ -146,12 +145,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         if (session?.access_token && session?.user) {
-          console.log('✅ Session found:', session.user.id, session.user.email);
-
           setUserFromSession(session.user);
 
           // Fetch full profile from database in background (non-blocking)
-          console.log('🔄 Fetching profile for user:', session.user.id);
           fetchUserProfile(session.user.id).catch(err => {
             console.error('❌ Profile fetch error (non-critical):', err);
             // Don't clear user or set loading - user is already set from session
@@ -161,7 +157,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         // No session found, allow access to landing page
-        console.log('🔓 No session found - allowing access to landing page');
         markLoadingComplete();
 
       } catch (error) {
@@ -193,10 +188,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [markLoadingComplete, setUserFromSession]);
 
   const fetchUserProfile = async (userId: string, retryCount: number = 0): Promise<void> => {
-    console.log('🔍 fetchUserProfile called:', userId, 'retry:', retryCount);
-
     if (isFetchingRef.current && retryCount === 0) {
-      console.log('⏳ Profile fetch already in progress, skipping...');
       return;
     }
 
@@ -204,8 +196,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isFetchingRef.current = true;
 
     try {
-      console.log('📡 Starting profile fetch...');
-
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
       const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
@@ -221,7 +211,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      console.log('✅ Supabase configured, making query...');
       const { data: profile, error } = await supabase
         .from('user_profiles')
         .select('id,email,name,phone,role,subscription_plan,monthly_generations_limit,total_generations,successful_generations,failed_generations,is_active,created_at,updated_at')
@@ -232,7 +221,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('❌ Error fetching user profile:', error);
 
         if (error.code === 'PGRST116' || /No rows/i.test(error.message || '')) {
-          console.log('📝 Profile not found, creating new profile...');
           await createUserProfile(userId);
 
           if (retryCount < 2) {
@@ -241,7 +229,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         } else if (retryCount < 2 && (/timeout|network/i.test(error.message || '') || error.code === 'PGRST301')) {
           const delay = (1 << retryCount) * 500; // 500ms, 1s
-          console.log(`🔄 Retrying profile fetch in ${delay}ms... (attempt ${retryCount + 1}/3)`);
           await new Promise(resolve => setTimeout(resolve, delay));
           return fetchUserProfile(userId, retryCount + 1);
         } else {
@@ -283,7 +270,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (retryCount < 2) {
         const delay = (1 << retryCount) * 500;
-        console.log(`🔄 Retrying profile fetch after error in ${delay}ms... (attempt ${retryCount + 1}/3)`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return fetchUserProfile(userId, retryCount + 1);
       }
@@ -316,7 +302,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (error) {
         // Ignore 409/23505 errors - profile already exists (duplicate key)
         if (error.code === '23505' || error.message?.includes('duplicate key')) {
-          console.log('✅ Profile already exists, skipping creation');
           return;
         }
         console.error('Error creating user profile:', error);
@@ -351,7 +336,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (!supabaseAnonKey || !supabaseUrl) {
         // Demo mode - simulate successful code sending
-        console.log('Demo mode: Simulating OTP code sent to:', email);
         // Still send conversion event even in demo mode
         sendConversionEvent('send-code', email).catch(() => {
           // Ignore errors in demo mode
@@ -400,7 +384,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (!supabaseAnonKey || !supabaseUrl) {
         // Demo mode - simulate successful login
-        console.log('Demo mode: Simulating login for:', email);
         const demoUser = {
           id: 'demo-user-123',
           email: email,

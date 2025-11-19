@@ -105,6 +105,11 @@ export class PlanRulesService {
    * Uses 200% margin: Revenue = 3.0 × Cost
    * Max cost = Price ÷ 3.0
    * Max credits = Max cost ÷ $0.039 (image cost)
+   * 
+   * Note: Credits can be used for both images and videos:
+   * - Image: 1 credit = $0.039 cost (maintains 200% margin)
+   * - Video: 12 credits/second = ~$0.15 cost/second × 3.0 margin = $0.45/second charge
+   * Both maintain the same 200% profit margin
    */
   calculateCreditsForPlan(planRule: PlanRule): {
     monthlyCredits: number;
@@ -124,6 +129,7 @@ export class PlanRulesService {
     const maxCost = price / 3.0;
     
     // Calculate max credits: Max cost ÷ $0.039 per image
+    // Credits are universal and maintain 200% margin for both images and videos
     const monthlyCredits = Math.floor(maxCost / 0.039);
     
     // Calculate display credits based on plan tier

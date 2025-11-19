@@ -159,7 +159,6 @@ const Settings: React.FC = () => {
       setSubscriptionLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        console.log('No session token available');
         setSubscriptionLoading(false);
         return;
       }
@@ -172,11 +171,9 @@ const Settings: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Subscription data received:', data);
         if (data.subscription) {
           setSubscription(data.subscription);
         } else {
-          console.log('No subscription found in response');
           setSubscription(null);
         }
       } else {
@@ -229,8 +226,6 @@ const Settings: React.FC = () => {
       }
 
       const apiUrl = `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000'}/api/v1/auth/profile`;
-      console.log('Making API call to:', apiUrl);
-      console.log('Request body:', { name: editForm.name, phone: editForm.phone });
 
       const response = await fetch(apiUrl, {
         method: 'PUT',
@@ -243,9 +238,6 @@ const Settings: React.FC = () => {
           phone: editForm.phone
         })
       });
-
-      console.log('Response status:', response.status);
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         let errorData;
@@ -261,12 +253,9 @@ const Settings: React.FC = () => {
       const updatedProfile = await response.json();
 
       // Update the user context with the new profile data
-      console.log('Profile updated successfully:', updatedProfile);
-
       // Refresh the user data in AuthContext to reflect the changes
       try {
         await refreshUser();
-        console.log('User context refreshed with updated profile');
       } catch (error) {
         console.warn('Failed to refresh user context:', error);
         // Don't fail the save operation if context refresh fails
@@ -279,9 +268,6 @@ const Settings: React.FC = () => {
       setTimeout(() => {
         setSaveSuccess(false);
       }, 3000);
-
-      console.log('Profile saved successfully!');
-
     } catch (error) {
       console.error('Error updating profile:', error);
       setSaveError(error instanceof Error ? error.message : 'Failed to save profile');
@@ -366,8 +352,6 @@ const Settings: React.FC = () => {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 5000);
       }
-
-      console.log('Subscription synced successfully:', data);
     } catch (error) {
       console.error('Error syncing subscription:', error);
       if (showFeedback) {

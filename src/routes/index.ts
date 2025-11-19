@@ -284,6 +284,27 @@ router.post('/exterior-design',
   asyncHandler(imageController.exteriorDesign)
 );
 
+// Smart effects endpoint
+router.post('/smart-effects', 
+  authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('smart_effects'),
+  processingRateLimit,
+  uploadMiddleware.single('houseImage'),
+  validateUploadedFile,
+  handleUploadError,
+  asyncHandler(imageController.smartEffects)
+);
+
+// Video motion generation endpoint
+router.post('/generate-video-motion', 
+  authenticateToken,
+  checkGenerationLimit,
+  checkModelAccess('video_generation'),
+  processingRateLimit,
+  asyncHandler(imageController.generateVideoMotion)
+);
+
 // HEIC conversion endpoint for preview
 router.post('/convert-heic', 
   uploadMiddleware.single('image'),

@@ -224,4 +224,50 @@ router.put('/generations/:generationId', userRateLimit, asyncHandler(async (req,
   }
 }));
 
+/**
+ * Soft delete a generation
+ * DELETE /user/generations/:generationId
+ */
+router.delete('/generations/:generationId', userRateLimit, asyncHandler(async (req, res) => {
+  try {
+    const { generationId } = req.params;
+    const userId = req.query.userId as string || req.headers['x-user-id'] as string;
+    
+    if (!userId) {
+      res.status(400).json({
+        success: false,
+        message: 'User ID is required',
+        error: 'MISSING_USER_ID'
+      });
+      return;
+    }
+
+    await userStatsService.softDeleteGeneration(generationId, userId);
+    
+    res.json({
+      success: true,
+      message: 'Generation deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Error in delete generation route:', error as Error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Check if it's an authorization error
+    if (errorMessage.includes('Unauthorized') || errorMessage.includes('not found')) {
+      res.status(404).json({
+        success: false,
+        message: errorMessage,
+        error: 'GENERATION_NOT_FOUND'
+      });
+      return;
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete generation',
+      error: 'INTERNAL_SERVER_ERROR'
+    });
+  }
+}));
+
 export default router;

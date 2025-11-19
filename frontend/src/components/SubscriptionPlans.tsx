@@ -46,7 +46,6 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
             .sort((a, b) => a.price.monthly - b.price.monthly);
           
           setPlans(paidPlans);
-          console.log('[SubscriptionPlans] Loaded plans from database:', paidPlans.map(p => ({ id: p.id, displayName: p.displayName })));
         } else {
           // Fallback to hardcoded plans if database fetch fails
           console.warn('[SubscriptionPlans] No plans found in database, using hardcoded plans');
@@ -59,7 +58,6 @@ const SubscriptionPlans: React.FC<SubscriptionPlansProps> = ({
         // Set current plan ID from user's subscription_plan
         if (user?.subscription_plan) {
           setCurrentPlanId(user.subscription_plan);
-          console.log('[SubscriptionPlans] Current plan ID set to:', user.subscription_plan);
         }
       } catch (err) {
         console.error('[SubscriptionPlans] Error fetching plans:', err);

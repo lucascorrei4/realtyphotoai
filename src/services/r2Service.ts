@@ -66,13 +66,29 @@ export class R2Service {
       // Determine content type if not provided
       const finalContentType = contentType || this.getContentTypeFromExtension(key);
 
+      // Sanitize metadata - AWS SDK requires all metadata values to be strings
+      const sanitizedMetadata: Record<string, string> | undefined = metadata
+        ? Object.entries(metadata).reduce((acc, [key, value]) => {
+            // Only include metadata with string values
+            // Skip undefined, null, and non-string values
+            if (value !== undefined && value !== null) {
+              // Convert to string: handle objects/arrays by stringifying, numbers/bools to string
+              const stringValue = typeof value === 'object' 
+                ? JSON.stringify(value) 
+                : String(value);
+              acc[key] = stringValue;
+            }
+            return acc;
+          }, {} as Record<string, string>)
+        : undefined;
+
       // Upload to R2
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         Body: fileBuffer,
         ContentType: finalContentType,
-        Metadata: metadata,
+        ...(sanitizedMetadata && Object.keys(sanitizedMetadata).length > 0 && { Metadata: sanitizedMetadata }),
       });
 
       const result = await this.s3Client.send(command);
@@ -115,12 +131,28 @@ export class R2Service {
 
       const finalContentType = contentType || this.getContentTypeFromExtension(key);
 
+      // Sanitize metadata - AWS SDK requires all metadata values to be strings
+      const sanitizedMetadata: Record<string, string> | undefined = metadata
+        ? Object.entries(metadata).reduce((acc, [key, value]) => {
+            // Only include metadata with string values
+            // Skip undefined, null, and non-string values
+            if (value !== undefined && value !== null) {
+              // Convert to string: handle objects/arrays by stringifying, numbers/bools to string
+              const stringValue = typeof value === 'object' 
+                ? JSON.stringify(value) 
+                : String(value);
+              acc[key] = stringValue;
+            }
+            return acc;
+          }, {} as Record<string, string>)
+        : undefined;
+
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         Body: buffer,
         ContentType: finalContentType,
-        Metadata: metadata,
+        ...(sanitizedMetadata && Object.keys(sanitizedMetadata).length > 0 && { Metadata: sanitizedMetadata }),
       });
 
       const result = await this.s3Client.send(command);

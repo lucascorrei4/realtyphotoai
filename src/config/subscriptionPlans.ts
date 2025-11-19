@@ -208,29 +208,77 @@ export function getFeatureList(plan: SubscriptionPlan): string[] {
   const features: string[] = [];
 
   // Core features - Credit-based system
-  // Use displayCredits for user-facing info, but actual limits use monthlyCredits
+  // Use displayCredits for user-facing info and generation capacity display
   const displayCredits = plan.features.displayCredits || plan.features.monthlyCredits;
-  const actualCredits = plan.features.monthlyCredits;
   features.push(`${displayCredits.toLocaleString()} Credits per month`);
-  features.push(`~${actualCredits.toLocaleString()} images OR ~${Math.floor(actualCredits / 15).toLocaleString()} videos (16s) OR mix`);
+  // Calculate generation capacity based on displayCredits (what users see)
+  const maxImages = Math.floor(displayCredits / CREDIT_COSTS.IMAGE);
+  const maxVideos6s = Math.floor(displayCredits / CREDIT_COSTS.VIDEO_6S);
+  features.push(`~${maxImages.toLocaleString()} images OR ~${maxVideos6s.toLocaleString()} videos (6s) OR mix`);
 
   return features;
 }
 
 /**
+ * Pricing Configuration - Reference values
+ * These are the actual pricing values (kept for documentation)
+ * Credit costs below are calculated based on display credits, not these values
+ */
+export const PRICING_CONFIG = {
+  // Customer charges (what you charge customers)
+  IMAGE_CHARGE: 0.50, // $0.50 per image
+  VIDEO_6S_CHARGE: 3.00, // $3.00 per 6-second video
+  
+  // Actual costs (what it costs you)
+  IMAGE_COST: 0.039, // $0.039 per image
+  VIDEO_COST_PER_SECOND: 0.150, // $0.150 per second
+  
+  // Credit base value (1 credit = this cost)
+  CREDIT_BASE_COST: 0.039, // $0.039 per credit
+} as const;
+
+/**
  * Credit cost constants for different generation types
  * These define how many credits each generation type costs
+ * 
+ * Credit costs are calculated based on display credits and generation capacity:
+ * - For Creator plan ($9.99) with 800 display credits:
+ *   - 19.98 images = 800 credits → 1 image = 800 ÷ 19.98 = 40.04 → 40 credits
+ *   - 3 videos = 800 credits → 1 video = 800 ÷ 3 = 266.67 → 267 credits (or 240 if 3.33 videos)
+ * 
+ * This ensures that with 800 credits, users can generate:
+ * - ~20 images (20 × 40 = 800 credits)
+ * - ~3 videos (3 × 267 = 801 credits, or 3.33 × 240 = 800 credits)
+ * 
+ * Pricing Strategy:
+ * - Image: $0.50 per image (cost: $0.039, profit already included in $0.50)
+ * - Video: $3.00 per 6-second video (cost: $0.90, profit already included in $3.00)
  */
 export const CREDIT_COSTS = {
-  IMAGE: 1, // 1 credit per image
-  VIDEO_PER_SECOND: 15, // 15 credits per second of video
+  // Based on 800 credits ÷ 19.98 images = 40.04 → 40 credits per image
+  IMAGE: 40, // 40 credits per image (allows ~20 images with 800 credits)
+  
+  // Based on 800 credits ÷ 3 videos = 266.67 → 267 credits per 6s video
+  // Or 800 credits ÷ 3.33 videos = 240.24 → 240 credits per 6s video
+  VIDEO_6S: 240, // 240 credits per 6s video (allows ~3.33 videos with 800 credits)
+  
+  // Per second: 240 ÷ 6 = 40 credits per second
+  VIDEO_PER_SECOND: 40, // 40 credits per second (for variable durations)
 } as const;
 
 /**
  * Calculate credits required for a video generation
+ * Uses per-second rate for variable durations
  */
 export function getVideoCredits(durationSeconds: number): number {
   return Math.ceil(durationSeconds * CREDIT_COSTS.VIDEO_PER_SECOND);
+}
+
+/**
+ * Get credits for a standard 6-second video (optimized)
+ */
+export function getVideo6sCredits(): number {
+  return CREDIT_COSTS.VIDEO_6S;
 }
 
 /**

@@ -229,10 +229,10 @@ export const checkModelAccess = (modelType: string) => {
       // This would typically check against plan_rules table
       // For now, we'll implement basic checks
       const allowedModels = {
-        'free': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures'],
-        'basic': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures'],
-        'premium': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures'],
-        'enterprise': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures']
+        'free': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
+        'basic': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
+        'premium': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
+        'enterprise': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation']
       };
 
       const userAllowedModels = allowedModels[userProfile.subscription_plan as keyof typeof allowedModels] || [];

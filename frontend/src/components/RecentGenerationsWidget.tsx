@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X, Video, Play, Loader2, Trash2 } from 'lucide-react';
 import { getBackendUrl } from '../config/api';
 import { supabase } from '../config/supabase';
+import { authenticatedFetch } from '../utils/apiUtils';
+import { useToast } from '../hooks/useToast';
+import CameraMovementModal, { CameraMovementOption } from './CameraMovementModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
+import { useVideoGenerationQueue } from '../hooks/useVideoGenerationQueue';
 
 export interface Generation {
   id: string;
@@ -10,6 +15,7 @@ export interface Generation {
   created_at: string;
   input_image_url?: string;
   output_image_url?: string;
+  output_video_url?: string; // For video outputs
   prompt?: string;
   error_message?: string;
   processing_time_ms?: number;
@@ -48,6 +54,14 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     dateTo: '',
     status: 'all'
   });
+  const [videoGenerating, setVideoGenerating] = useState<Record<string, 'veo3_fast' | null>>({});
+  const [pollingIntervals, setPollingIntervals] = useState<Record<string, NodeJS.Timeout>>({});
+  const [cameraMovementModal, setCameraMovementModal] = useState<{ isOpen: boolean; generationId: string; imageUrl: string } | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; generationId: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const generalPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const { showSuccess, showError, showWarning, showInfo, updateToast, dismiss } = useToast();
+  const { canStartGeneration, getProcessingCount, addToQueue, updateQueueItem, removeFromQueue } = useVideoGenerationQueue();
 
   const itemsPerPage = maxItems;
 
@@ -61,6 +75,37 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       fetchGenerations();
     }
   }, [refreshTrigger]);
+
+  // General polling for any processing generations
+  useEffect(() => {
+    // Check if there are any processing generations
+    const hasProcessingGenerations = generations.some(
+      g => g.status === 'processing' || g.status === 'pending'
+    );
+
+    // If there are processing generations, start polling
+    if (hasProcessingGenerations && !generalPollIntervalRef.current) {
+      const interval = setInterval(() => {
+        fetchGenerations();
+      }, 8000); // Poll every 8 seconds for general generations
+
+      generalPollIntervalRef.current = interval;
+    }
+
+    // Clean up interval when no processing generations
+    if (!hasProcessingGenerations && generalPollIntervalRef.current) {
+      clearInterval(generalPollIntervalRef.current);
+      generalPollIntervalRef.current = null;
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (generalPollIntervalRef.current) {
+        clearInterval(generalPollIntervalRef.current);
+        generalPollIntervalRef.current = null;
+      }
+    };
+  }, [generations]);
 
   const fetchGenerations = async () => {
     if (!userId) {
@@ -78,15 +123,19 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         userId,
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
-        ...(filters.modelType !== 'all' && { modelType: filters.modelType }),
         ...(filters.status !== 'all' && { status: filters.status }),
         ...(filters.dateFrom && { dateFrom: filters.dateFrom }),
         ...(filters.dateTo && { dateTo: filters.dateTo })
       });
 
-      // If modelTypeFilter is provided, always use it
-      if (modelTypeFilter) {
-        params.set('modelType', modelTypeFilter);
+      // Handle modelType filter: use modelTypeFilter if explicitly provided (and not 'all'), 
+      // otherwise use the user's filter selection
+      const effectiveModelType = (modelTypeFilter && modelTypeFilter !== 'all') 
+        ? modelTypeFilter 
+        : filters.modelType;
+      
+      if (effectiveModelType !== 'all') {
+        params.set('modelType', effectiveModelType);
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/user/generations?${params}`);
@@ -143,6 +192,372 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       hour12: true,
     });
   };
+
+  // Check if output is a video
+  const isVideoOutput = (generation: Generation): boolean => {
+    if (generation.model_type?.startsWith('video_')) {
+      return true;
+    }
+    const outputUrl = generation.output_image_url || generation.output_video_url;
+    if (outputUrl) {
+      return outputUrl.toLowerCase().endsWith('.mp4') || 
+             outputUrl.toLowerCase().endsWith('.webm') ||
+             outputUrl.toLowerCase().endsWith('.mov');
+    }
+    return false;
+  };
+
+  // Get video URL from generation
+  const getVideoUrl = (generation: Generation): string | null => {
+    const outputUrl = generation.output_image_url || generation.output_video_url;
+    if (!outputUrl) return null;
+    
+    if (outputUrl.startsWith('http://') || outputUrl.startsWith('https://')) {
+      return outputUrl;
+    }
+    const cleanPath = outputUrl.startsWith('/') ? outputUrl.slice(1) : outputUrl;
+    return `${getBackendUrl()}/${cleanPath}`;
+  };
+
+  // Poll for video generation completion
+  const pollVideoGeneration = (videoGenerationId: string, toastId: string, queueItemId?: string, videoTypeKey?: string) => {
+    let pollAttempts = 0;
+    const maxAttempts = 36; // 36 * 5 seconds = 3 minutes max
+    
+    const pollInterval = setInterval(async () => {
+      pollAttempts++;
+      
+      // Stop polling after max attempts
+      if (pollAttempts > maxAttempts) {
+        clearInterval(pollInterval);
+        setPollingIntervals(prev => {
+          const newState = { ...prev };
+          delete newState[videoGenerationId];
+          return newState;
+        });
+        updateToast(toastId, 'Video generation is taking longer than expected. Please check back in a moment.', 'warning');
+        return;
+      }
+      
+      try {
+        const response = await authenticatedFetch(`/api/v1/user/generations?userId=${userId}&limit=100`);
+        
+        if (!response.ok) {
+          console.error('Polling error: Response not OK', response.status, response.statusText);
+          return; // Continue polling on error
+        }
+        
+        const result = await response.json();
+        
+        if (result.success && result.data?.generations) {
+          const videoGen = result.data.generations.find((g: Generation) => g.id === videoGenerationId);
+          
+          if (videoGen) {
+            if (videoGen.status === 'completed') {
+              // Clear polling interval
+              clearInterval(pollInterval);
+              setPollingIntervals(prev => {
+                const newState = { ...prev };
+                delete newState[videoGenerationId];
+                return newState;
+              });
+              
+              // Clear the video generating state
+              if (videoTypeKey) {
+                setVideoGenerating(prev => {
+                  const newState = { ...prev };
+                  delete newState[videoTypeKey];
+                  return newState;
+                });
+              }
+              
+              // Update queue status to completed and remove after a delay
+              if (queueItemId) {
+                updateQueueItem(queueItemId, { status: 'completed' });
+                // Auto-remove from queue after 5 seconds
+                setTimeout(() => {
+                  removeFromQueue(queueItemId);
+                }, 5000);
+              }
+              
+              // Update toast to success with action
+              updateToast(toastId, '🎬 Video generated successfully! Scroll down to view it.', 'success');
+              
+              // Refresh generations to show the new video
+              fetchGenerations();
+              
+              // Scroll to the video after a short delay
+              setTimeout(() => {
+                const videoElement = document.querySelector(`[data-generation-id="${videoGenerationId}"]`);
+                if (videoElement) {
+                  videoElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  // Highlight the video card briefly
+                  videoElement.classList.add('ring-4', 'ring-blue-500', 'ring-opacity-50');
+                  setTimeout(() => {
+                    videoElement.classList.remove('ring-4', 'ring-blue-500', 'ring-opacity-50');
+                  }, 3000);
+                }
+              }, 500);
+              
+              // Auto-dismiss after 8 seconds (give user time to see the message)
+              setTimeout(() => {
+                dismiss(toastId);
+              }, 8000);
+            } else if (videoGen.status === 'failed') {
+              // Clear polling interval
+              clearInterval(pollInterval);
+              setPollingIntervals(prev => {
+                const newState = { ...prev };
+                delete newState[videoGenerationId];
+                return newState;
+              });
+              
+              // Clear the video generating state
+              if (videoTypeKey) {
+                setVideoGenerating(prev => {
+                  const newState = { ...prev };
+                  delete newState[videoTypeKey];
+                  return newState;
+                });
+              }
+              
+              // Update queue status to failed
+              if (queueItemId) {
+                updateQueueItem(queueItemId, { 
+                  status: 'failed', 
+                  error: videoGen.error_message || 'Unknown error' 
+                });
+              }
+              
+              updateToast(toastId, `Video generation failed: ${videoGen.error_message || 'Unknown error'}`, 'error');
+            }
+            // If status is 'processing', continue polling
+          } else {
+            // Generation not found yet, continue polling (might not be in the first page)
+          }
+        } else {
+          console.error('Polling error: Unexpected response format', result);
+        }
+      } catch (error) {
+        console.error('Error polling video generation:', error);
+        // Continue polling on error (might be transient)
+      }
+    }, 5000); // Poll every 5 seconds
+    
+    // Store interval for cleanup
+    setPollingIntervals(prev => ({ ...prev, [videoGenerationId]: pollInterval }));
+  };
+
+  // Open delete confirmation modal
+  const handleDeleteClick = (generationId: string) => {
+    setDeleteModal({ isOpen: true, generationId });
+  };
+
+  // Delete generation (soft delete)
+  const handleDeleteGeneration = async () => {
+    if (!deleteModal?.generationId) return;
+
+    const generationIdToDelete = deleteModal.generationId;
+    setIsDeleting(true);
+
+    try {
+      const response = await authenticatedFetch(`/api/v1/user/generations/${generationIdToDelete}?userId=${userId}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        showSuccess('Generation deleted successfully');
+        // Close modal
+        setDeleteModal(null);
+        
+        // Optimistically remove the item from local state for immediate UI update
+        setGenerations(prev => prev.filter(g => g.id !== generationIdToDelete));
+        setTotalCount(prev => Math.max(0, prev - 1));
+        
+        // Refresh the list after a short delay to ensure backend has processed and get accurate counts
+        // This ensures pagination and total counts are correct
+        setTimeout(() => {
+          fetchGenerations();
+        }, 500);
+      } else {
+        // If deletion failed, show error
+        showError(result.message || 'Failed to delete generation');
+      }
+    } catch (error) {
+      console.error('Error deleting generation:', error);
+      showError('Failed to delete generation. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Close delete modal
+  const handleCloseDeleteModal = () => {
+    if (!isDeleting) {
+      setDeleteModal(null);
+    }
+  };
+
+  // Generate video from image
+  const handleGenerateVideo = async (
+    generationId: string, 
+    imageUrl: string, 
+    motionType: 'veo3_fast',
+    cameraMovement?: string
+  ) => {
+    if (!imageUrl) {
+      showWarning('No image URL available for video generation');
+      return;
+    }
+
+    // Check concurrent limit (3 max)
+    if (!canStartGeneration()) {
+      const processingCount = getProcessingCount();
+      showWarning(
+        `You can only generate 3 videos at a time. Please wait for ${processingCount} video${processingCount > 1 ? 's' : ''} to complete.`
+      );
+      return;
+    }
+
+    // Create unique ID for queue item
+    const queueItemId = `${generationId}_${Date.now()}`;
+    let currentQueueItemId = queueItemId;
+
+    // Add to queue (this will fail if limit exceeded)
+    const added = addToQueue(queueItemId, generationId, imageUrl, motionType);
+    if (!added) {
+      showWarning('Unable to start video generation. Maximum concurrent limit reached.');
+      return;
+    }
+
+    // Use different keys for animate vs camera movement to avoid both buttons showing as generating
+    const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
+    setVideoGenerating(prev => ({ ...prev, [videoTypeKey]: motionType }));
+    
+    // Close modal if it's open
+    if (cameraMovementModal?.isOpen) {
+      setCameraMovementModal(null);
+    }
+
+    // Update queue status to processing
+    updateQueueItem(queueItemId, { status: 'processing' });
+
+    // Show initial toast with 2-minute warning
+    const toastId = showInfo('🎬 Video generation started! This may take up to 2 minutes to process. We\'ll notify you when it\'s ready.');
+
+    try {
+      const response = await authenticatedFetch('/api/v1/generate-video-motion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl,
+          motionType,
+          options: { 
+            prompt: 'Add a impressive ultrarealistic movement to this image',
+            cameraMovement: cameraMovement,
+            duration: 6
+          }
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.data?.generationId) {
+        const videoGenerationId = result.data.generationId;
+        
+        // Update queue item with actual generation ID
+        updateQueueItem(currentQueueItemId, { generationId: videoGenerationId });
+        
+        // Check if video is already completed (synchronous generation)
+        if (result.data?.resultVideoUrl) {
+          // Video completed immediately - update queue and show success
+          updateQueueItem(currentQueueItemId, { status: 'completed' });
+          // Auto-remove from queue after 5 seconds
+          setTimeout(() => {
+            removeFromQueue(currentQueueItemId);
+          }, 5000);
+          updateToast(toastId, '🎬 Video generated successfully! Scroll down to view it.', 'success');
+          
+          // Clear the video generating state immediately
+          const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
+          setVideoGenerating(prev => {
+            const newState = { ...prev };
+            delete newState[videoTypeKey];
+            return newState;
+          });
+          
+          // Refresh generations to show the new video
+          fetchGenerations();
+          
+          // Scroll to the video after a short delay
+          setTimeout(() => {
+            const videoElement = document.querySelector(`[data-generation-id="${videoGenerationId}"]`);
+            if (videoElement) {
+              videoElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // Highlight the video card briefly
+              videoElement.classList.add('ring-4', 'ring-blue-500', 'ring-opacity-50');
+              setTimeout(() => {
+                videoElement.classList.remove('ring-4', 'ring-blue-500', 'ring-opacity-50');
+              }, 3000);
+            }
+          }, 1000);
+          
+          // Auto-dismiss after 8 seconds
+          setTimeout(() => {
+            dismiss(toastId);
+          }, 8000);
+        } else {
+          // Video is still processing - start polling for completion
+          // Pass queueItemId and videoTypeKey to pollVideoGeneration so it can update the queue and clear state
+          const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
+          pollVideoGeneration(videoGenerationId, toastId, currentQueueItemId, videoTypeKey);
+          
+          // Refresh generations after a short delay to see the processing status
+          setTimeout(() => {
+            fetchGenerations();
+          }, 2000);
+        }
+      } else {
+        // Update queue to failed status
+        updateQueueItem(currentQueueItemId, { 
+          status: 'failed', 
+          error: result.message || result.error 
+        });
+        updateToast(toastId, `Failed to generate video: ${result.message || result.error}`, 'error');
+      }
+    } catch (error) {
+      console.error('Error generating video:', error);
+      // Update queue to failed status
+      updateQueueItem(currentQueueItemId, { 
+        status: 'failed', 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+      updateToast(toastId, 'Failed to generate video. Please try again.', 'error');
+    } finally {
+      // Clear the correct video type key (animate or camera)
+      const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
+      setVideoGenerating(prev => {
+        const newState = { ...prev };
+        delete newState[videoTypeKey];
+        return newState;
+      });
+    }
+  };
+
+  // Cleanup polling intervals on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(pollingIntervals).forEach(interval => clearInterval(interval));
+      if (generalPollIntervalRef.current) {
+        clearInterval(generalPollIntervalRef.current);
+        generalPollIntervalRef.current = null;
+      }
+    };
+  }, [pollingIntervals]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -417,7 +832,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         } else {
           // Fallback: copy URL to clipboard
           await navigator.clipboard.writeText(src);
-          console.log('Image URL copied to clipboard');
           // You could add a toast notification here
         }
       } catch (error) {
@@ -425,7 +839,6 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         // Fallback: copy URL to clipboard
         try {
           await navigator.clipboard.writeText(src);
-          console.log('Image URL copied to clipboard as fallback');
         } catch (fallbackError) {
           console.error('Failed to copy URL to clipboard:', fallbackError);
         }
@@ -538,19 +951,114 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
           </div>
         )}
 
-        {/* After Image */}
+        {/* After Image or Video */}
         {outputImageUrl ? (
-          <ImageWithLoading
-            src={outputImageUrl}
-            alt="After"
-            label="After"
-            labelColor="bg-green-500"
-            showActions={true}
-            beforeImageSrc={inputImageUrl}
-          />
+          isVideoOutput(generation) ? (
+            // Video Player
+            <div className="relative group">
+              <div className="w-full h-40 sm:h-48 lg:h-56 bg-black rounded-lg overflow-hidden">
+                <video
+                  src={getVideoUrl(generation) || outputImageUrl}
+                  controls
+                  className="w-full h-full object-contain"
+                  preload="metadata"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+              <div className="absolute top-2 left-2 bg-blue-500 text-white px-2 py-1 rounded text-xs font-medium flex items-center gap-1">
+                <Video className="h-3 w-3" />
+                Video
+              </div>
+            </div>
+          ) : (
+            // Image with video generation buttons
+            <div className="space-y-2">
+              <ImageWithLoading
+                src={outputImageUrl}
+                alt="After"
+                label="After"
+                labelColor="bg-green-500"
+                showActions={true}
+                beforeImageSrc={inputImageUrl}
+              />
+              
+              {/* Video Generation Buttons */}
+              {generation.status === 'completed' && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => handleGenerateVideo(generation.id, outputImageUrl, 'veo3_fast')}
+                    disabled={!!videoGenerating[`${generation.id}_animate`] || !!videoGenerating[`${generation.id}_camera`]}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Animate elements in the scene (e.g., snow, leaves, water)"
+                  >
+                    {videoGenerating[`${generation.id}_animate`] === 'veo3_fast' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Video className="h-4 w-4" />
+                        <span>Animate Scene</span>
+                      </>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={() => setCameraMovementModal({ 
+                      isOpen: true, 
+                      generationId: generation.id, 
+                      imageUrl: outputImageUrl 
+                    })}
+                    disabled={!!videoGenerating[`${generation.id}_animate`] || !!videoGenerating[`${generation.id}_camera`]}
+                    className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-700 hover:to-pink-700 text-white text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Move the camera around the scene (pan, zoom, orbit)"
+                  >
+                    {videoGenerating[`${generation.id}_camera`] === 'veo3_fast' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        <span>Camera Movement</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )
         ) : (
           <div className="w-full h-40 sm:h-48 lg:h-56 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center">
-            <span className="text-xs text-gray-500 dark:text-gray-400">No output image</span>
+            {generation.status === 'processing' || generation.status === 'pending' ? (
+              <div className="flex flex-col items-center justify-center space-y-4 px-4 w-full max-w-xs">
+                <Loader2 className="h-8 w-8 text-indigo-600 dark:text-indigo-400 animate-spin" />
+                <div className="w-full">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 text-center mb-2">
+                    {generation.status === 'processing' ? 'Processing your image...' : 'Queued for processing...'}
+                  </p>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 animate-pulse"
+                      style={{
+                        width: generation.status === 'processing' ? '65%' : '30%',
+                        animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                      }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
+                    {generation.status === 'processing' 
+                      ? 'This usually takes 30-120 seconds' 
+                      : 'Waiting to start...'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-500 dark:text-gray-400">No output image</span>
+            )}
           </div>
         )}
       </div>
@@ -626,10 +1134,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               >
                 <option value="all">All Types</option>
                 <option value="interior_design">Interior Design</option>
+                <option value="exterior_design">Exterior Design</option>
                 <option value="image_enhancement">Image Enhancement</option>
                 <option value="element_replacement">Element Replacement</option>
                 <option value="add_furnitures">Add Furnitures</option>
-                <option value="exterior_design">Exterior Design</option>
+                <option value="smart_effects">Smart Effects</option>
               </select>
             </div>
 
@@ -689,7 +1198,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         {generations.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-8">
             {generations.map((generation) => (
-              <div key={generation.id} className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
+              <div 
+                key={generation.id} 
+                data-generation-id={generation.id}
+                className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all duration-300"
+              >
                 {/* Header Section */}
                 <div className="p-4 border-b border-gray-200 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-2">
@@ -703,10 +1216,20 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                         </span>
                       )}
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                        {formatDate(generation.created_at)}
+                    <div className="flex items-center space-x-3">
+                      <div className="text-right">
+                        <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                          {formatDate(generation.created_at)}
+                        </div>
                       </div>
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => handleDeleteClick(generation.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="Delete generation"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -772,6 +1295,34 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
           </div>
         )}
       </div>
+
+      {/* Camera Movement Modal */}
+      {cameraMovementModal && (
+        <CameraMovementModal
+          isOpen={cameraMovementModal.isOpen}
+          onClose={() => setCameraMovementModal(null)}
+          onSelect={(movement: CameraMovementOption) => {
+            // Use veo3_fast for camera movement to ensure aspect ratio is respected
+            handleGenerateVideo(
+              cameraMovementModal.generationId,
+              cameraMovementModal.imageUrl,
+              'veo3_fast',
+              movement.prompt
+            );
+          }}
+          isGenerating={!!videoGenerating[cameraMovementModal.generationId]}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal && (
+        <DeleteConfirmationModal
+          isOpen={deleteModal.isOpen}
+          onClose={handleCloseDeleteModal}
+          onConfirm={handleDeleteGeneration}
+          isDeleting={isDeleting}
+        />
+      )}
     </div>
   );
 };

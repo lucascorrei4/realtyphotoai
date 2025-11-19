@@ -467,6 +467,68 @@ export class ReplicateService {
   }
 
   /**
+   * Download video from URL and save to hybrid storage (R2/local)
+   */
+  public async downloadAndSaveVideoToHybridStorage(
+    videoUrl: string,
+    filename?: string,
+    metadata?: Record<string, string>
+  ): Promise<{ storageKey: string; url: string; storageType: 'local' | 'r2' }> {
+    try {
+      const finalFilename = filename || `video_${uuidv4()}.mp4`;
+      
+      logger.info('Downloading video to hybrid storage', { videoUrl, filename: finalFilename });
+      
+      // Download video using fetch
+      const response = await fetch(videoUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download video: ${response.statusText}`);
+      }
+      
+      const buffer = await response.arrayBuffer();
+      const nodeBuffer = Buffer.from(buffer);
+      
+      // Determine MIME type from response or filename
+      const contentType = response.headers.get('content-type') || 'video/mp4';
+      
+      // Generate storage key
+      const storageKey = this.storageService.generateProcessedKey(finalFilename);
+      
+      // Upload to hybrid storage
+      const storageResult = await this.storageService.uploadBuffer(
+        nodeBuffer,
+        storageKey,
+        contentType,
+        {
+          ...metadata,
+          originalUrl: videoUrl,
+          processedAt: new Date().toISOString(),
+        }
+      );
+      
+      logger.info('Video downloaded and saved to hybrid storage successfully', { 
+        storageKey: storageResult.key,
+        url: storageResult.url,
+        storageType: storageResult.storageType,
+        size: storageResult.size
+      });
+      
+      return {
+        storageKey: storageResult.key,
+        url: storageResult.url,
+        storageType: storageResult.storageType,
+      };
+      
+    } catch (error) {
+      logger.error('Failed to download and save video to hybrid storage', { 
+        error: error instanceof Error ? error.message : String(error),
+        videoUrl 
+      });
+      throw new Error(`Failed to download video to hybrid storage: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
    * Prepare input parameters for Replicate API with proper ControlNet support
    */
   private prepareReplicateInput(
