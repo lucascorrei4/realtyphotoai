@@ -143,7 +143,7 @@ const VideoGenerationNotification: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                      {item.motionType === 'veo3_fast' ? 'Animate Scene' : 'Camera Movement'}
+                      {item.motionType === 'veo3_fast' ? 'Animate Scene' : 'Drone Effect'}
                     </p>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {item.status === 'queued' ? 'Queued' : 'Processing...'}
@@ -208,7 +208,7 @@ const VideoGenerationNotification: React.FC = () => {
                   <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                      {item.motionType === 'veo3_fast' ? 'Animate Scene' : 'Camera Movement'} Complete
+                      {item.motionType === 'veo3_fast' ? 'Animate Scene' : 'Drone Effect'} Complete
                     </p>
                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                       Your video is ready to view!

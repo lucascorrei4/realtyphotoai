@@ -33,7 +33,12 @@ import {
   Star,
   BadgeCheck,
   Maximize2,
-  X
+  X,
+  Film,
+  Video,
+  Move,
+  RotateCw,
+  ArrowLeft
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageJson from '../../package.json';
@@ -1284,6 +1289,280 @@ const LandingPage: React.FC = () => {
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Priority Section: Smart Effects & Video Features */}
+        <section
+          className="relative px-4 py-20 sm:px-6 lg:px-8 bg-gradient-to-br from-purple-50 via-indigo-50 to-pink-50 dark:from-purple-950/30 dark:via-indigo-950/30 dark:to-pink-950/30 overflow-hidden"
+        >
+          {/* Background decoration */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-300/20 rounded-full blur-3xl"></div>
+            <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-300/20 rounded-full blur-3xl"></div>
+          </div>
+
+          <div className="relative mx-auto max-w-7xl">
+            {/* Header */}
+            <div className="text-center mb-16">
+              <div className="inline-flex items-center space-x-2 rounded-full border border-purple-200/70 bg-white/70 px-4 py-2 text-sm font-semibold uppercase tracking-wider text-purple-700 shadow-sm backdrop-blur dark:border-purple-500/40 dark:bg-purple-500/15 dark:text-purple-200 mb-6">
+                <Sparkles className="h-4 w-4" />
+                <span>New & Exclusive</span>
+              </div>
+              <h2 className="text-4xl font-bold text-slate-900 dark:text-white sm:text-5xl mb-4">
+                Bring Your Listings to Life with
+                <span className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 bg-clip-text text-transparent">
+                  {' '}AI Magic & Motion
+                </span>
+              </h2>
+              <p className="text-xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto">
+                Transform static photos into captivating experiences with smart effects, cinematic camera movements, and animated scenes that make properties unforgettable.
+              </p>
+            </div>
+
+            {/* Three Feature Cards */}
+            <div className="grid gap-8 lg:grid-cols-3 mb-12">
+              {/* Smart Effects Card */}
+              <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-purple-200 dark:border-purple-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                <div className="absolute top-4 right-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+                    <Sparkles className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+                    ✨ Smart Effects
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Add magical transformations to property photos with AI-powered effects that create emotional connections.
+                  </p>
+                </div>
+                {/* Video Player */}
+                <div className="mb-6 rounded-xl overflow-hidden border border-purple-200 dark:border-purple-800 shadow-lg">
+                  <video
+                    className="w-full h-auto"
+                    controls
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    poster=""
+                  >
+                    <source
+                      src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1763237393203_effect_balloons_processed_1763422131221_fyrpv1_video_processed_1763435904340_jl6co1.mp4"
+                      type="video/mp4"
+                    />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  {[
+                    { emoji: '🌆', name: 'Dusk' },
+                    { emoji: '🎈', name: 'Balloons' },
+                    { emoji: '🚁', name: 'Helicopter' },
+                    { emoji: '🎀', name: 'Gift Bow' },
+                    { emoji: '🎆', name: 'Fireworks' },
+                    { emoji: '🎊', name: 'Confetti' },
+                    { emoji: '✨', name: 'Holiday Lights' },
+                    { emoji: '❄️', name: 'Snow' },
+                    { emoji: '🌅', name: 'Sunrise' }
+                  ].map((effect) => (
+                    <div
+                      key={effect.name}
+                      className="flex flex-col items-center p-3 rounded-xl bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-800"
+                    >
+                      <span className="text-2xl mb-1">{effect.emoji}</span>
+                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center leading-tight">{effect.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-6">
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                    <span>9 stunning effect presets</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                    <span>Customizable instructions</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                    <span>Perfect for celebrations & holidays</span>
+                  </li>
+                </ul>
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-purple-600 dark:text-purple-400">Instant Results</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">12 seconds</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Camera Movement (Drone Effect) Card */}
+              <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-indigo-200 dark:border-indigo-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                <div className="absolute top-4 right-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-blue-500 rounded-full flex items-center justify-center shadow-lg">
+                    <Film className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+                    🎥 Drone Effect
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Add cinematic camera movements to your photos. Create professional drone-like footage from static images.
+                  </p>
+                </div>
+                {/* Video Player */}
+                <div className="mb-6 rounded-xl overflow-hidden border border-indigo-200 dark:border-indigo-800 shadow-lg">
+                  <video
+                    className="w-full h-auto"
+                    controls
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    poster=""
+                  >
+                    <source
+                      src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1763237393203_effect_sunrise_processed_1763422286611_y37pmz_video_processed_1763514922759_0t0bee.mp4"
+                      type="video/mp4"
+                    />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <div className="space-y-3 mb-6">
+                  {[
+                    { icon: ArrowLeft, name: 'Truck Left', desc: 'Smooth left movement' },
+                    { icon: ArrowRight, name: 'Pan Right', desc: 'Reveal more scene' },
+                    { icon: Move, name: 'Tracking Shot', desc: 'Follow subject motion' },
+                    { icon: RotateCw, name: 'Bullet Time', desc: 'Dramatic orbit effect' }
+                  ].map((movement) => {
+                    const Icon = movement.icon;
+                    return (
+                      <div
+                        key={movement.name}
+                        className="flex items-center space-x-3 p-3 rounded-xl bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 border border-indigo-200 dark:border-indigo-800"
+                      >
+                        <div className="flex-shrink-0 w-10 h-10 bg-indigo-500 rounded-lg flex items-center justify-center">
+                          <Icon className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-semibold text-slate-900 dark:text-white text-sm">{movement.name}</div>
+                          <div className="text-xs text-slate-600 dark:text-slate-300">{movement.desc}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-6">
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                    <span>4 professional camera movements</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                    <span>1080p video output</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                    <span>6 second clips</span>
+                  </li>
+                </ul>
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">Cinematic Quality</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">2-5 min</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Animate Scene Card */}
+              <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-pink-200 dark:border-pink-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                <div className="absolute top-4 right-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-rose-500 rounded-full flex items-center justify-center shadow-lg">
+                    <Video className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+                    🎬 Animate Scene
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Bring static property photos to life with AI-generated animations. Create engaging video content from any image.
+                  </p>
+                </div>
+                {/* Video Player */}
+                <div className="mb-6 rounded-xl overflow-hidden border border-pink-200 dark:border-pink-800 shadow-lg">
+                  <video
+                    className="w-full h-auto"
+                    controls
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    poster=""
+                  >
+                    <source
+                      src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/IMG_5685_enhanced_processed_1762880781139_9fnbn5_video_processed_1763508341250_2231el.mp4"
+                      type="video/mp4"
+                    />
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-pink-50 to-rose-50 dark:from-pink-900/20 dark:to-rose-900/20 border border-pink-200 dark:border-pink-800">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <Zap className="h-5 w-5 text-pink-600 dark:text-pink-400" />
+                    <span className="font-semibold text-slate-900 dark:text-white">AI-Powered Animation</span>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Transform any enhanced or staged image into a dynamic video with natural motion, perfect for social media and marketing.
+                  </p>
+                </div>
+                <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-6">
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                    <span>Natural scene animation</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                    <span>16:9 or 9:16 aspect ratios</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                    <span>Ready for social sharing</span>
+                  </li>
+                </ul>
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-pink-600 dark:text-pink-400">Video Generation</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">2-5 min</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA Section */}
+            <div className="text-center">
+              <div className="inline-flex flex-col sm:flex-row items-center gap-4 bg-white dark:bg-slate-900 rounded-2xl border-2 border-purple-200 dark:border-purple-800 p-6 shadow-lg">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 via-indigo-500 to-pink-500 rounded-full flex items-center justify-center">
+                    <Rocket className="h-6 w-6 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-bold text-slate-900 dark:text-white">Try These Features Free</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">100 free credits to get started</div>
+                  </div>
+                </div>
+                <button
+                  onClick={scrollToAuth}
+                  className="flex items-center space-x-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-6 py-3 text-white font-semibold shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+                >
+                  <span>Get Started Now</span>
+                  <ArrowRight className="h-5 w-5" />
+                </button>
               </div>
             </div>
           </div>

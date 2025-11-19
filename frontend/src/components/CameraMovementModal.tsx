@@ -81,7 +81,7 @@ const CameraMovementModal: React.FC<CameraMovementModalProps> = ({
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <Film className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-              Choose Camera Movement
+              Choose Drone Effect
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Select the type of camera movement you want to apply to your image
