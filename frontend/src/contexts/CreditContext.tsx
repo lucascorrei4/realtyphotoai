@@ -68,16 +68,35 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
       }
 
-      let actualCreditsUsed = 0;
+      // Calculate credits used in DISPLAY credits (since CREDIT_COSTS represents display credits)
+      // The credit costs (40 per image, 240 per 6s video) are based on display credits, not actual credits
+      let displayCreditsUsed = 0;
       (generations || []).forEach((generation) => {
         if (generation.generation_type === 'video' && generation.duration_seconds) {
-          actualCreditsUsed += getVideoCredits(generation.duration_seconds);
+          displayCreditsUsed += getVideoCredits(generation.duration_seconds);
         } else {
-          actualCreditsUsed += getImageCredits(1);
+          displayCreditsUsed += getImageCredits(1);
         }
       });
 
-      const summary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+      // Get display credits total directly from plan
+      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
+
+      // Calculate actual credits for comparison (convert back from display)
+      const actualCreditsTotal = userPlan.features.monthlyCredits;
+      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+        : displayCreditsUsed;
+
+      const summary = {
+        displayCreditsTotal,
+        displayCreditsUsed,
+        displayCreditsRemaining,
+        actualCreditsTotal,
+        actualCreditsUsed,
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+      };
 
       setCreditBalance({
         displayCreditsRemaining: summary.displayCreditsRemaining,

@@ -7,6 +7,8 @@ import { useToast } from '../hooks/useToast';
 import CameraMovementModal, { CameraMovementOption } from './CameraMovementModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import { useVideoGenerationQueue } from '../hooks/useVideoGenerationQueue';
+import { useCredits } from '../contexts/CreditContext';
+import { getVideo6sCredits } from '../config/subscriptionPlans';
 
 export interface Generation {
   id: string;
@@ -62,6 +64,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   const generalPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { showSuccess, showError, showWarning, showInfo, updateToast, dismiss } = useToast();
   const { canStartGeneration, getProcessingCount, addToQueue, updateQueueItem, removeFromQueue } = useVideoGenerationQueue();
+  const { creditBalance } = useCredits();
 
   const itemsPerPage = maxItems;
 
@@ -409,6 +412,15 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   ) => {
     if (!imageUrl) {
       showWarning('No image URL available for video generation');
+      return;
+    }
+
+    // Check if user has enough credits before processing
+    const creditsNeeded = getVideo6sCredits(); // 240 credits per 6s video
+    if (creditBalance && creditBalance.displayCreditsRemaining < creditsNeeded) {
+      showError(
+        `Insufficient credits! You need more credits. Please upgrade your plan.`
+      );
       return;
     }
 

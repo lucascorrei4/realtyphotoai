@@ -10,6 +10,7 @@ import { validateImageFile } from '../utils/fileValidation';
 import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
 import { useCredits } from '../contexts/CreditContext';
+import { getImageCredits } from '../config/subscriptionPlans';
 
 interface ElementReplacementRequest {
   id: string;
@@ -23,7 +24,7 @@ interface ElementReplacementRequest {
 
 const ReplaceElements: React.FC = () => {
   const { user } = useAuth();
-  const { refreshCredits } = useCredits();
+  const { refreshCredits, creditBalance } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState('Replace the floor for a modern black mirror floor');
@@ -99,6 +100,15 @@ const ReplaceElements: React.FC = () => {
 
     if (!selectedFile) {
       showWarning('Please select an image to transform.');
+      return;
+    }
+
+    // Check if user has enough credits before processing
+    const creditsNeeded = getImageCredits(1); // 40 credits per image
+    if (creditBalance && creditBalance.displayCreditsRemaining < creditsNeeded) {
+      showError(
+        `Insufficient credits! You need more credits. Please upgrade your plan.`
+      );
       return;
     }
 

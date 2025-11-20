@@ -118,20 +118,20 @@ const Dashboard: React.FC = () => {
       );
       const monthlyUsage = monthlyGenerations.length;
 
-      // Calculate actual credits used - count ONLY current month's completed generations
+      // Calculate credits used in DISPLAY credits (since CREDIT_COSTS represents display credits)
       // Monthly credits reset each billing cycle (reuse currentMonth from above)
       const monthlyCompletedGenerations = userGenerations.filter(g =>
         g.status === 'completed' && new Date(g.created_at) >= currentMonth
       );
 
-      let actualCreditsUsed = 0;
+      // Calculate directly in display credits (CREDIT_COSTS are display credits, not actual)
+      let displayCreditsUsed = 0;
       monthlyCompletedGenerations.forEach(g => {
-        // Check if it's a video generation (you'll need to add this field to generations table)
         if (g.generation_type === 'video' && g.duration_seconds) {
-          actualCreditsUsed += getVideoCredits(g.duration_seconds);
+          displayCreditsUsed += getVideoCredits(g.duration_seconds);
         } else {
-          // Default to image generation (1 credit per image)
-          actualCreditsUsed += getImageCredits(1);
+          // Default to image generation (40 display credits per image)
+          displayCreditsUsed += getImageCredits(1);
         }
       });
 
@@ -178,7 +178,22 @@ const Dashboard: React.FC = () => {
         console.warn('[Dashboard] ⚠️ User has no subscription_plan set');
       }
 
-      const creditUsageSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+      // Calculate credit summary using display credits directly (CREDIT_COSTS are display credits)
+      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
+      const actualCreditsTotal = userPlan.features.monthlyCredits;
+      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+        : displayCreditsUsed;
+
+      const creditUsageSummary = {
+        displayCreditsTotal,
+        displayCreditsUsed,
+        displayCreditsRemaining,
+        actualCreditsTotal,
+        actualCreditsUsed,
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+      };
 
       // Count by model type
       const generationsByType = {

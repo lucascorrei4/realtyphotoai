@@ -10,10 +10,11 @@ import { validateImageFile } from '../utils/fileValidation';
 import ImagePreview from '../components/ImagePreview';
 import { createImagePreview } from '../utils/imagePreview';
 import { useCredits } from '../contexts/CreditContext';
+import { getImageCredits } from '../config/subscriptionPlans';
 
 const InteriorDesign: React.FC = () => {
   const { user } = useAuth();
-  const { refreshCredits } = useCredits();
+  const { refreshCredits, creditBalance } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [designPrompt, setDesignPrompt] = useState('Transform this room with a modern interior design');
@@ -101,6 +102,15 @@ const InteriorDesign: React.FC = () => {
 
     if (!roomImage) {
       showWarning('Please select a room image.');
+      return;
+    }
+
+    // Check if user has enough credits before processing
+    const creditsNeeded = getImageCredits(1); // 40 credits per image
+    if (creditBalance && creditBalance.displayCreditsRemaining < creditsNeeded) {
+      showError(
+        `Insufficient credits! You need more credits. Please upgrade your plan.`
+      );
       return;
     }
 

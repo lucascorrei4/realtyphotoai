@@ -8,10 +8,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
 import { useCredits } from '../contexts/CreditContext';
+import { getImageCredits } from '../config/subscriptionPlans';
 
 const AddFurnitures: React.FC = () => {
   const { user } = useAuth();
-  const { refreshCredits } = useCredits();
+  const { refreshCredits, creditBalance } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [roomImage, setRoomImage] = useState<File | null>(null);
   const [furnitureImage, setFurnitureImage] = useState<File | null>(null);
@@ -130,6 +131,15 @@ const AddFurnitures: React.FC = () => {
 
     if (!roomImage) {
       showWarning('Please select a room image.');
+      return;
+    }
+
+    // Check if user has enough credits before processing
+    const creditsNeeded = getImageCredits(1); // 40 credits per image
+    if (creditBalance && creditBalance.displayCreditsRemaining < creditsNeeded) {
+      showError(
+        `Insufficient credits! You need more credits. Please upgrade your plan.`
+      );
       return;
     }
 

@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import authService from '../services/authService';
 import { logger } from '../utils/logger';
 import { supabase } from '../config/supabase';
+import planRulesService from '../services/planRulesService';
+import { getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -159,7 +161,7 @@ export const requireSuperAdmin = (
 };
 
 /**
- * Middleware to check user generation limits
+ * Middleware to check user generation limits and credits
  */
 export const checkGenerationLimit = async (
   req: AuthenticatedRequest,
@@ -168,30 +170,117 @@ export const checkGenerationLimit = async (
 ): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ 
+        success: false,
+        error: 'Authentication required',
+        message: 'Please log in to continue'
+      });
       return;
     }
 
     // Get user profile to check limits
     const userProfile = await authService.getUserProfile(req.user.id);
     if (!userProfile) {
-      res.status(404).json({ error: 'User profile not found' });
+      res.status(404).json({ 
+        success: false,
+        error: 'User profile not found',
+        message: 'User profile not found'
+      });
       return;
     }
 
     // Check if user is active
     if (!userProfile.is_active) {
-      res.status(403).json({ error: 'Account is deactivated' });
+      res.status(403).json({ 
+        success: false,
+        error: 'Account is deactivated',
+        message: 'Your account has been deactivated'
+      });
       return;
     }
 
-    // Check monthly generation limit
+    // Check monthly generation limit (count-based)
     const monthlyUsage = await authService.getUserStatistics(req.user.id);
     if (monthlyUsage && monthlyUsage.monthly_usage >= userProfile.monthly_generations_limit) {
       res.status(429).json({
+        success: false,
         error: 'Monthly generation limit reached',
+        message: `You've reached your monthly generation limit of ${userProfile.monthly_generations_limit}`,
         limit: userProfile.monthly_generations_limit,
         usage: monthlyUsage.monthly_usage
+      });
+      return;
+    }
+
+    // Check credits before allowing generation
+    const planName = req.user.subscription_plan || 'free';
+    const userPlan = await planRulesService.getUserSubscriptionPlan(planName);
+    
+    if (!userPlan) {
+      logger.warn(`Plan not found for user ${req.user.id}, plan: ${planName}`);
+      res.status(500).json({
+        success: false,
+        error: 'Plan configuration error',
+        message: 'Unable to verify your subscription plan'
+      });
+      return;
+    }
+
+    // Get display credits total from plan
+    const displayCreditsTotal = userPlan.features?.displayCredits || userPlan.features?.monthlyCredits || 0;
+
+    // Calculate credits used this month (in display credits)
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const { data: generations, error: generationsError } = await supabase
+      .from('generations')
+      .select('generation_type, duration_seconds')
+      .eq('user_id', req.user.id)
+      .eq('status', 'completed')
+      .gte('created_at', currentMonth.toISOString());
+
+    if (generationsError) {
+      logger.error('Error fetching generations for credit check:', generationsError);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to check credits',
+        message: 'Unable to verify credit balance'
+      });
+      return;
+    }
+
+    // Calculate credits used (in display credits)
+    let displayCreditsUsed = 0;
+    (generations || []).forEach((generation) => {
+      if (generation.generation_type === 'video' && generation.duration_seconds) {
+        displayCreditsUsed += getVideoCredits(generation.duration_seconds);
+      } else {
+        // All other generations are images
+        displayCreditsUsed += getImageCredits(1);
+      }
+    });
+
+    // Determine credits needed for this request
+    // Check if it's a video generation request
+    const isVideoRequest = req.body?.motionType || req.path?.includes('video');
+    const durationSeconds = req.body?.options?.duration || req.body?.duration || 6; // Default 6 seconds for video
+    const creditsNeeded = isVideoRequest 
+      ? getVideoCredits(durationSeconds)
+      : getImageCredits(1);
+
+    // Check if user has enough credits
+    const displayCreditsRemaining = displayCreditsTotal - displayCreditsUsed;
+    
+    if (displayCreditsRemaining < creditsNeeded) {
+      res.status(402).json({
+        success: false,
+        error: 'Insufficient credits',
+        message: `You don't have enough credits. You need ${creditsNeeded} credits but only have ${Math.max(0, displayCreditsRemaining)} remaining.`,
+        creditsNeeded,
+        creditsRemaining: Math.max(0, displayCreditsRemaining),
+        creditsTotal: displayCreditsTotal,
+        creditsUsed: displayCreditsUsed
       });
       return;
     }
@@ -199,7 +288,11 @@ export const checkGenerationLimit = async (
     next();
   } catch (error) {
     logger.error('Generation limit check error:', error as Error);
-    res.status(500).json({ error: 'Failed to check generation limits' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to check generation limits',
+      message: 'An error occurred while checking your limits'
+    });
   }
 };
 

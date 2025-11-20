@@ -519,7 +519,7 @@ const serviceShowcases: ServiceShowcase[] = [
     description:
       'Visualize landscaping, siding, and twilight conversions that help buyers picture life in the home before they ever visit.',
     beforeSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/uploads/1761263932418_tpscv6_address-of-the-property-1-26-2048x1365.jpeg.webp',
-    afterSrc: 'http://localhost:8000/outputs/exterior_1761263944911_6iirpwzgd.jpg',
+    afterSrc: 'https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/1762548704405_a2ev5c_address-of-the-property-1-26-2048x1365.jpeg_exterior_processed_1763677709944_7en8zw.jpg',
     altBefore: 'Exterior home before AI enhancements',
     altAfter: 'Exterior home after landscaping and lighting enhancements',
     bullets: [
@@ -1177,7 +1177,7 @@ const LandingPage: React.FC = () => {
           aria-labelledby="hero-heading"
         >
           <div className="mx-auto max-w-7xl">
-            <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-center">
+            <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-center mb-4">
               <div>
                 <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
                   <Sparkles className="h-4 w-4" />

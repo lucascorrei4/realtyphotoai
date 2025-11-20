@@ -104,12 +104,13 @@ const Settings: React.FC = () => {
         g.status === 'completed' && new Date(g.created_at) >= currentMonth
       );
 
-      let actualCreditsUsed = 0;
+      // Calculate credits used in DISPLAY credits (since CREDIT_COSTS represents display credits)
+      let displayCreditsUsed = 0;
       monthlyCompletedGenerations.forEach(g => {
         if (g.generation_type === 'video' && g.duration_seconds) {
-          actualCreditsUsed += getVideoCredits(g.duration_seconds);
+          displayCreditsUsed += getVideoCredits(g.duration_seconds);
         } else {
-          actualCreditsUsed += getImageCredits(1);
+          displayCreditsUsed += getImageCredits(1);
         }
       });
 
@@ -124,7 +125,22 @@ const Settings: React.FC = () => {
         }
       }
 
-      const creditSummary = getCreditUsageSummary(actualCreditsUsed, userPlan);
+      // Calculate credit summary using display credits directly
+      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
+      const actualCreditsTotal = userPlan.features.monthlyCredits;
+      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+        : displayCreditsUsed;
+
+      const creditSummary = {
+        displayCreditsTotal,
+        displayCreditsUsed,
+        displayCreditsRemaining,
+        actualCreditsTotal,
+        actualCreditsUsed,
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+      };
 
       setStats({
         total_generations: totalGenerations,
