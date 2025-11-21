@@ -212,8 +212,60 @@ export const checkGenerationLimit = async (
       return;
     }
 
-    // Check credits before allowing generation
+    // Check subscription validity for paid plans
+    // Users with cancelled subscriptions should still have access until period ends
     const planName = req.user.subscription_plan || 'free';
+    if (planName !== 'free') {
+      const { data: subscriptions, error: subscriptionError } = await supabase
+        .from('stripe_subscriptions')
+        .select('status, cancel_at_period_end, current_period_end')
+        .eq('user_id', req.user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      // If there's a subscription record, check its validity
+      if (!subscriptionError && subscriptions && subscriptions.length > 0) {
+        const subscription = subscriptions[0];
+        const now = new Date();
+        const periodEnd = subscription.current_period_end 
+          ? new Date(subscription.current_period_end) 
+          : null;
+
+        // Check if subscription is valid:
+        // 1. Status is 'active' AND
+        // 2. Either not cancelled OR cancelled but period hasn't ended yet
+        const isSubscriptionValid = 
+          subscription.status === 'active' && 
+          (!subscription.cancel_at_period_end || (periodEnd && periodEnd > now));
+
+        if (!isSubscriptionValid) {
+          // If subscription is cancelled and period has ended, block access
+          if (subscription.cancel_at_period_end && periodEnd && periodEnd <= now) {
+            res.status(403).json({
+              success: false,
+              error: 'Subscription expired',
+              message: 'Your subscription has expired. Please renew to continue using the platform.',
+              periodEnd: periodEnd.toISOString()
+            });
+            return;
+          }
+          // If subscription status is not active, block access
+          if (subscription.status !== 'active') {
+            res.status(403).json({
+              success: false,
+              error: 'Subscription not active',
+              message: 'Your subscription is not active. Please check your subscription status.',
+              status: subscription.status
+            });
+            return;
+          }
+        }
+      }
+      // If no subscription record found for a paid plan, allow access
+      // (This might happen during plan transitions or for legacy users)
+    }
+
+    // Check credits before allowing generation
     const userPlan = await planRulesService.getUserSubscriptionPlan(planName);
     
     if (!userPlan) {
