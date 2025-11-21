@@ -216,53 +216,69 @@ export const checkGenerationLimit = async (
     // Users with cancelled subscriptions should still have access until period ends
     const planName = req.user.subscription_plan || 'free';
     if (planName !== 'free') {
-      const { data: subscriptions, error: subscriptionError } = await supabase
-        .from('stripe_subscriptions')
-        .select('status, cancel_at_period_end, current_period_end')
-        .eq('user_id', req.user.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      try {
+        const { data: subscriptions, error: subscriptionError } = await supabase
+          .from('stripe_subscriptions')
+          .select('status, cancel_at_period_end, current_period_end')
+          .eq('user_id', req.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-      // If there's a subscription record, check its validity
-      if (!subscriptionError && subscriptions && subscriptions.length > 0) {
-        const subscription = subscriptions[0];
-        const now = new Date();
-        const periodEnd = subscription.current_period_end 
-          ? new Date(subscription.current_period_end) 
-          : null;
+        // Log subscription check errors but don't block if query fails
+        if (subscriptionError) {
+          logger.warn(`Error checking subscription for user ${req.user.id}:`, {
+            message: subscriptionError.message,
+            code: subscriptionError.code,
+            details: subscriptionError.details
+          });
+          // Continue - don't block access if subscription check fails
+        }
 
-        // Check if subscription is valid:
-        // 1. Status is 'active' AND
-        // 2. Either not cancelled OR cancelled but period hasn't ended yet
-        const isSubscriptionValid = 
-          subscription.status === 'active' && 
-          (!subscription.cancel_at_period_end || (periodEnd && periodEnd > now));
+        // If there's a subscription record, check its validity
+        if (!subscriptionError && subscriptions && subscriptions.length > 0) {
+          const subscription = subscriptions[0];
+          const now = new Date();
+          const periodEnd = subscription.current_period_end 
+            ? new Date(subscription.current_period_end) 
+            : null;
 
-        if (!isSubscriptionValid) {
-          // If subscription is cancelled and period has ended, block access
-          if (subscription.cancel_at_period_end && periodEnd && periodEnd <= now) {
-            res.status(403).json({
-              success: false,
-              error: 'Subscription expired',
-              message: 'Your subscription has expired. Please renew to continue using the platform.',
-              periodEnd: periodEnd.toISOString()
-            });
-            return;
-          }
-          // If subscription status is not active, block access
-          if (subscription.status !== 'active') {
-            res.status(403).json({
-              success: false,
-              error: 'Subscription not active',
-              message: 'Your subscription is not active. Please check your subscription status.',
-              status: subscription.status
-            });
-            return;
+          // Check if subscription is valid:
+          // 1. Status is 'active' AND
+          // 2. Either not cancelled OR cancelled but period hasn't ended yet
+          const isSubscriptionValid = 
+            subscription.status === 'active' && 
+            (!subscription.cancel_at_period_end || (periodEnd && periodEnd > now));
+
+          if (!isSubscriptionValid) {
+            // If subscription is cancelled and period has ended, block access
+            if (subscription.cancel_at_period_end && periodEnd && periodEnd <= now) {
+              res.status(403).json({
+                success: false,
+                error: 'Subscription expired',
+                message: 'Your subscription has expired. Please renew to continue using the platform.',
+                periodEnd: periodEnd.toISOString()
+              });
+              return;
+            }
+            // If subscription status is not active, block access
+            if (subscription.status !== 'active') {
+              res.status(403).json({
+                success: false,
+                error: 'Subscription not active',
+                message: 'Your subscription is not active. Please check your subscription status.',
+                status: subscription.status
+              });
+              return;
+            }
           }
         }
+        // If no subscription record found for a paid plan, allow access
+        // (This might happen during plan transitions or for legacy users)
+      } catch (subscriptionCheckError) {
+        // Log subscription check errors but don't block access
+        logger.error('Error in subscription validity check:', subscriptionCheckError as Error);
+        // Continue - don't block access if subscription check throws an error
       }
-      // If no subscription record found for a paid plan, allow access
-      // (This might happen during plan transitions or for legacy users)
     }
 
     // Check credits before allowing generation
@@ -287,13 +303,20 @@ export const checkGenerationLimit = async (
 
     const { data: generations, error: generationsError } = await supabase
       .from('generations')
-      .select('generation_type, duration_seconds')
+      .select('model_type')
       .eq('user_id', req.user.id)
       .eq('status', 'completed')
+      .eq('is_deleted', false)
       .gte('created_at', currentMonth.toISOString());
 
     if (generationsError) {
-      logger.error('Error fetching generations for credit check:', generationsError);
+      logger.error('Error fetching generations for credit check:', {
+        userId: req.user.id,
+        message: generationsError.message,
+        code: generationsError.code,
+        details: generationsError.details,
+        hint: generationsError.hint
+      });
       res.status(500).json({
         success: false,
         error: 'Failed to check credits',
@@ -303,10 +326,15 @@ export const checkGenerationLimit = async (
     }
 
     // Calculate credits used (in display credits)
+    // Video generations default to 6 seconds duration
+    const DEFAULT_VIDEO_DURATION = 6;
     let displayCreditsUsed = 0;
     (generations || []).forEach((generation) => {
-      if (generation.generation_type === 'video' && generation.duration_seconds) {
-        displayCreditsUsed += getVideoCredits(generation.duration_seconds);
+      // Check if it's a video generation by checking if model_type starts with 'video_'
+      const isVideoGeneration = generation.model_type?.startsWith('video_');
+      if (isVideoGeneration) {
+        // Use default duration of 6 seconds for all video generations
+        displayCreditsUsed += getVideoCredits(DEFAULT_VIDEO_DURATION);
       } else {
         // All other generations are images
         displayCreditsUsed += getImageCredits(1);

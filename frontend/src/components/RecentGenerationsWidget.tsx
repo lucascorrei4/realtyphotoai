@@ -133,10 +133,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
       // Handle modelType filter: use modelTypeFilter if explicitly provided (and not 'all'), 
       // otherwise use the user's filter selection
-      const effectiveModelType = (modelTypeFilter && modelTypeFilter !== 'all') 
-        ? modelTypeFilter 
+      const effectiveModelType = (modelTypeFilter && modelTypeFilter !== 'all')
+        ? modelTypeFilter
         : filters.modelType;
-      
+
       if (effectiveModelType !== 'all') {
         params.set('modelType', effectiveModelType);
       }
@@ -203,9 +203,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     }
     const outputUrl = generation.output_image_url || generation.output_video_url;
     if (outputUrl) {
-      return outputUrl.toLowerCase().endsWith('.mp4') || 
-             outputUrl.toLowerCase().endsWith('.webm') ||
-             outputUrl.toLowerCase().endsWith('.mov');
+      return outputUrl.toLowerCase().endsWith('.mp4') ||
+        outputUrl.toLowerCase().endsWith('.webm') ||
+        outputUrl.toLowerCase().endsWith('.mov');
     }
     return false;
   };
@@ -214,7 +214,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   const getVideoUrl = (generation: Generation): string | null => {
     const outputUrl = generation.output_image_url || generation.output_video_url;
     if (!outputUrl) return null;
-    
+
     if (outputUrl.startsWith('http://') || outputUrl.startsWith('https://')) {
       return outputUrl;
     }
@@ -226,10 +226,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   const pollVideoGeneration = (videoGenerationId: string, toastId: string, queueItemId?: string, videoTypeKey?: string) => {
     let pollAttempts = 0;
     const maxAttempts = 36; // 36 * 5 seconds = 3 minutes max
-    
+
     const pollInterval = setInterval(async () => {
       pollAttempts++;
-      
+
       // Stop polling after max attempts
       if (pollAttempts > maxAttempts) {
         clearInterval(pollInterval);
@@ -241,20 +241,20 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         updateToast(toastId, 'Video generation is taking longer than expected. Please check back in a moment.', 'warning');
         return;
       }
-      
+
       try {
         const response = await authenticatedFetch(`/api/v1/user/generations?userId=${userId}&limit=100`);
-        
+
         if (!response.ok) {
           console.error('Polling error: Response not OK', response.status, response.statusText);
           return; // Continue polling on error
         }
-        
+
         const result = await response.json();
-        
+
         if (result.success && result.data?.generations) {
           const videoGen = result.data.generations.find((g: Generation) => g.id === videoGenerationId);
-          
+
           if (videoGen) {
             if (videoGen.status === 'completed') {
               // Clear polling interval
@@ -264,7 +264,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 delete newState[videoGenerationId];
                 return newState;
               });
-              
+
               // Clear the video generating state
               if (videoTypeKey) {
                 setVideoGenerating(prev => {
@@ -273,7 +273,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   return newState;
                 });
               }
-              
+
               // Update queue status to completed and remove after a delay
               if (queueItemId) {
                 updateQueueItem(queueItemId, { status: 'completed' });
@@ -282,13 +282,13 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   removeFromQueue(queueItemId);
                 }, 5000);
               }
-              
+
               // Update toast to success with action
               updateToast(toastId, '🎬 Video generated successfully! Scroll down to view it.', 'success');
-              
+
               // Refresh generations to show the new video
               fetchGenerations();
-              
+
               // Scroll to the video after a short delay
               setTimeout(() => {
                 const videoElement = document.querySelector(`[data-generation-id="${videoGenerationId}"]`);
@@ -301,7 +301,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   }, 3000);
                 }
               }, 500);
-              
+
               // Auto-dismiss after 8 seconds (give user time to see the message)
               setTimeout(() => {
                 dismiss(toastId);
@@ -314,7 +314,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 delete newState[videoGenerationId];
                 return newState;
               });
-              
+
               // Clear the video generating state
               if (videoTypeKey) {
                 setVideoGenerating(prev => {
@@ -323,15 +323,15 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                   return newState;
                 });
               }
-              
+
               // Update queue status to failed
               if (queueItemId) {
-                updateQueueItem(queueItemId, { 
-                  status: 'failed', 
-                  error: videoGen.error_message || 'Unknown error' 
+                updateQueueItem(queueItemId, {
+                  status: 'failed',
+                  error: videoGen.error_message || 'Unknown error'
                 });
               }
-              
+
               updateToast(toastId, `Video generation failed: ${videoGen.error_message || 'Unknown error'}`, 'error');
             }
             // If status is 'processing', continue polling
@@ -346,7 +346,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         // Continue polling on error (might be transient)
       }
     }, 5000); // Poll every 5 seconds
-    
+
     // Store interval for cleanup
     setPollingIntervals(prev => ({ ...prev, [videoGenerationId]: pollInterval }));
   };
@@ -374,11 +374,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         showSuccess('Generation deleted successfully');
         // Close modal
         setDeleteModal(null);
-        
+
         // Optimistically remove the item from local state for immediate UI update
         setGenerations(prev => prev.filter(g => g.id !== generationIdToDelete));
         setTotalCount(prev => Math.max(0, prev - 1));
-        
+
         // Refresh the list after a short delay to ensure backend has processed and get accurate counts
         // This ensures pagination and total counts are correct
         setTimeout(() => {
@@ -405,8 +405,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
   // Generate video from image
   const handleGenerateVideo = async (
-    generationId: string, 
-    imageUrl: string, 
+    generationId: string,
+    imageUrl: string,
     motionType: 'veo3_fast',
     cameraMovement?: string
   ) => {
@@ -447,7 +447,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     // Use different keys for animate vs camera movement to avoid both buttons showing as generating
     const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
     setVideoGenerating(prev => ({ ...prev, [videoTypeKey]: motionType }));
-    
+
     // Close modal if it's open
     if (cameraMovementModal?.isOpen) {
       setCameraMovementModal(null);
@@ -468,7 +468,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         body: JSON.stringify({
           imageUrl,
           motionType,
-          options: { 
+          options: {
             prompt: 'Add a impressive ultrarealistic movement to this image',
             cameraMovement: cameraMovement,
             duration: 6
@@ -480,10 +480,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
       if (result.success && result.data?.generationId) {
         const videoGenerationId = result.data.generationId;
-        
+
         // Update queue item with actual generation ID
         updateQueueItem(currentQueueItemId, { generationId: videoGenerationId });
-        
+
         // Check if video is already completed (synchronous generation)
         if (result.data?.resultVideoUrl) {
           // Video completed immediately - update queue and show success
@@ -493,7 +493,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             removeFromQueue(currentQueueItemId);
           }, 5000);
           updateToast(toastId, '🎬 Video generated successfully! Scroll down to view it.', 'success');
-          
+
           // Clear the video generating state immediately
           const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
           setVideoGenerating(prev => {
@@ -501,10 +501,10 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
             delete newState[videoTypeKey];
             return newState;
           });
-          
+
           // Refresh generations to show the new video
           fetchGenerations();
-          
+
           // Scroll to the video after a short delay
           setTimeout(() => {
             const videoElement = document.querySelector(`[data-generation-id="${videoGenerationId}"]`);
@@ -517,7 +517,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
               }, 3000);
             }
           }, 1000);
-          
+
           // Auto-dismiss after 8 seconds
           setTimeout(() => {
             dismiss(toastId);
@@ -527,7 +527,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
           // Pass queueItemId and videoTypeKey to pollVideoGeneration so it can update the queue and clear state
           const videoTypeKey = cameraMovement ? `${generationId}_camera` : `${generationId}_animate`;
           pollVideoGeneration(videoGenerationId, toastId, currentQueueItemId, videoTypeKey);
-          
+
           // Refresh generations after a short delay to see the processing status
           setTimeout(() => {
             fetchGenerations();
@@ -535,18 +535,18 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         }
       } else {
         // Update queue to failed status
-        updateQueueItem(currentQueueItemId, { 
-          status: 'failed', 
-          error: result.message || result.error 
+        updateQueueItem(currentQueueItemId, {
+          status: 'failed',
+          error: result.message || result.error
         });
         updateToast(toastId, `Failed to generate video: ${result.message || result.error}`, 'error');
       }
     } catch (error) {
       console.error('Error generating video:', error);
       // Update queue to failed status
-      updateQueueItem(currentQueueItemId, { 
-        status: 'failed', 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      updateQueueItem(currentQueueItemId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
       updateToast(toastId, 'Failed to generate video. Please try again.', 'error');
     } finally {
@@ -798,7 +798,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         // Use backend proxy to bypass CORS issues with R2
         const backendUrl = getBackendUrl();
         const proxyUrl = `${backendUrl}/api/v1/proxy-image?url=${encodeURIComponent(src)}`;
-        
+
         // Get auth token for authenticated request
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -994,7 +994,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 showActions={true}
                 beforeImageSrc={inputImageUrl}
               />
-              
+
               {/* Video Generation Buttons */}
               {generation.status === 'completed' && (
                 <div className="flex gap-2 mt-2">
@@ -1016,12 +1016,12 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                       </>
                     )}
                   </button>
-                  
+
                   <button
-                    onClick={() => setCameraMovementModal({ 
-                      isOpen: true, 
-                      generationId: generation.id, 
-                      imageUrl: outputImageUrl 
+                    onClick={() => setCameraMovementModal({
+                      isOpen: true,
+                      generationId: generation.id,
+                      imageUrl: outputImageUrl
                     })}
                     disabled={!!videoGenerating[`${generation.id}_animate`] || !!videoGenerating[`${generation.id}_camera`]}
                     className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-700 hover:to-pink-700 text-white text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1053,7 +1053,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                     {generation.status === 'processing' ? 'Processing your image...' : 'Queued for processing...'}
                   </p>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
-                    <div 
+                    <div
                       className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 animate-pulse"
                       style={{
                         width: generation.status === 'processing' ? '65%' : '30%',
@@ -1062,8 +1062,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                     />
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-2">
-                    {generation.status === 'processing' 
-                      ? 'This usually takes 30-120 seconds' 
+                    {generation.status === 'processing'
+                      ? 'This usually takes 30-120 seconds'
                       : 'Waiting to start...'}
                   </p>
                 </div>
@@ -1210,30 +1210,23 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         {generations.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-8">
             {generations.map((generation) => (
-              <div 
-                key={generation.id} 
+              <div
+                key={generation.id}
                 data-generation-id={generation.id}
                 className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden transition-all duration-300"
               >
                 {/* Header Section */}
-                <div className="p-4 border-b border-gray-200 dark:border-slate-700">
+                <div className="p-4 border-b border-gray-200 dark:border-slate-700 text-center m-auto w-full">
+
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(generation.status)}`}>
                         {generation.status}
                       </span>
-                      {generation.processing_time_ms && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {generation.processing_time_ms}ms
-                        </span>
-                      )}
+
                     </div>
                     <div className="flex items-center space-x-3">
-                      <div className="text-right">
-                        <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                          {formatDate(generation.created_at)}
-                        </div>
-                      </div>
+
                       {/* Delete Button */}
                       <button
                         onClick={() => handleDeleteClick(generation.id)}
@@ -1243,6 +1236,22 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" className="text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
+                        <path d="M10 6v4l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                        {formatDate(generation.created_at)}
+                      </div>
+                    </div>
+                    {generation.processing_time_ms && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {(generation.processing_time_ms / 1000).toFixed(2)}s
+                      </span>
+                    )}
                   </div>
                 </div>
 
