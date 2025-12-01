@@ -110,6 +110,9 @@ export class PlanRulesService {
    * - Image: 1 credit = $0.039 cost (maintains 200% margin)
    * - Video: 12 credits/second = ~$0.15 cost/second × 3.0 margin = $0.45/second charge
    * Both maintain the same 200% profit margin
+   * 
+   * IMPORTANT: displayCredits comes from monthly_generations_limit in the database
+   * This is the single source of truth for what users see
    */
   calculateCreditsForPlan(planRule: PlanRule): {
     monthlyCredits: number;
@@ -117,11 +120,16 @@ export class PlanRulesService {
   } {
     const price = planRule.price_per_month;
     
+    // Use monthly_generations_limit from database as displayCredits (single source of truth)
+    // This is what users see and what should be used for credit validation
+    let displayCredits = planRule.monthly_generations_limit || 0;
+    
     // For free plan, give minimal credits
+    // 300 credits allows: 1 image (40) + 1 video (240) = 280, with 20 credits buffer
     if (price === 0) {
       return {
         monthlyCredits: 10, // 10 actual credits
-        displayCredits: 100 // 100 display credits (10x multiplier)
+        displayCredits: displayCredits || 300 // Use database value or fallback to 300 (allows 1 image + 1 video)
       };
     }
 
@@ -131,22 +139,25 @@ export class PlanRulesService {
     // Calculate max credits: Max cost ÷ $0.039 per image
     // Credits are universal and maintain 200% margin for both images and videos
     const monthlyCredits = Math.floor(maxCost / 0.039);
-    
-    // Calculate display credits based on plan tier
-    // Use multipliers to make numbers attractive
-    let displayCredits: number;
-    if (price <= 20) {
-      // Starter tier: 10x multiplier
-      displayCredits = monthlyCredits * 10;
-    } else if (price <= 50) {
-      // Pro tier: 10x multiplier
-      displayCredits = monthlyCredits * 10;
-    } else if (price <= 100) {
-      // Premium tier: 9x multiplier
-      displayCredits = monthlyCredits * 9;
-    } else {
-      // Enterprise tier: 9x multiplier
-      displayCredits = monthlyCredits * 9;
+
+    // If displayCredits is 0 or null from database, calculate it based on price (fallback)
+    // This should rarely happen if database is configured correctly
+    if (displayCredits === 0) {
+      logger.warn(`monthly_generations_limit is 0 for plan ${planRule.plan_name}, calculating from price`, {
+        planName: planRule.plan_name,
+        price,
+        monthlyGenerationsLimit: planRule.monthly_generations_limit
+      });
+      // Calculate display credits based on plan tier (fallback calculation)
+      if (price <= 20) {
+        displayCredits = monthlyCredits * 10;
+      } else if (price <= 50) {
+        displayCredits = monthlyCredits * 10;
+      } else if (price <= 100) {
+        displayCredits = monthlyCredits * 9;
+      } else {
+        displayCredits = monthlyCredits * 9;
+      }
     }
 
     return {
@@ -254,13 +265,30 @@ export class PlanRulesService {
       if (!planRule) {
         // Fallback to default plan
         logger.warn(`Plan rule not found for: ${userPlanName}, using default`);
-        return this.getDefaultPlan(userPlanName);
+        const defaultPlan = this.getDefaultPlan(userPlanName);
+        logger.info(`Using default plan for ${userPlanName}`, {
+          displayCredits: defaultPlan.features?.displayCredits,
+          monthlyCredits: defaultPlan.features?.monthlyCredits
+        });
+        return defaultPlan;
       }
       
-      return this.convertToSubscriptionPlan(planRule);
+      const subscriptionPlan = this.convertToSubscriptionPlan(planRule);
+      logger.info(`Retrieved plan for ${userPlanName}`, {
+        displayCredits: subscriptionPlan.features?.displayCredits,
+        monthlyCredits: subscriptionPlan.features?.monthlyCredits,
+        monthlyGenerationsLimit: planRule.monthly_generations_limit,
+        price: planRule.price_per_month
+      });
+      return subscriptionPlan;
     } catch (error) {
       logger.error('Error getting user subscription plan:', error as Error);
-      return this.getDefaultPlan(userPlanName);
+      const defaultPlan = this.getDefaultPlan(userPlanName);
+      logger.info(`Using default plan (error fallback) for ${userPlanName}`, {
+        displayCredits: defaultPlan.features?.displayCredits,
+        monthlyCredits: defaultPlan.features?.monthlyCredits
+      });
+      return defaultPlan;
     }
   }
 
@@ -272,7 +300,7 @@ export class PlanRulesService {
     const defaults: Record<string, any> = {
       free: {
         monthlyCredits: 10,
-        displayCredits: 100,
+        displayCredits: 300, // Allows 1 image (40) + 1 video (240) = 280, with 20 credits buffer
         price: 0
       },
       basic: {

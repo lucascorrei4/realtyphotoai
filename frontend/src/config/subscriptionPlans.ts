@@ -26,6 +26,33 @@ export interface SubscriptionPlan {
 }
 
 export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
+  free: {
+    id: 'free',
+    name: 'free',
+    displayName: 'Free',
+    description: 'Start your AI photography journey. Perfect for testing the waters and discovering the power of AI-generated images. Ideal for first-time users and hobbyists.',
+    price: {
+      monthly: 0,
+      yearly: 0
+    },
+    features: {
+      monthlyCredits: 10, // Actual limit for billing
+      displayCredits: 300, // Displayed to users (300 free credits - allows 1 image + 1 video: 40 + 240 = 280)
+    },
+    limits: {
+      monthlyCredits: 10,
+      monthlyGenerations: 10, // Equals monthlyCredits for backward compatibility
+    },
+    stripe: {
+      metadata: {
+        plan_type: 'free',
+        model_type: 'flux_basic',
+        quality_level: 'low',
+        commercial_use: 'false'
+      }
+    },
+    billingCycle: 'monthly'
+  },
   starter: {
     id: 'starter',
     name: 'starter',
@@ -42,6 +69,34 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     limits: {
       monthlyCredits: 84,
       monthlyGenerations: 84, // Equals monthlyCredits for backward compatibility
+    },
+    stripe: {
+      metadata: {
+        plan_type: 'starter',
+        model_type: 'flux_basic',
+        quality_level: 'low',
+        commercial_use: 'false'
+      }
+    },
+    billingCycle: 'monthly'
+  },
+  // Map basic to starter (legacy name support)
+  basic: {
+    id: 'basic',
+    name: 'basic',
+    displayName: 'Creator',
+    description: 'Get started with basic AI photos, create your first model, and begin your AI photography journey.',
+    price: {
+      monthly: 9.90,
+      yearly: 99
+    },
+    features: {
+      monthlyCredits: 84,
+      displayCredits: 800,
+    },
+    limits: {
+      monthlyCredits: 84,
+      monthlyGenerations: 84,
     },
     stripe: {
       metadata: {
@@ -203,13 +258,9 @@ export function getFeatureList(plan: SubscriptionPlan): string[] {
   const features: string[] = [];
   
   // Core features - Credit-based system
-  // Use displayCredits for user-facing info and generation capacity display
+  // Use displayCredits for user-facing info
   const displayCredits = plan.features.displayCredits || plan.features.monthlyCredits;
   features.push(`${displayCredits.toLocaleString()} Credits per month`);
-  // Calculate generation capacity based on displayCredits (what users see)
-  const maxImages = Math.floor(displayCredits / CREDIT_COSTS.IMAGE);
-  const maxVideos6s = Math.floor(displayCredits / CREDIT_COSTS.VIDEO_6S);
-  features.push(`~${maxImages.toLocaleString()} images OR ~${maxVideos6s.toLocaleString()} videos (6s) OR mix`);
   
   return features;
 }

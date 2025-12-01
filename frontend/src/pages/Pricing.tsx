@@ -28,20 +28,6 @@ const Pricing: React.FC = () => {
           onSuccess={() => navigate('/settings?subscription=success')}
         />
 
-        {isAuthenticated === false && (
-          <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-6 text-center text-sm text-gray-300">
-            <p>
-              Ready to activate a plan?{' '}
-              <button
-                onClick={() => navigate('/auth')}
-                className="font-semibold text-white underline underline-offset-4 hover:text-blue-200"
-              >
-                Sign in to continue checkout
-              </button>
-              .
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

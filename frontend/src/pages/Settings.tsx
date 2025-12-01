@@ -24,6 +24,7 @@ import { getBackendUrl } from '../config/environment';
 import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import StripeCheckout from '../components/StripeCheckout';
+import { getAuthHeaders } from '../utils/apiUtils';
 
 interface UserStats {
   total_generations: number;
@@ -173,16 +174,14 @@ const Settings: React.FC = () => {
 
     try {
       setSubscriptionLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      const headers = await getAuthHeaders();
+      if (!headers['Authorization']) {
         setSubscriptionLoading(false);
         return;
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/stripe/subscription`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        headers,
       });
 
       if (response.ok) {
@@ -230,14 +229,10 @@ const Settings: React.FC = () => {
     setSaveError(null);
 
     try {
-      // Get the current session from Supabase
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        throw new Error('Failed to get authentication session');
-      }
-
-      if (!session?.access_token) {
+      // Get authentication headers (supports both Supabase and JWT tokens)
+      const headers = await getAuthHeaders();
+      
+      if (!headers['Authorization']) {
         throw new Error('No authentication token found. Please sign in again.');
       }
 
@@ -246,8 +241,8 @@ const Settings: React.FC = () => {
       const response = await fetch(apiUrl, {
         method: 'PUT',
         headers: {
+          ...headers,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           name: editForm.name,
@@ -300,17 +295,14 @@ const Settings: React.FC = () => {
   const handleOpenCustomerPortal = async () => {
     setPortalLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      const headers = await getAuthHeaders();
+      if (!headers['Authorization']) {
         throw new Error('No authentication token found');
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/stripe/portal`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -337,17 +329,14 @@ const Settings: React.FC = () => {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      const headers = await getAuthHeaders();
+      if (!headers['Authorization']) {
         throw new Error('No authentication token found');
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/stripe/sync-subscription`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -420,17 +409,14 @@ const Settings: React.FC = () => {
   const handleCancelSubscription = async (immediately: boolean = false) => {
     setCancelLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      const headers = await getAuthHeaders();
+      if (!headers['Authorization']) {
         throw new Error('No authentication token found');
       }
 
       const response = await fetch(`${getBackendUrl()}/api/v1/stripe/cancel`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ immediately }),
       });
 

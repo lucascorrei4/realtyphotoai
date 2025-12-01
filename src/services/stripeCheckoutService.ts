@@ -50,7 +50,7 @@ export interface CheckoutSessionData {
   planId: string;
   billingCycle: 'monthly' | 'yearly';
   userId: string;
-  userEmail: string;
+  userEmail?: string; // Optional - Stripe will collect email for guest checkout
   successUrl: string;
   cancelUrl: string;
   metadata?: Record<string, string>;
@@ -130,8 +130,15 @@ export class StripeCheckoutService {
         };
       }
 
-      // Get or create Stripe customer
-      const customer = await this.getOrCreateCustomer(data.userId, data.userEmail);
+      // Check if this is guest checkout
+      const isGuest = data.userId.startsWith('guest_');
+      
+      // Get or create Stripe customer (only for logged-in users with email)
+      // For guest checkout, let Stripe create the customer during checkout
+      let customer: Stripe.Customer | null = null;
+      if (!isGuest && data.userEmail) {
+        customer = await this.getOrCreateCustomer(data.userId, data.userEmail);
+      }
 
       // Get price ID for the plan and billing cycle
       const priceId = await this.getPriceId(plan, data.billingCycle);
@@ -140,8 +147,9 @@ export class StripeCheckoutService {
       const planAmount = data.billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly;
 
       // Build user_data metadata from provided data or defaults
+      // Email is optional for guest checkout (Stripe will collect it)
       const userData: UserData = {
-        email: data.userEmail,
+        ...(data.userEmail ? { email: data.userEmail } : {}),
         external_id: data.userId,
         ...data.userData,
       };
@@ -200,8 +208,10 @@ export class StripeCheckoutService {
       // Note: Split amounts are calculated in webhook processing after payment
 
       // Create checkout session with application fee and transfers
-      const session = await this.stripe.checkout.sessions.create({
-        customer: customer.id,
+      // For guest checkout, don't specify customer - Stripe will create it from email entered during checkout
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+        ...(customer ? { customer: customer.id } : {}), // Only set customer if we have one
+        ...(!isGuest && data.userEmail ? { customer_email: data.userEmail } : {}), // Pre-fill email for logged-in users only
         payment_method_types: ['card'],
         line_items: [
           {
@@ -222,11 +232,15 @@ export class StripeCheckoutService {
         // Enable customer portal for subscription management
         allow_promotion_codes: true,
         billing_address_collection: 'required',
-        customer_update: {
-          address: 'auto',
-          name: 'auto',
-        },
-      });
+        ...(customer ? {
+          customer_update: {
+            address: 'auto',
+            name: 'auto',
+          },
+        } : {}),
+      };
+
+      const session = await this.stripe.checkout.sessions.create(sessionConfig);
 
       logger.info(`Checkout session created for user ${data.userId}, plan ${data.planId}`);
       
@@ -262,16 +276,32 @@ export class StripeCheckoutService {
    */
   private async getOrCreateCustomer(userId: string, email: string): Promise<Stripe.Customer> {
     try {
-      // Check if user already has a Stripe customer ID
-      const { data: user } = await supabase
-        .from('user_profiles')
-        .select('stripe_customer_id')
-        .eq('id', userId)
-        .single();
+      // Check if this is a guest checkout (userId starts with 'guest_')
+      const isGuest = userId.startsWith('guest_');
+      
+      if (!isGuest) {
+        // Check if user already has a Stripe customer ID
+        const { data: user } = await supabase
+          .from('user_profiles')
+          .select('stripe_customer_id')
+          .eq('id', userId)
+          .single();
 
-      if (user?.stripe_customer_id) {
-        // Retrieve existing customer
-        return await this.stripe.customers.retrieve(user.stripe_customer_id) as Stripe.Customer;
+        if (user?.stripe_customer_id) {
+          // Retrieve existing customer
+          return await this.stripe.customers.retrieve(user.stripe_customer_id) as Stripe.Customer;
+        }
+      }
+
+      // For guest checkout or new users, check if customer exists by email
+      const existingCustomers = await this.stripe.customers.list({
+        email,
+        limit: 1,
+      });
+
+      if (existingCustomers.data.length > 0) {
+        logger.info(`Found existing Stripe customer ${existingCustomers.data[0].id} for email ${email}`);
+        return existingCustomers.data[0];
       }
 
       // Create new customer
@@ -279,16 +309,19 @@ export class StripeCheckoutService {
         email,
         metadata: {
           user_id: userId,
+          is_guest: isGuest ? 'true' : 'false',
         },
       });
 
-      // Update user profile with Stripe customer ID
-      await supabase
-        .from('user_profiles')
-        .update({ stripe_customer_id: customer.id })
-        .eq('id', userId);
+      // Update user profile with Stripe customer ID (only if not guest)
+      if (!isGuest) {
+        await supabase
+          .from('user_profiles')
+          .update({ stripe_customer_id: customer.id })
+          .eq('id', userId);
+      }
 
-      logger.info(`Created Stripe customer ${customer.id} for user ${userId}`);
+      logger.info(`Created Stripe customer ${customer.id} for ${isGuest ? 'guest' : 'user'} ${userId}`);
       return customer;
     } catch (error) {
       logger.error('Error getting/creating Stripe customer:', error as Error);

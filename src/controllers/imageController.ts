@@ -308,7 +308,9 @@ export class ImageController {
       // Duplicate section removed - upload logic is handled above
 
       // Resize image if needed to optimize processing
-      const resizedImagePath = path.join(config.tempDir, `resized_${req.file.filename}`);
+      // Use the same fallback logic as temp filename to ensure filename is always defined
+      const resizedFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
+      const resizedImagePath = path.join(config.tempDir, `resized_${resizedFilename}`);
       
       try {
         await FileUtils.resizeImageIfNeeded(processImageProcessingImagePath, resizedImagePath, 1024, 1024);
@@ -317,23 +319,24 @@ export class ImageController {
         const resizeErr = resizeError as Error;
         logger.warn('Image resize failed, checking if it\'s a HEIC file that can be processed directly', {
           error: resizeErr.message,
-          filename: req.file.filename,
-          originalPath: req.file.path
+          filename: req.file.filename || req.file.originalname,
+          originalPath: processImageProcessingImagePath
         });
         
         // Check if this is a HEIC file that failed to resize
-        const fileExtension = path.extname(req.file.path).toLowerCase();
+        // Use processImageProcessingImagePath instead of req.file.path (which may not exist in buffer mode)
+        const fileExtension = path.extname(processImageProcessingImagePath).toLowerCase();
         const isHeic = fileExtension === '.heic' || fileExtension === '.heif';
         
         if (isHeic) {
           try {
             // Try to validate the HEIC file can be processed
             const sharp = require('sharp');
-            const metadata = await sharp(req.file.path).metadata();
+            const metadata = await sharp(processImageProcessingImagePath).metadata();
             
             if (metadata.width && metadata.height) {
               logger.info('HEIC file is valid, proceeding without resize', {
-                filename: req.file.filename,
+                filename: req.file.filename || req.file.originalname,
                 dimensions: `${metadata.width}x${metadata.height}`,
                 format: metadata.format
               });
@@ -347,7 +350,7 @@ export class ImageController {
             const heicErr = heicError as Error;
             logger.error('HEIC file validation failed during resize fallback', {
               error: heicErr.message,
-              filename: req.file.filename
+              filename: req.file.filename || req.file.originalname
             });
             
             // If we can't even validate the HEIC file, throw a user-friendly error
@@ -366,14 +369,16 @@ export class ImageController {
       );
 
       // Download and save processed image to hybrid storage
+      // Use fallback for filename to handle buffer mode
+      const outputFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
       const storageResult = await this.replicateService.downloadAndSaveToHybridStorage(
         outputUrl,
-        `processed_${req.file.filename}`,
+        `processed_${outputFilename}`,
         {
           requestId: metadata.requestId,
           userId: req.user?.id || 'anonymous',
           generationId,
-          originalFile: req.file.filename,
+          originalFile: outputFilename,
         }
       );
 
@@ -389,7 +394,7 @@ export class ImageController {
       );
       
       logger.info('Image processing completed successfully', {
-        originalFile: req.file.filename,
+        originalFile: outputFilename,
         processedFile: storageResult.storageKey,
         processingTime,
         requestId: metadata.requestId,
@@ -569,7 +574,9 @@ export class ImageController {
       if (req.body?.negativePrompt) options.negativePrompt = req.body.negativePrompt;
 
       // Resize image if needed to optimize processing
-      const resizedImagePath = path.join(config.tempDir, `resized_${req.file.filename}`);
+      // Use the same fallback logic as temp filename to ensure filename is always defined
+      const resizedFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
+      const resizedImagePath = path.join(config.tempDir, `resized_${resizedFilename}`);
       let finalImagePath = resizedImagePath;
       
       try {
@@ -579,12 +586,13 @@ export class ImageController {
         const resizeErr = resizeError as Error;
         logger.warn('Image resize failed, checking if it\'s a HEIC file that can be processed directly', {
           error: resizeErr.message,
-          filename: req.file.filename,
-          originalPath: req.file.path
+          filename: req.file.filename || req.file.originalname,
+          originalPath: interiorDesignProcessingImagePath
         });
         
         // Check if this is a HEIC file that failed to resize
-        const fileExtension = path.extname(req.file.path).toLowerCase();
+        // Use interiorDesignProcessingImagePath instead of req.file.path (which may not exist in buffer mode)
+        const fileExtension = path.extname(interiorDesignProcessingImagePath).toLowerCase();
         if (fileExtension === '.heic' || fileExtension === '.heif') {
           // This is a HEIC file that couldn't be resized - likely incompatible format
           const errorMessage = resizeErr.message;
@@ -608,10 +616,10 @@ export class ImageController {
         
         // For other resize errors, try to use the original file
         logger.info('Using original file for processing due to resize failure', {
-          originalPath: req.file.path,
+          originalPath: interiorDesignProcessingImagePath,
           error: resizeErr.message
         });
-        finalImagePath = req.file.path;
+        finalImagePath = interiorDesignProcessingImagePath;
       }
 
       // Upload original image to hybrid storage first
@@ -633,14 +641,16 @@ export class ImageController {
         );
 
         // Download and save processed image to hybrid storage
+        // Use fallback for filename to handle buffer mode
+        const outputFilename = req.file.filename || req.file.originalname || `temp_${Date.now()}.jpg`;
         const storageResult = await this.replicateService.downloadAndSaveToHybridStorage(
           outputUrl,
-          `interior_design_${req.file.filename}`,
+          `interior_design_${outputFilename}`,
           {
             requestId: metadata.requestId,
             userId: req.user?.id || 'anonymous',
             generationId,
-            originalFile: req.file.filename,
+            originalFile: outputFilename,
             designType: req.body.designType,
             prompt: req.body.prompt,
           }

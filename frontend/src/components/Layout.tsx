@@ -33,10 +33,21 @@ interface LayoutProps {
 const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
   const { theme, toggleTheme } = useTheme();
   const { user, loading, signOut } = useAuth();
-  const { creditBalance, creditsLoading } = useCredits();
+  const { creditBalance, creditsLoading, refreshCredits } = useCredits();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  
+  // Refresh credits when subscription plan changes
+  useEffect(() => {
+    if (user?.subscription_plan) {
+      // Small delay to ensure plan data is updated
+      const timeoutId = setTimeout(() => {
+        refreshCredits();
+      }, 1000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [user?.subscription_plan, refreshCredits]);
 
   // Ensure component is mounted before rendering theme-dependent content
   useEffect(() => {

@@ -23,7 +23,7 @@ export const PLAN_DISPLAY_NAMES: Record<string, string> = {
  */
 export function calculateCreditsFromPrice(price: number): { monthlyCredits: number; displayCredits: number } {
   if (price === 0) {
-    return { monthlyCredits: 10, displayCredits: 100 };
+    return { monthlyCredits: 10, displayCredits: 200 };
   }
 
   // 200% margin: Revenue = 3.0 × Cost, so Max Cost = Price ÷ 3.0
@@ -115,26 +115,69 @@ export async function getAllPlansFromDatabase(): Promise<SubscriptionPlan[]> {
 }
 
 /**
+ * Map plan names to database plan names
+ * Handles cases where user's subscription_plan might be a display name or variant
+ */
+function mapPlanNameToDatabasePlan(planName: string): string {
+  const planNameLower = planName.toLowerCase();
+  
+  // Map common variations to database plan names
+  const planMapping: Record<string, string> = {
+    'creator': 'basic',      // "Creator" is display name for "basic"
+    'starter': 'basic',      // "Starter" might be used for "basic"
+    'studio': 'premium',      // "Studio" is display name for "premium"
+    'business': 'enterprise', // "Business" is display name for "enterprise"
+    'explorer': 'free',       // "Explorer" is display name for "free"
+  };
+  
+  return planMapping[planNameLower] || planName;
+}
+
+/**
  * Get user's subscription plan from database plan_rules
  */
 export async function getUserPlanFromDatabase(planName: string): Promise<SubscriptionPlan | null> {
   try {
-    const { data: planRule, error } = await supabase
+    // Map plan name to database plan name
+    const mappedPlanName = mapPlanNameToDatabasePlan(planName);
+    
+    // Try the mapped name first
+    let { data: planRule, error } = await supabase
       .from('plan_rules')
       .select('*')
-      .eq('plan_name', planName)
+      .eq('plan_name', mappedPlanName)
       .eq('is_active', true)
       .single();
 
+    // If not found with mapped name, try original name
+    if (error || !planRule) {
+      if (mappedPlanName !== planName) {
+        console.log(`[getUserPlanFromDatabase] Plan "${planName}" not found, trying mapped name "${mappedPlanName}"`);
+        const { data: originalPlanRule, error: originalError } = await supabase
+          .from('plan_rules')
+          .select('*')
+          .eq('plan_name', planName)
+          .eq('is_active', true)
+          .single();
+        
+        if (!originalError && originalPlanRule) {
+          planRule = originalPlanRule;
+          error = null;
+        }
+      }
+    }
+
     if (error) {
-      console.error(`[getUserPlanFromDatabase] Error fetching plan rule for "${planName}":`, error);
+      console.error(`[getUserPlanFromDatabase] Error fetching plan rule for "${planName}" (mapped: "${mappedPlanName}"):`, error);
       return null;
     }
 
     if (!planRule) {
-      console.error(`[getUserPlanFromDatabase] Plan rule not found in database for: "${planName}"`);
+      console.error(`[getUserPlanFromDatabase] Plan rule not found in database for: "${planName}" (mapped: "${mappedPlanName}")`);
       return null;
     }
+    
+    console.log(`[getUserPlanFromDatabase] ✅ Found plan: ${planRule.plan_name} with ${planRule.monthly_generations_limit} display credits`);
 
     // Use monthly_generations_limit from database as display credits (what users see)
     // This is the single source of truth from the database
@@ -150,20 +193,23 @@ export async function getUserPlanFromDatabase(planName: string): Promise<Subscri
       monthlyCredits = Math.floor(maxCost / 0.039);
     }
     
+    // Use the database plan_name as the source of truth (not the input planName)
+    const dbPlanName = planRule.plan_name;
+    
     // Use display_name from database (single source of truth), fallback to hardcoded if not set
-    const displayName = planRule.display_name || PLAN_DISPLAY_NAMES[planName] || planName;
+    const displayName = planRule.display_name || PLAN_DISPLAY_NAMES[dbPlanName] || dbPlanName;
 
     // Determine feature levels
-    const isEnterprise = planName === 'enterprise';
-    const isPremium = planName === 'premium';
-    const isBasic = planName === 'basic';
+    const isEnterprise = dbPlanName === 'enterprise';
+    const isPremium = dbPlanName === 'premium';
+    const isBasic = dbPlanName === 'basic';
 
     // Use description from database if available
     const planDescription = planRule.description || `The ${displayName} plan with ${displayCredits.toLocaleString()} credits per month`;
     
     const plan: SubscriptionPlan = {
-      id: planName,
-      name: planName,
+      id: dbPlanName, // Use database plan_name, not input
+      name: dbPlanName, // Use database plan_name, not input
       displayName,
       description: planDescription,
       price: {

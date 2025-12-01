@@ -295,15 +295,51 @@ export const checkGenerationLimit = async (
     }
 
     // Get display credits total from plan
+    // Use displayCredits from database (monthly_generations_limit) as single source of truth
     const displayCreditsTotal = userPlan.features?.displayCredits || userPlan.features?.monthlyCredits || 0;
+    
+    // Log credit information for debugging
+    logger.info(`Credit check for user ${req.user.id}`, {
+      planName,
+      displayCreditsTotal,
+      displayCredits: userPlan.features?.displayCredits,
+      monthlyCredits: userPlan.features?.monthlyCredits,
+      planId: userPlan.id,
+      planDisplayName: userPlan.displayName,
+      userPlanFeatures: JSON.stringify(userPlan.features)
+    });
+    
+    // If displayCreditsTotal is 0, this is a critical error - the plan configuration is wrong
+    if (displayCreditsTotal === 0) {
+      logger.error(`CRITICAL: displayCreditsTotal is 0 for user ${req.user.id}`, {
+        planName,
+        userPlan: JSON.stringify(userPlan, null, 2),
+        features: userPlan.features
+      });
+      res.status(500).json({
+        success: false,
+        error: 'Plan configuration error',
+        message: 'Your subscription plan has no credits configured. Please contact support.',
+        debug: {
+          planName,
+          displayCredits: userPlan.features?.displayCredits,
+          monthlyCredits: userPlan.features?.monthlyCredits
+        }
+      });
+      return;
+    }
 
     // Calculate credits used this month (in display credits)
+    // Use database as source of truth - query generations table for current month
     const now = new Date();
     const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    // Select all necessary fields to properly calculate credits
+    // Note: generation_type and duration_seconds columns don't exist in schema
+    // Using model_type to determine video vs image, and metadata for video duration
     const { data: generations, error: generationsError } = await supabase
       .from('generations')
-      .select('model_type')
+      .select('model_type, metadata')
       .eq('user_id', req.user.id)
       .eq('status', 'completed')
       .eq('is_deleted', false)
@@ -325,20 +361,30 @@ export const checkGenerationLimit = async (
       return;
     }
 
-    // Calculate credits used (in display credits)
-    // Video generations default to 6 seconds duration
-    const DEFAULT_VIDEO_DURATION = 6;
+    // Calculate credits used (in display credits) from database generations
+    // This matches the frontend calculation logic exactly
     let displayCreditsUsed = 0;
     (generations || []).forEach((generation) => {
-      // Check if it's a video generation by checking if model_type starts with 'video_'
+      // Check if it's a video generation - use model_type (generation_type column doesn't exist)
       const isVideoGeneration = generation.model_type?.startsWith('video_');
+      
       if (isVideoGeneration) {
-        // Use default duration of 6 seconds for all video generations
-        displayCreditsUsed += getVideoCredits(DEFAULT_VIDEO_DURATION);
+        // Get duration from metadata or default to 6 seconds (standard video length)
+        const duration = generation.metadata?.duration || 
+                        generation.metadata?.duration_seconds || 
+                        6; // Default to 6 seconds for videos
+        displayCreditsUsed += getVideoCredits(duration);
       } else {
         // All other generations are images
         displayCreditsUsed += getImageCredits(1);
       }
+    });
+    
+    logger.info(`Credits calculation for user ${req.user.id}`, {
+      generationsCount: generations?.length || 0,
+      displayCreditsUsed,
+      displayCreditsTotal,
+      displayCreditsRemaining: displayCreditsTotal - displayCreditsUsed
     });
 
     // Determine credits needed for this request

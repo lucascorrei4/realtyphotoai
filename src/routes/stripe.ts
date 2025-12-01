@@ -42,21 +42,51 @@ router.get('/plans', async (_req, res) => {
 });
 
 /**
- * Create checkout session
+ * Create checkout session (supports both authenticated and guest checkout)
  * POST /stripe/checkout
  */
-router.post('/checkout', authenticateToken, asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const { planId, billingCycle = 'monthly' } = req.body;
-  const userId = req.user?.id;
-  const userEmail = req.user?.email;
-
+router.post('/checkout', asyncHandler(async (req: express.Request, res) => {
+  const { planId, billingCycle = 'monthly', email } = req.body;
+  
+  // Try to get user from auth token if provided (for logged-in users)
+  let userId: string | undefined;
+  let userEmail: string | undefined;
+  let isGuest = false;
+  
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (token) {
+      // Try to verify token and get user
+      const authService = (await import('../services/authService')).default;
+      const decoded = authService.verifyToken(token);
+      
+      if (decoded) {
+        userId = decoded.id;
+        userEmail = decoded.email;
+      } else {
+        // Try Supabase token
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (!error && user) {
+          userId = user.id;
+          userEmail = user.email;
+        }
+      }
+    }
+  } catch (error) {
+    // Auth failed, continue as guest
+    logger.info('No valid auth token, proceeding with guest checkout');
+  }
+  
+  // For guest checkout, email is optional - Stripe will collect it during checkout
   if (!userId || !userEmail) {
-    res.status(401).json({ 
-      success: false,
-      error: 'UNAUTHORIZED',
-      message: 'User authentication required' 
-    });
-    return;
+    isGuest = true;
+    // For guest checkout, we'll create the user account after payment in the webhook
+    // Use a temporary identifier - email will come from Stripe after payment
+    userId = `guest_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    // Email is not required - Stripe will collect it during checkout
+    userEmail = email || ''; // Optional - Stripe will collect during checkout
   }
 
   // Validate plan ID - check both SUBSCRIPTION_PLANS and database
@@ -156,8 +186,9 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
   const planAmount = plan ? (billingCycle === 'yearly' ? plan.price.yearly : plan.price.monthly) : 0;
 
   // Build user_data - only include defined values
+  // For guest checkout, email may be empty (Stripe will collect it)
   const userData: UserData = {
-    email: userEmail,
+    ...(userEmail ? { email: userEmail } : {}),
     external_id: userId,
   };
 
@@ -209,15 +240,23 @@ router.post('/checkout', authenticateToken, asyncHandler(async (req: Authenticat
 
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   
+  // For guest checkout, redirect to auth page to create account after payment
+  // For logged-in users, redirect to dashboard
+  // Email will come from Stripe after payment, so we don't need to pass it in URL
+  const successUrl = isGuest 
+    ? `${baseUrl}/auth/callback?subscription=success`
+    : `${baseUrl}/dashboard?subscription=success`;
+  
   const sessionData: CheckoutSessionData = {
     planId,
     billingCycle,
     userId,
-    userEmail,
-    successUrl: `${baseUrl}/dashboard?subscription=success`,
+    ...(userEmail ? { userEmail } : {}), // Only include userEmail if it has a value
+    successUrl,
     cancelUrl: `${baseUrl}/pricing?subscription=cancelled`,
     metadata: {
       source: 'web_app',
+      is_guest: isGuest ? 'true' : 'false',
     },
     userData,
     customData,

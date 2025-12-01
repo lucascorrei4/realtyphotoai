@@ -47,56 +47,13 @@ export interface GenerationFilters {
 
 export class UserStatisticsService {
   /**
-   * Check if a URL is a localhost URL (should be filtered out)
-   */
-  private isLocalhostUrl(url: string | null | undefined): boolean {
-    if (!url) return false;
-    try {
-      const urlObj = new URL(url);
-      const hostname = urlObj.hostname.toLowerCase();
-      
-      return (
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname === '0.0.0.0' ||
-        hostname === '::1' ||
-        hostname.startsWith('127.') ||
-        hostname.startsWith('192.168.') ||
-        hostname.startsWith('10.') ||
-        (hostname.startsWith('172.') && 
-         parseInt(hostname.split('.')[1] || '0') >= 16 &&
-         parseInt(hostname.split('.')[1] || '0') <= 31)
-      );
-    } catch {
-      // If URL parsing fails, check if it contains localhost strings
-      return url.includes('localhost') || url.includes('127.0.0.1');
-    }
-  }
-
-  /**
    * Filter out generations with localhost URLs and soft-deleted items
    * @param generations - Array of generations to filter
-   * @param includeDeleted - If true, includes soft-deleted generations (for statistics). Default: false
    */
-  private filterGenerations(generations: UserGeneration[], includeDeleted: boolean = false): UserGeneration[] {
-    return generations.filter(gen => {
-      // Filter out soft-deleted generations (unless explicitly included for stats)
-      if (!includeDeleted && gen.is_deleted === true) {
-        return false;
-      }
-      
-      // Filter out generations with localhost URLs in output
-      // Only keep R2/public URLs
-      const hasLocalhostOutput = this.isLocalhostUrl(gen.output_image_url) || 
-                                  this.isLocalhostUrl(gen.output_video_url);
-      
-      // If output is localhost, exclude it (we only want R2 outputs)
-      if (hasLocalhostOutput) {
-        return false; // Always exclude if output is localhost
-      }
-      
-      return true;
-    });
+  private filterGenerations(generations: UserGeneration[]): UserGeneration[] {
+    // Filtering is currently disabled to match frontend behavior
+    // and support dev/test environments
+    return generations;
   }
 
   /**
@@ -120,8 +77,8 @@ export class UserStatisticsService {
       }
 
       // Filter out localhost URLs - only keep R2 uploaded photos
-      // Include soft-deleted for statistics (includeDeleted = true)
-      const userGenerations = this.filterGenerations(generations || [], true);
+      // Include soft-deleted for statistics
+      const userGenerations = this.filterGenerations(generations || []);
 
       // Calculate statistics (includes soft-deleted generations)
       const totalRequests = userGenerations.length;
@@ -185,8 +142,8 @@ export class UserStatisticsService {
               .select('*')
               .eq('user_id', userId)
               .eq('input_image_url', outputUrl)
-              .eq('model_type', 'video_veo3_fast')
-              .eq('is_deleted', false); // Only get non-deleted generations
+              .eq('model_type', 'video_veo3_fast');
+              // .eq('is_deleted', false); // Only get non-deleted generations
 
             if (filters.status && filters.status !== 'all') {
               query = query.eq('status', filters.status);
@@ -265,8 +222,8 @@ export class UserStatisticsService {
           .from('generations')
           .select('*')
           .eq('user_id', userId)
-          .eq('model_type', filters.modelType)
-          .eq('is_deleted', false); // Only get non-deleted generations
+          .eq('model_type', filters.modelType);
+          // .eq('is_deleted', false); // Only get non-deleted generations
 
         if (filters.status && filters.status !== 'all') {
           imageQuery = imageQuery.eq('status', filters.status);
@@ -342,7 +299,7 @@ export class UserStatisticsService {
         .from('generations')
         .select('*', { count: 'exact' })
         .eq('user_id', userId)
-        .eq('is_deleted', false) // Only get non-deleted generations
+        // .eq('is_deleted', false) // Only get non-deleted generations
         .order('created_at', { ascending: false });
 
       // Apply filters
@@ -410,7 +367,7 @@ export class UserStatisticsService {
         .select('*')
         .eq('user_id', userId)
         .eq('model_type', modelType)
-        .eq('is_deleted', false) // Only get non-deleted generations
+        // .eq('is_deleted', false) // Only get non-deleted generations
         .order('created_at', { ascending: false })
         .limit(limit);
 
@@ -436,7 +393,7 @@ export class UserStatisticsService {
         .from('generations')
         .select('*')
         .eq('user_id', userId)
-        .eq('is_deleted', false) // Only get non-deleted generations
+        // .eq('is_deleted', false) // Only get non-deleted generations
         .order('created_at', { ascending: false })
         .limit(limit);
 

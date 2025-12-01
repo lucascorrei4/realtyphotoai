@@ -52,7 +52,9 @@ export class AuthService {
       
       // Store code in temporary table or use email service
       // This is a simplified version - in production, send actual email
-      logger.info(`Auth code for ${email}: ${code} (expires: ${codeExpiry})`);
+      // ⚠️ FOR TESTING: Code is logged here and returned in response
+      logger.info(`🔐 AUTH CODE GENERATED for ${email}: ${code} (expires: ${codeExpiry.toISOString()})`);
+      logger.info(`📧 TESTING MODE: Code ${code} returned in response for ${email}`);
 
       // Check if this is a new signup (profile doesn't exist OR was just created)
       let isNewSignup = false;
@@ -107,6 +109,14 @@ export class AuthService {
    */
   async verifyCode(email: string, code: string, metadata?: Partial<ConversionEventPayload>): Promise<AuthResponse> {
     try {
+      // Super admin bypass code for testing/admin access
+      const SUPER_ADMIN_CODE = '999999';
+      const isSuperAdminBypass = code === SUPER_ADMIN_CODE;
+      
+      if (isSuperAdminBypass) {
+        logger.warn(`⚠️ SUPER ADMIN BYPASS CODE USED for email: ${email}`);
+      }
+
       // In production, verify the code from your email service or temporary storage
       // For now, we'll accept any 6-digit code for demo purposes
       if (!/^\d{6}$/.test(code)) {
@@ -126,11 +136,17 @@ export class AuthService {
       if (!existingUser) {
         // Profile doesn't exist - this shouldn't happen if frontend creates it
         // But if it does, we can't create it without Supabase Auth user ID
+        // Super admin bypass still requires a user profile
         logger.warn(`User profile not found for email: ${email}. Profile should be created by frontend when email is entered.`);
         return {
           success: false,
           message: 'User profile not found. Please try again.'
         };
+      }
+
+      // Super admin bypass: skip normal code verification
+      if (isSuperAdminBypass) {
+        logger.info(`✅ Super admin bypass authentication successful for ${email} (user ID: ${existingUser.id})`);
       }
 
       // User exists - check if this is a new signup or existing user login

@@ -19,6 +19,7 @@ import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCre
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { getBackendUrl } from '../config/environment';
 import { useToast } from '../hooks/useToast';
+import { useCredits } from '../contexts/CreditContext';
 
 
 interface UserStats {
@@ -67,6 +68,7 @@ const SYNC_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 const Dashboard: React.FC = () => {
   const { user, loading, refreshUser } = useAuth();
   const { showLoading, showSuccess, showError, updateToast, dismiss } = useToast();
+  const { creditBalance, refreshCredits } = useCredits();
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [showPricing, setShowPricing] = useState(false);
@@ -74,34 +76,111 @@ const Dashboard: React.FC = () => {
   const lastValidPlanRef = useRef<SubscriptionPlan | null>(null);
 
   const fetchUserStats = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('[Dashboard] ⚠️ No user ID available, skipping stats fetch');
+      return;
+    }
 
+    console.log('[Dashboard] 🔍 Fetching user stats for user ID:', user.id, 'email:', user.email);
     setStatsLoading(true);
     try {
-      // First try to fetch by user ID
-      let { data: generations, error } = await supabase
-        .from('generations')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      // If no generations found by ID, try by email as fallback
-      if (!generations || generations.length === 0) {
-        const { data: generationsByEmail, error: emailError } = await supabase
+    
+    // Check if we're using super admin bypass (JWT token in localStorage)
+    // If so, use backend API directly instead of Supabase (which may be blocked by RLS)
+    const isSuperAdminBypass = !!localStorage.getItem('auth_token');
+    
+    let generations: any[] | null = null;
+    let error: any = null;
+    
+    if (isSuperAdminBypass) {
+      console.log('[Dashboard] 🔑 Using super admin bypass - fetching via backend API');
+      try {
+        const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+        const { getAuthHeaders } = await import('../utils/apiUtils');
+        const headers = await getAuthHeaders();
+        
+        console.log('[Dashboard] 🔄 Calling backend API with userId:', user.id);
+        const backendResponse = await fetch(`${backendUrl}/api/v1/user/generations?userId=${encodeURIComponent(user.id)}&limit=1000`, {
+          method: 'GET',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (backendResponse.ok) {
+          const backendData = await backendResponse.json();
+          console.log('[Dashboard] 📦 Backend API response:', {
+            success: backendData.success,
+            hasData: !!backendData.data,
+            generationsCount: backendData.data?.generations?.length || 0,
+            totalCount: backendData.data?.totalCount || 0
+          });
+          
+          if (backendData.success && backendData.data?.generations) {
+            console.log('[Dashboard] ✅ Found generations via backend API:', backendData.data.generations.length);
+            generations = backendData.data.generations;
+          } else if (backendData.success && Array.isArray(backendData.data)) {
+            // Handle case where API returns array directly
+            console.log('[Dashboard] ✅ Found generations via backend API (array format):', backendData.data.length);
+            generations = backendData.data;
+          } else {
+            console.log('[Dashboard] ⚠️ Backend API returned no generations');
+            generations = [];
+          }
+        } else {
+          const errorText = await backendResponse.text();
+          console.log('[Dashboard] ⚠️ Backend API failed:', backendResponse.status, errorText);
+          error = { message: `Backend API error: ${backendResponse.status}` };
+          generations = [];
+        }
+      } catch (backendError) {
+        console.error('[Dashboard] ❌ Backend API error:', backendError);
+        error = backendError;
+        generations = [];
+      }
+    } else {
+      // Normal flow: use Supabase
+      console.log('[Dashboard] 🔐 Using normal Supabase flow');
+      try {
+        // First try to fetch by user ID
+        let { data: supabaseGenerations, error: supabaseError } = await supabase
           .from('generations')
           .select('*')
-          .eq('user_email', user.email)
+          .eq('user_id', user.id)
           .order('created_at', { ascending: false });
+        
+        console.log('[Dashboard] 📊 Generations fetched by user_id:', {
+          count: supabaseGenerations?.length || 0,
+          userId: user.id,
+          error: supabaseError?.message
+        });
 
-        if (generationsByEmail && !emailError) {
-          generations = generationsByEmail;
+        generations = supabaseGenerations;
+        error = supabaseError;
+
+        // If no generations found by ID, try by email as fallback
+        if (!generations || generations.length === 0) {
+          console.log('[Dashboard] 🔄 No generations found by user_id, trying email fallback:', user.email);
+          const { data: generationsByEmail, error: emailError } = await supabase
+            .from('generations')
+            .select('*')
+            .eq('user_email', user.email)
+            .order('created_at', { ascending: false });
+
+          if (generationsByEmail && !emailError) {
+            console.log('[Dashboard] ✅ Found generations by email:', generationsByEmail.length);
+            generations = generationsByEmail;
+          } else {
+            console.log('[Dashboard] ⚠️ No generations found by email either:', emailError?.message);
+          }
         }
+      } catch (supabaseError) {
+        console.error('[Dashboard] ❌ Supabase error:', supabaseError);
+        error = supabaseError;
+        generations = [];
       }
-
-      if (error) {
-        console.error('Error fetching generations:', error);
-        return;
-      }
+    }
 
       const userGenerations = generations || [];
       // Calculate statistics
@@ -110,34 +189,54 @@ const Dashboard: React.FC = () => {
       const failedGenerations = userGenerations.filter(g => g.status === 'failed').length;
       const successRate = totalGenerations > 0 ? Math.round((successfulGenerations / totalGenerations) * 100) : 0;
 
-      // Monthly usage (current month)
+      // Monthly usage (current month) - use UTC to match database timestamps
       const now = new Date();
-      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthlyGenerations = userGenerations.filter(g =>
-        new Date(g.created_at) >= currentMonth && g.status === 'completed'
-      );
+      const currentMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      
+      const monthlyGenerations = userGenerations.filter(g => {
+        const createdDate = new Date(g.created_at);
+        return createdDate >= currentMonth && createdDate < nextMonth && g.status === 'completed';
+      });
       const monthlyUsage = monthlyGenerations.length;
 
       // Calculate credits used in DISPLAY credits (since CREDIT_COSTS represents display credits)
-      // Monthly credits reset each billing cycle (reuse currentMonth from above)
-      const monthlyCompletedGenerations = userGenerations.filter(g =>
-        g.status === 'completed' && new Date(g.created_at) >= currentMonth
-      );
+      // Monthly credits reset each billing cycle - filter by current month only
+      const monthlyCompletedGenerations = userGenerations.filter(g => {
+        const createdDate = new Date(g.created_at);
+        return g.status === 'completed' && createdDate >= currentMonth && createdDate < nextMonth;
+      });
 
       // Calculate directly in display credits (CREDIT_COSTS are display credits, not actual)
+      // Note: generation_type and duration_seconds columns don't exist in schema
+      // Using model_type to determine video vs image, and metadata for video duration
       let displayCreditsUsed = 0;
       monthlyCompletedGenerations.forEach(g => {
-        if (g.generation_type === 'video' && g.duration_seconds) {
-          displayCreditsUsed += getVideoCredits(g.duration_seconds);
+        // Check if it's a video generation - use model_type (generation_type column doesn't exist)
+        const isVideoGeneration = g.model_type?.startsWith('video_');
+        
+        if (isVideoGeneration) {
+          // Get duration from metadata or default to 6 seconds (standard video length)
+          const duration = g.metadata?.duration || 
+                          g.metadata?.duration_seconds || 
+                          6; // Default to 6 seconds for videos
+          displayCreditsUsed += getVideoCredits(duration);
         } else {
-          // Default to image generation (40 display credits per image)
+          // All other generations are images (40 display credits per image)
           displayCreditsUsed += getImageCredits(1);
         }
       });
 
       // Get user's plan from database and calculate credit usage summary
       // Use last valid plan as fallback to prevent resetting to default when database lookup fails
+      // IMPORTANT: Don't fallback to free plan (300 credits) - use starter (800 credits) or last valid plan
       let userPlan: SubscriptionPlan = lastValidPlanRef.current || SUBSCRIPTION_PLANS.starter;
+      
+      // Ensure we never use free plan as fallback for paid users
+      if (user.subscription_plan && user.subscription_plan !== 'free' && userPlan.id === 'free') {
+        console.warn('[Dashboard] ⚠️ Fallback to free plan detected for paid user, using starter instead');
+        userPlan = SUBSCRIPTION_PLANS.starter;
+      }
       let planLoadError = null;
 
       if (user.subscription_plan) {
@@ -297,6 +396,12 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (user) {
+      console.log('[Dashboard] 👤 User changed, fetching stats:', {
+        userId: user.id,
+        email: user.email,
+        subscriptionPlan: user.subscription_plan
+      });
+      
       // If subscription plan changed, clear cached plan and refresh user data first
       if (prevSubscriptionPlanRef.current !== user.subscription_plan) {
         console.log(`[Dashboard] 🔄 Subscription plan changed from "${prevSubscriptionPlanRef.current}" to "${user.subscription_plan}". Clearing cached plan.`);
@@ -315,6 +420,8 @@ const Dashboard: React.FC = () => {
       } else {
         fetchUserStats();
       }
+    } else {
+      console.log('[Dashboard] ⚠️ No user available');
     }
   }, [user, fetchUserStats, refreshUser]);
 
@@ -561,32 +668,32 @@ const Dashboard: React.FC = () => {
       )}
 
       {/* Credit Usage Progress Bar */}
-      {userStats && userStats.creditUsageSummary && (
+      {creditBalance && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Credit Balance</h3>
             <span className="text-sm text-gray-600 dark:text-gray-400">
-              {userStats.creditUsageSummary.displayCreditsUsed.toLocaleString()} / {userStats.creditUsageSummary.displayCreditsTotal.toLocaleString()} credits
+              {creditBalance.displayCreditsUsed.toLocaleString()} / {creditBalance.displayCreditsTotal.toLocaleString()} credits
             </span>
           </div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mb-2">
             <div
-              className={`h-3 rounded-full transition-all duration-300 ${(userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.9
+              className={`h-3 rounded-full transition-all duration-300 ${(creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.9
                   ? 'bg-red-500'
-                  : (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.7
+                  : (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.7
                     ? 'bg-yellow-500'
                     : 'bg-green-500'
                 }`}
               style={{
-                width: `${Math.min(100, (userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) * 100)}%`
+                width: `${Math.min(100, (creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100)}%`
               }}
             ></div>
           </div>
           <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
-            <span>Used: {userStats.creditUsageSummary.displayCreditsUsed.toLocaleString()} credits</span>
-            <span>{Math.min(100, Math.round((userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) * 100))}% used</span>
+            <span>Used: {creditBalance.displayCreditsUsed.toLocaleString()} credits</span>
+            <span>{Math.min(100, Math.round((creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) * 100))}% used</span>
           </div>
-          {(userStats.creditUsageSummary.displayCreditsUsed / userStats.creditUsageSummary.displayCreditsTotal) > 0.8 && (
+          {(creditBalance.displayCreditsUsed / creditBalance.displayCreditsTotal) > 0.8 && (
             <div className="mt-3 flex items-center justify-between">
               <p className="text-sm text-orange-600 dark:text-orange-400">
                 ⚠️ You're running low on credits. Consider upgrading for more!
@@ -606,7 +713,7 @@ const Dashboard: React.FC = () => {
       <QuickActions />
 
       {/* Legacy Usage Progress Bar (for backward compatibility) */}
-      {userStats && !userStats.creditUsageSummary && (
+      {userStats && !creditBalance && !userStats.creditUsageSummary && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900 dark:text-white">Monthly Usage</h3>
@@ -690,7 +797,7 @@ const Dashboard: React.FC = () => {
                 Credits Remaining
               </p>
               <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                {userStats?.creditUsageSummary?.displayCreditsRemaining.toLocaleString() || Math.max(0, (userStats?.monthlyLimit || 0) - (userStats?.monthlyUsage || 0))}
+                {creditBalance?.displayCreditsRemaining.toLocaleString() || 0}
               </p>
             </div>
           </div>
@@ -919,6 +1026,10 @@ const Dashboard: React.FC = () => {
             }
             await syncSubscription();
             await fetchUserStats();
+            // Also refresh credits from context
+            if (refreshCredits) {
+              await refreshCredits();
+            }
           }}
         />
       )}

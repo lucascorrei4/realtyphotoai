@@ -125,6 +125,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Check for existing session
     const checkSession = async () => {
       try {
+        // First, check for JWT token from super admin bypass
+        const jwtToken = localStorage.getItem('auth_token');
+        if (jwtToken) {
+          try {
+            // Verify token with backend and get user info
+            const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+            const response = await fetch(`${backendUrl}/api/v1/auth/verify-token`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${jwtToken}`,
+              },
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.user) {
+                // Set user from backend response
+                setUser(result.user as User);
+                markLoadingComplete();
+                return;
+              }
+            } else {
+              // Token is invalid or expired, remove it
+              localStorage.removeItem('auth_token');
+            }
+          } catch (error) {
+            console.error('❌ Error verifying JWT token:', error);
+            // Continue to check Supabase session
+          }
+        }
+
         // Check if Supabase is properly configured
         const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
         const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
@@ -378,6 +410,93 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (email: string, code: string): Promise<{ success: boolean; message: string }> => {
     try {
+      // Super admin bypass code for testing/admin access
+      const SUPER_ADMIN_CODE = '999999';
+      const isSuperAdminBypass = code === SUPER_ADMIN_CODE;
+
+      if (isSuperAdminBypass) {
+        console.warn('⚠️ SUPER ADMIN BYPASS CODE DETECTED - Using backend API for authentication');
+        
+        // Use backend API for super admin bypass
+        const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+        const response = await fetch(`${backendUrl}/api/v1/auth/verify-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, code }),
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.user) {
+          // Store token if provided (needed for API calls)
+          if (result.token) {
+            localStorage.setItem('auth_token', result.token);
+          }
+
+          // Fetch full user profile from backend (same data structure as normal OTP login)
+          // This ensures we have the most up-to-date information including generation counts
+          // Use the backend API to get the complete profile, matching what fetchUserProfile does
+          try {
+            const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+            const profileResponse = await fetch(`${backendUrl}/api/v1/auth/verify-token`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${result.token}`,
+              },
+            });
+
+            if (profileResponse.ok) {
+              const profileResult = await profileResponse.json();
+              if (profileResult.success && profileResult.user) {
+                // Use the complete user profile from backend (same as fetchUserProfile does)
+                console.log('[AuthContext] ✅ Loaded full user profile from backend:', {
+                  userId: profileResult.user.id,
+                  email: profileResult.user.email,
+                  subscriptionPlan: profileResult.user.subscription_plan,
+                  totalGenerations: profileResult.user.total_generations,
+                  successfulGenerations: profileResult.user.successful_generations
+                });
+                
+                // Set user with complete profile data (matching normal OTP login flow)
+                setUser({
+                  ...profileResult.user,
+                  role: (profileResult.user.role || 'user') as User['role'],
+                  is_active: profileResult.user.is_active ?? true,
+                } as User);
+                markLoadingComplete();
+              } else {
+                // Fallback to user data from verify-code response
+                console.log('[AuthContext] ⚠️ Using user data from verify-code response (fallback)');
+                setUser(result.user as User);
+                markLoadingComplete();
+              }
+            } else {
+              // Fallback to user data from verify-code response
+              console.log('[AuthContext] ⚠️ Profile refresh failed, using verify-code response');
+              setUser(result.user as User);
+              markLoadingComplete();
+            }
+          } catch (error) {
+            console.warn('Failed to refresh user profile after super admin login:', error);
+            // Fallback to user data from verify-code response
+            setUser(result.user as User);
+            markLoadingComplete();
+          }
+
+          // Send conversion event
+          sendConversionEvent('verify-code', email, code).catch(() => {
+            // Ignore errors
+          });
+
+          return { success: true, message: result.message || 'Super admin authentication successful!' };
+        } else {
+          return { success: false, message: result.message || 'Super admin authentication failed' };
+        }
+      }
+
       // Check if Supabase is configured
       const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
       const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;

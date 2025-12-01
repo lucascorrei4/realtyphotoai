@@ -723,7 +723,7 @@ const successMetrics = [
 ];
 
 const ctaHighlights = [
-  'Kick off with 100 free credits across every AI transformation',
+  'Kick off with 300 free credits across every AI transformation',
   'Unlimited before/after previews to showcase client-ready proofs',
   'Dedicated success architect onboarding your team in 48 hours'
 ];
@@ -1553,7 +1553,7 @@ const LandingPage: React.FC = () => {
                   </div>
                   <div className="text-left">
                     <div className="font-bold text-slate-900 dark:text-white">Try These Features Free</div>
-                    <div className="text-sm text-slate-600 dark:text-slate-300">100 free credits to get started</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-300">300 free credits to get started</div>
                   </div>
                 </div>
                 <button
@@ -2139,7 +2139,7 @@ const LandingPage: React.FC = () => {
                 <ArrowRight className="h-5 w-5" />
               </button>
               <span className="text-xs uppercase tracking-wide text-blue-100/80">
-                Sign up now and get 100 credits free
+                Sign up now and get 300 credits free
               </span>
             </div>
           </div>

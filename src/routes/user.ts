@@ -130,6 +130,8 @@ router.get('/generations', userRateLimit, asyncHandler(async (req, res) => {
 
     const result = await userStatsService.getUserGenerationsWithPagination(userId, page, limit, filters);
     
+    logger.info(`[UserGenerations] Fetched ${result.generations.length} generations for user ${userId} (Total: ${result.totalCount})`);
+    
     res.json({
       success: true,
       data: result

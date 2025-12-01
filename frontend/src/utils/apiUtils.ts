@@ -1,10 +1,34 @@
 import { getBackendUrl } from '../config/api';
+import supabase from '../config/supabase';
 
 /**
  * Get authentication headers for API requests
+ * Returns a Record<string, string> for easier type checking
  */
-export const getAuthHeaders = (): HeadersInit => {
-  // Get the access token from localStorage
+export const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  // First, try to get Supabase session token (most reliable)
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      return {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      };
+    }
+  } catch (error) {
+    console.warn('Failed to get Supabase session:', error);
+  }
+
+  // Fallback: Check for JWT token stored during super admin bypass
+  const jwtToken = localStorage.getItem('auth_token');
+  if (jwtToken) {
+    return {
+      'Authorization': `Bearer ${jwtToken}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
+  // Fallback: Get the access token from localStorage (Supabase storage)
   const allKeys = Object.keys(localStorage);
   const supabaseKeys = allKeys.filter(key => key.includes('supabase') || key.includes('sb-'));
   
@@ -39,7 +63,7 @@ export const authenticatedFetch = async (
   options: RequestInit = {}
 ): Promise<Response> => {
   const url = `${getBackendUrl()}${endpoint}`;
-  const headers = getAuthHeaders();
+  const headers = await getAuthHeaders();
   
   const response = await fetch(url, {
     ...options,
@@ -63,7 +87,7 @@ export const authenticatedFormDataFetch = async (
   const url = `${getBackendUrl()}${endpoint}`;
   
   // Get auth headers but exclude Content-Type for FormData
-  const authHeaders = getAuthHeaders();
+  const authHeaders = await getAuthHeaders();
   const headersWithoutContentType: Record<string, string> = {};
   
   // Copy all headers except Content-Type

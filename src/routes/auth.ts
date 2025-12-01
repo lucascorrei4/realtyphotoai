@@ -225,4 +225,44 @@ router.post('/refresh', authenticateToken, async (req, res) => {
   }
 });
 
+// Verify JWT token and return user info (for super admin bypass persistence)
+router.post('/verify-token', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    const user = await authService.getUserProfile(userId);
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'User not found' 
+      });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        subscription_plan: user.subscription_plan,
+        monthly_generations_limit: user.monthly_generations_limit,
+        total_generations: user.total_generations,
+        successful_generations: user.successful_generations,
+        failed_generations: user.failed_generations,
+        is_active: user.is_active,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+      }
+    });
+  } catch (error) {
+    logger.error('Error verifying token:', error as Error);
+    return res.status(500).json({ 
+      success: false,
+      error: 'Failed to verify token' 
+    });
+  }
+});
+
 export default router;
