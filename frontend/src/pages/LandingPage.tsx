@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import LoginForm from '../components/LoginForm';
 import {
-  Mail,
-  Lock,
   ArrowRight,
   CheckCircle,
-  AlertCircle,
   Sun,
   Moon,
   Sparkles,
@@ -783,15 +780,7 @@ const subscriptionOutcomes: SubscriptionOutcome[] = [
 ];
 
 const LandingPage: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [step, setStep] = useState<'email' | 'code'>('email');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [showAuth, setShowAuth] = useState(false);
-
-  const { sendCode, signIn } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -1014,67 +1003,28 @@ const LandingPage: React.FC = () => {
     };
   }, []);
 
-  const handleSendCode = async () => {
-    if (!email || !email.includes('@')) {
-      setMessage('Please enter a valid email address');
-      setMessageType('error');
-      return;
-    }
-
-    setLoading(true);
-    setMessage('');
-
-    try {
-      const result = await sendCode(email);
-      if (result.success) {
-        setMessage(result.message);
-        setMessageType('success');
-        setStep('code');
-      } else {
-        setMessage(result.message);
-        setMessageType('error');
+  // Request notification permission after page loads
+  useEffect(() => {
+    // Request notification permission after a short delay to avoid interrupting page load
+    const requestNotificationPermission = () => {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        // Small delay to ensure page is fully loaded
+        setTimeout(() => {
+          Notification.requestPermission().then((permission) => {
+            if (permission === 'granted') {
+              console.log('Notification permission granted');
+            } else {
+              console.log('Notification permission denied');
+            }
+          }).catch((error) => {
+            console.error('Error requesting notification permission:', error);
+          });
+        }, 2000); // 2 seconds after page load
       }
-    } catch (error) {
-      setMessage('Failed to send code. Please try again.');
-      setMessageType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  const handleVerifyCode = async () => {
-    if (!code || code.length !== 6) {
-      setMessage('Please enter the 6-digit code');
-      setMessageType('error');
-      return;
-    }
-
-    setLoading(true);
-    setMessage('');
-
-    try {
-      const result = await signIn(email, code);
-      if (result.success) {
-        setMessage(result.message);
-        setMessageType('success');
-        navigate('/dashboard');
-      } else {
-        setMessage(result.message);
-        setMessageType('error');
-      }
-    } catch (error) {
-      setMessage('Authentication failed. Please try again.');
-      setMessageType('error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleBackToEmail = () => {
-    setStep('email');
-    setCode('');
-    setMessage('');
-  };
+    requestNotificationPermission();
+  }, []);
 
   const scrollToAuth = () => {
     setShowAuth(true);
@@ -1111,68 +1061,70 @@ const LandingPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <header>
-        <nav 
+        <nav
           className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-lg transition-colors duration-300 dark:border-slate-800/70 dark:bg-slate-950/80"
           role="navigation"
           aria-label="Main navigation"
         >
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center space-x-3 sm:space-x-4">
-            <a href="/" aria-label="RealVision AI Home">
-              <img
-                src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
-                alt="RealVision AI - AI-powered real estate photo enhancement and virtual staging platform"
-                className="h-12 w-auto sm:h-14"
-                width="140"
-                height="56"
-                loading="eager"
-              />
-            </a>
-          </div>
-          <div className="hidden items-center space-x-6 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex">
-            <button onClick={() => handleAnchorNavigation('features-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              Features
-            </button>
-            <button onClick={() => handleAnchorNavigation('services-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              Services
-            </button>
-            <button onClick={() => handleAnchorNavigation('showcase-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              Before &amp; After
-            </button>
-            <button onClick={() => handleAnchorNavigation('testimonials-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              Proof
-            </button>
-            <button onClick={() => handleAnchorNavigation('faq-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              FAQ
-            </button>
-            <button onClick={() => navigate('/pricing')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
-              Pricing
-            </button>
-          </div>
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            <div className="hidden items-center rounded-full border border-amber-200/80 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-600 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 sm:flex">
-              Limited pricing
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center space-x-3 sm:space-x-4">
+              <a href="/" aria-label="RealVision AI Home">
+                <img
+                  src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
+                  alt="RealVision AI - AI-powered real estate photo enhancement and virtual staging platform"
+                  className="h-12 w-auto sm:h-14"
+                  width="140"
+                  height="56"
+                  loading="eager"
+                />
+              </a>
             </div>
-            <button
-              onClick={toggleTheme}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-blue-400 hover:text-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-blue-500"
-            >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
-            <button
-              onClick={scrollToAuth}
-              className="flex items-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/40 sm:px-6 sm:text-base"
-            >
-              Get Started
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="hidden items-center space-x-6 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex">
+              <button onClick={() => handleAnchorNavigation('features-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                Features
+              </button>
+              <button onClick={() => handleAnchorNavigation('services-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                Services
+              </button>
+              <button onClick={() => handleAnchorNavigation('showcase-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                Before &amp; After
+              </button>
+              <button onClick={() => handleAnchorNavigation('testimonials-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                Proof
+              </button>
+              <button onClick={() => handleAnchorNavigation('faq-section')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                FAQ
+              </button>
+              <button onClick={() => navigate('/pricing')} className="transition-colors hover:text-blue-600 dark:hover:text-blue-400">
+                Pricing
+              </button>
+            </div>
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="hidden items-center rounded-full border border-amber-200/80 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-600 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300 sm:flex">
+                Limited pricing
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition-all hover:border-blue-400 hover:text-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-blue-500"
+              >
+                {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+              <button
+                onClick={scrollToAuth}
+                className="flex items-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/40 sm:px-6 sm:text-base"
+              >
+                Get Started
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-        </div>
-      </nav>
+        </nav>
       </header>
 
+
+
       <main role="main">
-        <section 
+        <section
           className="px-4 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32"
           aria-labelledby="hero-heading"
         >
@@ -1183,7 +1135,7 @@ const LandingPage: React.FC = () => {
                   <Sparkles className="h-4 w-4" />
                   <span>AI-Powered Imagery for Real Estate & Design</span>
                 </div>
-                <h1 
+                <h1
                   id="hero-heading"
                   className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
                 >
@@ -1291,6 +1243,16 @@ const LandingPage: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Login Form Section - Moved to top for better visibility and conversion */}
+        <section
+          id="auth-section"
+          className={`px-4 py-12 sm:px-6 lg:px-8 pt-28 sm:pt-32 ${showAuth ? 'scroll-mt-32' : ''}`}
+        >
+          <div className="mx-auto max-w-md">
+            <LoginForm variant="landing" />
           </div>
         </section>
 
@@ -1902,7 +1864,7 @@ const LandingPage: React.FC = () => {
                   itemType="https://schema.org/Review"
                 >
                   <Quote className="h-8 w-8 text-blue-500" aria-hidden="true" />
-                  <blockquote 
+                  <blockquote
                     className="mt-5 flex-1 text-sm text-slate-600 dark:text-slate-300"
                     itemProp="reviewBody"
                   >
@@ -1917,7 +1879,7 @@ const LandingPage: React.FC = () => {
                         <span itemProp="name">{company}</span>
                       </span>
                     </div>
-                    <div 
+                    <div
                       className="mt-2 flex items-center space-x-1 text-amber-400"
                       itemProp="reviewRating"
                       itemScope
@@ -1979,132 +1941,6 @@ const LandingPage: React.FC = () => {
         </section>
       </main>
 
-      <section
-        id="auth-section"
-        className={`px-4 py-20 sm:px-6 lg:px-8 ${showAuth ? 'scroll-mt-32' : ''}`}
-      >
-        <div className="mx-auto max-w-md">
-          <div className="mb-6 text-center sm:mb-8">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 sm:h-16 sm:w-16">
-              <Mail className="h-6 w-6 text-white sm:h-8 sm:w-8" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-              {step === 'email' ? 'Get Started Today' : 'Enter Code'}
-            </h2>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-              {step === 'email'
-                ? 'Enter your email to receive a secure login code.'
-                : `We sent a 6-digit code to ${email}`}
-            </p>
-          </div>
-
-          <div className={`space-y-6 rounded-2xl bg-white p-6 shadow-xl ring-offset-2 ring-offset-white transition dark:bg-slate-800 dark:shadow-2xl dark:ring-offset-slate-950 ${showAuth ? 'ring-2 ring-blue-500/60' : ''}`}>
-            {step === 'email' ? (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="email" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 bg-white py-3 pl-10 pr-4 text-gray-900 transition-colors focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-slate-700 dark:text-white"
-                      placeholder="you@agency.com"
-                      disabled={loading}
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={handleSendCode}
-                  disabled={loading || !email}
-                  className="flex w-full items-center justify-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 font-medium text-white transition-all hover:from-blue-700 hover:to-indigo-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
-                  ) : (
-                    <>
-                      <span>Send Code</span>
-                      <ArrowRight className="h-5 w-5" />
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="code" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Verification Code
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                    <input
-                      id="code"
-                      type="text"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className="w-full rounded-lg border border-gray-300 bg-white py-3 pl-10 pr-4 text-center text-lg font-mono tracking-widest text-gray-900 transition-colors focus:border-transparent focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-slate-700 dark:text-white"
-                      placeholder="000000"
-                      maxLength={6}
-                      disabled={loading}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter the 6-digit code sent to your email.</p>
-                </div>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={handleBackToEmail}
-                    disabled={loading}
-                    className="flex-1 rounded-lg border border-gray-300 py-3 text-gray-700 transition hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-                  >
-                    Back
-                  </button>
-                  <button
-                    onClick={handleVerifyCode}
-                    disabled={loading || code.length !== 6}
-                    className="flex flex-1 items-center justify-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-3 font-medium text-white transition-all hover:from-blue-700 hover:to-indigo-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {loading ? (
-                      <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white" />
-                    ) : (
-                      <>
-                        <span>Verify</span>
-                        <CheckCircle className="h-5 w-5" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {message && (
-              <div className={`flex items-center space-x-3 rounded-lg p-4 ${messageType === 'success'
-                ? 'border border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200'
-                : 'border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200'
-                }`}>
-                {messageType === 'success' ? (
-                  <CheckCircle className="h-5 w-5 text-green-500 dark:text-green-300" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-red-500 dark:text-red-300" />
-                )}
-                <span className="text-sm font-medium">{message}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-            <p>
-              {step === 'email'
-                ? "Don't have an account? Enter your email and we'll create one instantly."
-                : "Didn't receive the code? Check spam or go back to resend."}
-            </p>
-          </div>
-        </div>
-      </section>
-
       <section className="px-4 pb-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-6xl rounded-3xl border border-blue-200/70 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-10 text-white shadow-2xl dark:border-blue-500/40">
           <div className="flex flex-col gap-10 lg:flex-row lg:items-center lg:justify-between">
@@ -2146,7 +1982,7 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      <footer 
+      <footer
         className="bg-gray-900 py-8 text-white dark:bg-slate-900 sm:py-12"
         role="contentinfo"
         itemScope
@@ -2156,9 +1992,9 @@ const LandingPage: React.FC = () => {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 sm:gap-8">
             <div className="sm:col-span-2 lg:col-span-1" itemScope itemType="https://schema.org/Organization">
               <div className="mb-4 flex items-center space-x-3">
-                <img 
-                  src="/logo_white.png" 
-                  alt="RealVision AI - AI-powered real estate photo enhancement platform" 
+                <img
+                  src="/logo_white.png"
+                  alt="RealVision AI - AI-powered real estate photo enhancement platform"
                   className="h-6 w-auto sm:h-8"
                   width="140"
                   height="56"
