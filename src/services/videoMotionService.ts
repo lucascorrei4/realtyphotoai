@@ -18,7 +18,7 @@ export interface VideoMotionOptions {
 
 /**
  * Calculate aspect ratio from image dimensions
- * Veo-3-Fast only supports 16:9 and 9:16, so square images default to 16:9
+ * Veo-3.1-Fast only supports 16:9 and 9:16, so square images default to 16:9
  */
 function calculateAspectRatio(width: number, height: number): '16:9' | '9:16' {
   // More explicit logic:
@@ -37,7 +37,7 @@ function calculateAspectRatio(width: number, height: number): '16:9' | '9:16' {
 
 /**
  * Get image dimensions from URL or buffer and calculate aspect ratio
- * Returns only '16:9' or '9:16' as those are the only values supported by Veo-3-Fast
+ * Returns only '16:9' or '9:16' as those are the only values supported by Veo-3.1-Fast
  */
 async function getImageAspectRatio(imagePath: string | Buffer): Promise<'16:9' | '9:16'> {
   try {
@@ -88,7 +88,7 @@ async function getImageAspectRatio(imagePath: string | Buffer): Promise<'16:9' |
 
 export class VideoMotionService {
   private replicate: Replicate;
-  private readonly veo3FastModelId = 'google/veo-3-fast:55a98860aef3187802db0cf27d85439019a44266442aed9f5ba0baf1d5b3983f';
+  private readonly veo3FastModelId = 'google/veo-3.1-fast:af87cbb0ee4dfffefb483e206251676fe21107fdec31aeb1f8855b55acea4fda';
 
   constructor() {
     this.replicate = new Replicate({
@@ -169,7 +169,7 @@ export class VideoMotionService {
   }
 
   /**
-   * Generate video using Veo-3-Fast model
+   * Generate video using Veo-3.1-Fast model
    * General video generation with movement
    */
   public async generateVeo3Fast(
@@ -180,7 +180,7 @@ export class VideoMotionService {
     const requestId = uuidv4();
 
     try {
-      logger.info('🎬 Starting Veo-3-Fast video generation', {
+      logger.info('🎬 Starting Veo-3.1-Fast video generation', {
         requestId,
         imagePath,
         options,
@@ -217,7 +217,7 @@ export class VideoMotionService {
           }
         } else {
           // For public URLs, download to resize and ensure proper aspect ratio
-          // This ensures the image matches the target aspect ratio before sending to Veo-3-Fast
+          // This ensures the image matches the target aspect ratio before sending to Veo-3.1-Fast
           try {
             logger.info('⬇️ Downloading public URL for aspect ratio optimization', { requestId, url: imagePath });
             const response = await fetch(imagePath);
@@ -277,7 +277,7 @@ export class VideoMotionService {
       }
       
       // Resize image to match target aspect ratio and ensure minimum 1080p quality
-      // This ensures Veo-3-Fast receives an image that matches the output aspect ratio
+      // This ensures Veo-3.1-Fast receives an image that matches the output aspect ratio
       if (imageMetadata && imageMetadata.width && imageMetadata.height) {
         const targetWidth = aspectRatio === '16:9' ? 1920 : 1080;
         const targetHeight = aspectRatio === '16:9' ? 1080 : 1920;
@@ -360,7 +360,7 @@ export class VideoMotionService {
       }
 
       // Build prompt - include camera movement if provided
-      // For Veo-3-Fast, camera movement should be integrated into the prompt naturally
+      // For Veo-3.1-Fast, camera movement should be integrated into the prompt naturally
       let prompt: string;
       if (options.cameraMovement) {
         // If camera movement is provided, create a prompt that emphasizes camera movement
@@ -377,7 +377,7 @@ export class VideoMotionService {
         prompt = options.prompt || 'Add a impressive ultrarealistic movement to this image';
       }
 
-      // Prepare input for Veo-3-Fast
+      // Prepare input for Veo-3.1-Fast
       // Duration must be 4, 6, or 8 seconds (default to 6)
       // Aspect ratio must be '16:9' or '9:16' (never '1:1')
       // Resolution should be '1080p' to ensure high quality output
@@ -391,7 +391,7 @@ export class VideoMotionService {
         ...(options.negativePrompt && { negative_prompt: options.negativePrompt })
       };
 
-      logger.info('🚀 Running Veo-3-Fast video generation', {
+      logger.info('🚀 Running Veo-3.1-Fast video generation', {
         requestId,
         model: this.veo3FastModelId,
         aspectRatio,
@@ -409,7 +409,7 @@ export class VideoMotionService {
       const output = await this.replicate.run(this.veo3FastModelId, { input });
 
       const processingTime = Date.now() - startTime;
-      logger.info('✅ Veo-3-Fast video generation completed', {
+      logger.info('✅ Veo-3.1-Fast video generation completed', {
         requestId,
         processingTime,
         model: this.veo3FastModelId,
@@ -429,10 +429,10 @@ export class VideoMotionService {
         } else if (typeof output.url === 'string') {
           outputUrl = output.url;
         } else {
-          throw new Error('Unexpected output format from Veo-3-Fast model');
+          throw new Error('Unexpected output format from Veo-3.1-Fast model');
         }
       } else {
-        throw new Error('Unexpected output format from Veo-3-Fast model');
+        throw new Error('Unexpected output format from Veo-3.1-Fast model');
       }
 
       return {
@@ -449,7 +449,7 @@ export class VideoMotionService {
     } catch (error) {
       const processingTime = Date.now() - startTime;
       
-      logger.error('❌ Veo-3-Fast video generation failed', {
+      logger.error('❌ Veo-3.1-Fast video generation failed', {
         requestId,
         error: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
@@ -462,7 +462,7 @@ export class VideoMotionService {
   }
 
   /**
-   * Generate video using Veo-3-Fast model
+   * Generate video using Veo-3.1-Fast model
    * This is the only supported video generation method
    */
   public async generateVideo(

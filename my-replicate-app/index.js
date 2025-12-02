@@ -6,11 +6,15 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
   userAgent: 'https://www.npmjs.com/package/create-replicate'
 })
-const model = 'minimax/video-01-director:377cde553c72d2a8a034a2824a43b63b9472247d670dbb14d8c917abb2d39b64'
+const model = 'google/veo-3.1-fast:af87cbb0ee4dfffefb483e206251676fe21107fdec31aeb1f8855b55acea4fda'
 const input = {
-  prompt: '[truck left, pan right, tracking shot] bullet time effect',
-  prompt_optimizer: true,
-  first_frame_image: 'https://replicate.delivery/pbxt/MYlgrLz3fkaOdsOpAY4H0ugeGkhJaZj2AM3LrzChrRA2FSyt/MemeLoveTriangle_297886754.webp',
+  image: 'https://replicate.delivery/pbxt/NtDCMBJNIQTOU0mZtlnlrqrPLgYvTvpCISbFIiweYPsotGY5/replicate-prediction-gn4tnddn5drme0csx1yt3jvy4c.jpeg',
+  prompt: 'Overlapping geometric shapes, pulsing to upbeat electronic music with SFX of shifting patterns',
+  duration: 8,
+  last_frame: 'https://replicate.delivery/pbxt/NtDCLnwTQaPfLhgaNDmLevN8QivDFS8V91M8pCwEpDNIN9uA/replicate-prediction-8m82ekaj7hrma0csx1xrkmqjhm.jpeg',
+  resolution: '720p',
+  aspect_ratio: '16:9',
+  generate_audio: true,
 }
 
 console.log('Using model: %s', model)
