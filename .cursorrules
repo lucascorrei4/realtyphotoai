@@ -1,0 +1,53 @@
+# RealtyPhotoAI - Cursor Rules & Guidelines
+
+## Project Overview
+RealtyPhotoAI is a professional real estate photo enhancement platform using AI.
+- **Backend**: Node.js (v18+), Express, TypeScript
+- **Frontend**: React (Create React App), Tailwind CSS, TypeScript
+- **Database**: Supabase
+- **AI/ML**: Replicate API (Stable Diffusion, Google Veo-3, Nano-Banana)
+- **Payments**: Stripe
+- **Infrastructure**: Docker, Nginx
+
+## Coding Standards
+
+### General
+- **Language**: TypeScript for all new code.
+- **Async/Await**: Use `async/await` over raw Promises.
+- **Environment Variables**: Use `process.env` and validate in `config/` or similar.
+- **Logging**: Use the project's `logger` (winston) instead of `console.log`.
+
+### Backend (`src/`)
+- **Structure**: Follow the Service-Controller-Route pattern.
+  - **Controllers**: Handle HTTP requests/responses.
+  - **Services**: Contain business logic and AI integrations.
+  - **Routes**: Define API endpoints.
+- **Error Handling**: Wrap async route handlers in `try/catch` and pass errors to middleware.
+- **AI Integration**:
+  - Use specific services in `src/services/` (e.g., `SmartEffectsService`, `VideoMotionService`).
+  - **CRITICAL**: When modifying prompts for Exterior/Smart Effects, ALWAYS include preservation instructions to keep the house structure intact.
+  - Use `uuid` for tracking `requestId`.
+
+### Frontend (`frontend/src/`)
+- **Components**: Use React Functional Components with Hooks.
+- **Styling**: Tailwind CSS utility classes.
+- **State**: React Context or local state (avoid Redux unless necessary).
+- **API Calls**: Use `fetch` or custom hooks for backend communication.
+
+## AI Service Guidelines
+- **Image Processing**:
+  - Support standard formats (JPG, PNG) and handle HEIC conversion where possible.
+  - Use `sharp` for image manipulation (resizing, format conversion).
+- **Replicate Models**:
+  - `google/nano-banana`: Used for Interior/Exterior Design, Smart Effects, & Add Furniture.
+  - `google/veo-3.1-fast`: Used for Video Motion.
+  - **Aspect Ratios**: Respect model limitations (e.g., Veo supports 16:9 or 9:16 only).
+
+## Workflow
+1. **Analyze**: Before changes, understand the impact on existing services (especially AI prompt logic).
+2. **Implement**: Follow existing patterns (e.g., look at `SmartEffectsService.ts` before creating a new effect service).
+3. **Verify**: Ensure Types match and linter passes.
+
+## Specific Rules
+- **Preservation**: In `ExteriorDesignService` and `SmartEffectsService`, maintaining the original building geometry is paramount. Do not remove this logic.
+- **Motion**: `VideoMotionService` only supports `veo3_fast`.

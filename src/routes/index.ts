@@ -42,9 +42,6 @@ const createRateLimit = (windowMs: number, max: number): ReturnType<typeof rateL
 // General rate limit
 const generalRateLimit = createRateLimit(config.rateLimitWindowMs, config.rateLimitMaxRequests);
 
-// Stricter rate limit for processing endpoints
-const processingRateLimit = createRateLimit(15 * 60 * 1000, 10); // 10 requests per 15 minutes
-
 const isValidEventType = (value: unknown): value is ConversionEventType =>
   value === 'Lead' || value === 'CompleteRegistration';
 
@@ -204,7 +201,6 @@ router.post('/process-image',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('interior_design'),
-  processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
   validateUploadedFile,
@@ -216,7 +212,6 @@ router.post('/interior-design',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('interior_design'),
-  processingRateLimit,
   uploadMiddleware.single('image'),
   handleUploadError,
   validateUploadedFile,
@@ -233,7 +228,6 @@ router.post('/image-enhancement',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('image_enhancement'),
-  processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 20 },
     { name: 'referenceImage', maxCount: 1 }
@@ -248,7 +242,6 @@ router.post('/replace-elements',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('element_replacement'),
-  processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'image', maxCount: 1 }
   ]),
@@ -262,7 +255,6 @@ router.post('/add-furnitures',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('add_furnitures'),
-  processingRateLimit,
   uploadMultipleMiddleware.fields([
     { name: 'roomImage', maxCount: 1 },
     { name: 'furnitureImage', maxCount: 1 }
@@ -277,7 +269,6 @@ router.post('/exterior-design',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('exterior_design'),
-  processingRateLimit,
   uploadMiddleware.single('buildingImage'),
   validateUploadedFile,
   handleUploadError,
@@ -289,7 +280,6 @@ router.post('/smart-effects',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('smart_effects'),
-  processingRateLimit,
   uploadMiddleware.single('houseImage'),
   validateUploadedFile,
   handleUploadError,
@@ -301,7 +291,6 @@ router.post('/generate-video-motion',
   authenticateToken,
   checkGenerationLimit,
   checkModelAccess('video_generation'),
-  processingRateLimit,
   asyncHandler(imageController.generateVideoMotion)
 );
 

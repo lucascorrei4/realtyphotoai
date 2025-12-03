@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
+import { SUBSCRIPTION_PLANS } from '../config/subscriptionPlans';
 
 export interface PlanRule {
   id: string;
@@ -29,7 +30,10 @@ export const PLAN_DISPLAY_NAMES: Record<string, string> = {
   free: 'Explorer',
   basic: 'Creator',
   premium: 'Studio',
-  enterprise: 'Business'
+  enterprise: 'Business',
+  starter: 'Starter',
+  pro: 'Pro',
+  ultra: 'Ultra'
 };
 
 /**
@@ -39,7 +43,10 @@ export const PLAN_MAPPING: Record<string, string> = {
   free: 'explorer',
   basic: 'creator',
   premium: 'studio',
-  enterprise: 'business'
+  enterprise: 'business',
+  starter: 'starter',
+  pro: 'pro',
+  ultra: 'ultra'
 };
 
 export function mapPlanIdToPlanName(planId: string): string {
@@ -296,6 +303,25 @@ export class PlanRulesService {
    * Get default plan (fallback)
    */
   private getDefaultPlan(planName: string): any {
+    // check if plan exists in SUBSCRIPTION_PLANS
+    if (SUBSCRIPTION_PLANS[planName]) {
+      const plan = SUBSCRIPTION_PLANS[planName];
+      return {
+        id: plan.id,
+        name: plan.name,
+        displayName: plan.displayName,
+        features: {
+          monthlyCredits: plan.features.monthlyCredits,
+          displayCredits: plan.features.displayCredits,
+          aiPhotos: plan.features.aiPhotos
+        },
+        limits: {
+          monthlyCredits: plan.limits.monthlyCredits,
+          monthlyGenerations: plan.limits.monthlyGenerations
+        }
+      };
+    }
+
     // Default mappings based on plan_rules data
     const defaults: Record<string, any> = {
       free: {
