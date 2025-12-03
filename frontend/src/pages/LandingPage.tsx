@@ -783,6 +783,8 @@ const LandingPage: React.FC = () => {
   const [showAuth, setShowAuth] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [posterUrl, setPosterUrl] = useState<string>('');
 
   useEffect(() => {
     const pageTitle = 'RealVision AI | AI Real Estate Photo Enhancement & Virtual Staging';
@@ -1026,6 +1028,39 @@ const LandingPage: React.FC = () => {
     requestNotificationPermission();
   }, []);
 
+  // Capture frame at 3 seconds for video thumbnail
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const captureFrame = () => {
+      video.currentTime = 3;
+      video.addEventListener('seeked', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 1920;
+        canvas.height = video.videoHeight || 1080;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          setPosterUrl(dataUrl);
+          video.poster = dataUrl;
+        }
+      }, { once: true });
+    };
+
+    if (video.readyState >= 2) {
+      // Metadata is loaded
+      captureFrame();
+    } else {
+      video.addEventListener('loadedmetadata', captureFrame, { once: true });
+    }
+
+    return () => {
+      video.removeEventListener('loadedmetadata', captureFrame);
+    };
+  }, []);
+
   const scrollToAuth = () => {
     setShowAuth(true);
     requestAnimationFrame(() => {
@@ -1129,23 +1164,80 @@ const LandingPage: React.FC = () => {
           aria-labelledby="hero-heading"
         >
           <div className="mx-auto max-w-7xl">
-            <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-center mb-4">
-              <div>
-                <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
-                  <Sparkles className="h-4 w-4" />
-                  <span>AI-Powered Imagery for Real Estate & Design</span>
+            <div className="mb-4">
+              <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
+                <Sparkles className="h-4 w-4" />
+                <span>AI-Powered Imagery for Real Estate & Design</span>
+              </div>
+              <h1
+                id="hero-heading"
+                className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
+              >
+                Sell Homes 72% Faster with
+                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  {' '}AI-Enhanced Listings That Captivate Buyers
+                </span>
+              </h1>
+              
+              {/* Video and Before/After Slider */}
+              <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-start">
+                {/* Video Player */}
+                <div className="order-1 lg:order-1">
+                  <div className="rounded-2xl overflow-hidden border border-slate-200/70 bg-white/80 shadow-xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <video
+                      ref={videoRef}
+                      className="w-full h-auto"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster={posterUrl}
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/WhatsApp%20Video%202025-12-02%20at%207.07.47%20PM.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
                 </div>
-                <h1
-                  id="hero-heading"
-                  className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
-                >
-                  Sell Homes 72% Faster with
-                  <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                    {' '}AI-Enhanced Listings That Captivate Buyers
-                  </span>
-                </h1>
+                
+                {/* Before/After Slider */}
+                <div className="relative order-2 lg:order-2">
+                  <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-blue-500/30 via-indigo-500/20 to-purple-500/30 blur-3xl"></div>
+                  <div className="rounded-3xl border border-white/40 bg-white/80 p-4 shadow-2xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <BeforeAfterSlider
+                      beforeSrc={heroService.beforeSrc}
+                      afterSrc={heroService.afterSrc}
+                      altBefore={heroService.altBefore}
+                      altAfter={heroService.altAfter}
+                      beforeLabel="Before"
+                      afterLabel="After"
+                      className="h-64 sm:h-72 md:h-80"
+                    />
+                    <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
+                      <div className="flex flex-col">
+                        <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Stunning results in 12 seconds</span>
+                        <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAnchorNavigation('showcase-section')}
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-400 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800 sm:text-base"
+                    >
+                      <ImageIcon className="h-5 w-5" />
+                      <span>View All Transformations</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div>
                 <p className="mt-6 max-w-3xl text-base text-slate-600 dark:text-slate-300 sm:text-lg md:text-xl">
-                  Tired of raw photos that don't impress clients or close deals? <strong>RealVision AI</strong> enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
+                  Tired of raw videos or photos that don't impress clients or close deals? <strong>RealVision AI</strong> enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
                 </p>
                 <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
                   <button
@@ -1213,36 +1305,6 @@ const LandingPage: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              <div className="relative">
-                <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-blue-500/30 via-indigo-500/20 to-purple-500/30 blur-3xl"></div>
-                <div className="rounded-3xl border border-white/40 bg-white/80 p-4 shadow-2xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
-                  <BeforeAfterSlider
-                    beforeSrc={heroService.beforeSrc}
-                    afterSrc={heroService.afterSrc}
-                    altBefore={heroService.altBefore}
-                    altAfter={heroService.altAfter}
-                    beforeLabel="Before"
-                    afterLabel="After"
-                    className="h-64 sm:h-72 md:h-80"
-                  />
-                  <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
-                    <div className="flex flex-col">
-                      <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Stunning results in 12 seconds</span>
-                      <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleAnchorNavigation('showcase-section')}
-                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-400 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800 sm:text-base"
-                  >
-                    <ImageIcon className="h-5 w-5" />
-                    <span>View All Transformations</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
