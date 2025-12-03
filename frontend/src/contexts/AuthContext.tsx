@@ -565,6 +565,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await supabase.auth.signOut();
       setUser(null);
+      // Clear JWT token from localStorage (used for super admin bypass)
+      localStorage.removeItem('auth_token');
+      // Clear sessionStorage items
+      sessionStorage.removeItem('login_form_state');
+      sessionStorage.removeItem('subscription-last-sync');
       markLoadingComplete();
     } catch (error) {
       console.error('Error signing out:', error);
@@ -579,6 +584,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear local state
       setUser(null);
       markLoadingComplete();
+
+      // Clear JWT token from localStorage (used for super admin bypass)
+      localStorage.removeItem('auth_token');
 
       // Clear all localStorage items
       localStorage.removeItem('supabase.auth.token');
@@ -598,6 +606,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       keysToRemove.forEach(key => {
         localStorage.removeItem(key);
       });
+
+      // Clear sessionStorage items
+      sessionStorage.removeItem('login_form_state');
+      sessionStorage.removeItem('subscription-last-sync');
 
     } catch (error) {
       console.error('🚨 Error clearing authentication state:', error);

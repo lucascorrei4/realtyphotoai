@@ -1033,31 +1033,63 @@ const LandingPage: React.FC = () => {
     const video = videoRef.current;
     if (!video) return;
 
-    const captureFrame = () => {
-      video.currentTime = 3;
-      video.addEventListener('seeked', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 1920;
-        canvas.height = video.videoHeight || 1080;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          setPosterUrl(dataUrl);
-          video.poster = dataUrl;
+    // Ensure video loads first
+    const handleLoadedData = () => {
+      // Video is loaded, now try to capture frame
+      const captureFrame = () => {
+        try {
+          // Only capture if video duration is available and >= 3 seconds
+          if (video.duration && video.duration >= 3) {
+            video.currentTime = 3;
+            const handleSeeked = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth || 1920;
+                canvas.height = video.videoHeight || 1080;
+                const ctx = canvas.getContext('2d');
+                if (ctx && video.videoWidth > 0 && video.videoHeight > 0) {
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                  const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                  setPosterUrl(dataUrl);
+                  video.poster = dataUrl;
+                }
+              } catch (error) {
+                // CORS error or canvas export failed - silently fail and use no poster
+                console.warn('Could not capture video frame for thumbnail:', error);
+              }
+            };
+            video.addEventListener('seeked', handleSeeked, { once: true });
+          }
+        } catch (error) {
+          console.warn('Could not seek video for thumbnail capture:', error);
         }
-      }, { once: true });
+      };
+
+      // Wait a bit for video to be ready
+      if (video.readyState >= 2) {
+        captureFrame();
+      } else {
+        video.addEventListener('loadedmetadata', captureFrame, { once: true });
+      }
     };
 
-    if (video.readyState >= 2) {
-      // Metadata is loaded
-      captureFrame();
+    // Handle video load errors
+    const handleError = () => {
+      console.warn('Video failed to load');
+    };
+
+    if (video.readyState >= 4) {
+      // Video is already loaded
+      handleLoadedData();
     } else {
-      video.addEventListener('loadedmetadata', captureFrame, { once: true });
+      video.addEventListener('loadeddata', handleLoadedData, { once: true });
+      video.addEventListener('error', handleError, { once: true });
     }
 
     return () => {
-      video.removeEventListener('loadedmetadata', captureFrame);
+      video.removeEventListener('loadeddata', handleLoadedData);
+      video.removeEventListener('error', handleError);
+      video.removeEventListener('loadedmetadata', handleLoadedData);
     };
   }, []);
 
