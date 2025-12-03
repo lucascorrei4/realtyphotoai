@@ -3,7 +3,7 @@ import { Upload, Camera } from 'lucide-react';
 import { API_CONFIG, getBackendUrl } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget } from '../components';
+import { RecentGenerationsWidget, HowItWorksButton } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFiles, validateImageFile } from '../utils/fileValidation';
@@ -259,13 +259,22 @@ const ImageEnhancement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-
+      {/* Header with How It Works Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">✨ Image Enhancement</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Enhance multiple images with AI-powered luminosity and color improvements
+          </p>
+        </div>
+        <HowItWorksButton variant="outline" />
+      </div>
 
       {/* Stats Widget */}
       <StatsWidget
         modelType="image_enhancement"
-        title="✨ Image Enhancement"
-        description="Enhance multiple images with AI-powered luminosity and color improvements"
+        title=""
+        description=""
         userId={user?.id}
       />
 

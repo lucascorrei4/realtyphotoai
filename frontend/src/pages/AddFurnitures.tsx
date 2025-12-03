@@ -3,7 +3,7 @@ import { Upload, Sofa } from 'lucide-react';
 import { API_CONFIG } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget, ImagePreview } from '../components';
+import { RecentGenerationsWidget, ImagePreview, HowItWorksButton } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
@@ -195,11 +195,22 @@ const AddFurnitures: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with How It Works Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">🪑 Add Furnitures</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Add modern furniture to empty rooms or place specific furniture items using AI
+          </p>
+        </div>
+        <HowItWorksButton variant="outline" />
+      </div>
+
       {/* Stats Widget */}
       <StatsWidget
         modelType="add_furnitures"
-        title="🪑 Add Furnitures"
-        description="Add modern furniture to empty rooms or place specific furniture items using AI"
+        title=""
+        description=""
         userId={user?.id}
       />
 

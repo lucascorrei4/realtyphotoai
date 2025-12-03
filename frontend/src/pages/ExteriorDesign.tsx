@@ -3,7 +3,7 @@ import { Upload, Building2 } from 'lucide-react';
 import { API_CONFIG } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget } from '../components';
+import { RecentGenerationsWidget, HowItWorksButton } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
@@ -158,11 +158,22 @@ const ExteriorDesign: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with How It Works Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">🏢 Exterior Design</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Transform building exteriors with AI-powered architectural design
+          </p>
+        </div>
+        <HowItWorksButton variant="outline" />
+      </div>
+
       {/* Stats Widget */}
       <StatsWidget
         modelType="exterior_design"
-        title="🏢 Exterior Design"
-        description="Transform building exteriors with AI-powered architectural design"
+        title=""
+        description=""
         userId={user?.id}
       />
 

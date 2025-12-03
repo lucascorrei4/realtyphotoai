@@ -3,7 +3,7 @@ import { Home } from 'lucide-react';
 import { API_CONFIG } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget } from '../components';
+import { RecentGenerationsWidget, HowItWorksButton } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
@@ -158,11 +158,22 @@ const InteriorDesign: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with How It Works Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">🏠 Interior Design</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Transform room interiors with AI-powered design and styling
+          </p>
+        </div>
+        <HowItWorksButton variant="outline" />
+      </div>
+
       {/* Stats Widget */}
       <StatsWidget
         modelType="interior_design"
-        title="🏠 Interior Design"
-        description="Transform room interiors with AI-powered design and styling"
+        title=""
+        description=""
         userId={user?.id}
       />
 

@@ -3,7 +3,7 @@ import { Upload, Sparkles, Clock, CheckCircle, AlertCircle, Wand2 } from 'lucide
 import { getBackendUrl } from '../config/api';
 import { authenticatedFormDataFetch } from '../utils/apiUtils';
 import StatsWidget from '../components/StatsWidget';
-import { RecentGenerationsWidget } from '../components';
+import { RecentGenerationsWidget, HowItWorksButton } from '../components';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { validateImageFile } from '../utils/fileValidation';
@@ -196,13 +196,22 @@ const ReplaceElements: React.FC = () => {
 
   return (
     <div className="space-y-6">
-
+      {/* Header with How It Works Button */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">🎨 Replace Elements</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Transform images by replacing elements or changing styles using AI
+          </p>
+        </div>
+        <HowItWorksButton variant="outline" />
+      </div>
 
       {/* Stats Widget */}
       <StatsWidget
         modelType="element_replacement"
-        title="🎨 Replace Elements"
-        description="Transform images by replacing elements or changing styles using AI"
+        title=""
+        description=""
         userId={user?.id}
       />
 
