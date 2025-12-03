@@ -183,50 +183,34 @@ export class InteriorDesignService {
     designType: string,
     style: string
   ): string {
-    let stylePrefix = '';
-    let designSuffix = '';
+    // Style-specific prefixes from environment variables
+    const stylePrefixes: Record<string, string> = {
+      realistic: process.env.PROMPT_INTERIOR_STYLE_REALISTIC_PREFIX || 'Create a photorealistic interior design of ',
+      architectural: process.env.PROMPT_INTERIOR_STYLE_ARCHITECTURAL_PREFIX || 'Create an architectural interior visualization of ',
+      lifestyle: process.env.PROMPT_INTERIOR_STYLE_LIFESTYLE_PREFIX || 'Create a lifestyle interior design of '
+    };
 
-    // Style-specific prefixes
-    switch (style) {
-      case 'realistic':
-        stylePrefix = 'Create a photorealistic interior design of ';
-        designSuffix = '. Include realistic lighting, shadows, textures, and materials';
-        break;
-      case 'architectural':
-        stylePrefix = 'Create an architectural interior visualization of ';
-        designSuffix = '. Focus on structural elements, spatial design, and architectural details';
-        break;
-      case 'lifestyle':
-        stylePrefix = 'Create a lifestyle interior design of ';
-        designSuffix = '. Show the space as lived-in with warm, inviting atmosphere';
-        break;
-      default:
-        stylePrefix = 'Create an interior design of ';
-    }
+    const styleSuffixes: Record<string, string> = {
+      realistic: process.env.PROMPT_INTERIOR_STYLE_REALISTIC_SUFFIX || '. Include realistic lighting, shadows, textures, and materials',
+      architectural: process.env.PROMPT_INTERIOR_STYLE_ARCHITECTURAL_SUFFIX || '. Focus on structural elements, spatial design, and architectural details',
+      lifestyle: process.env.PROMPT_INTERIOR_STYLE_LIFESTYLE_SUFFIX || '. Show the space as lived-in with warm, inviting atmosphere'
+    };
 
-    // Design type-specific enhancements
-    switch (designType) {
-      case 'modern':
-        designSuffix += '. Modern contemporary style with clean lines, neutral colors, and minimalist furniture';
-        break;
-      case 'traditional':
-        designSuffix += '. Traditional style with classic furniture, rich textures, and warm color palette';
-        break;
-      case 'minimalist':
-        designSuffix += '. Minimalist design with simple forms, neutral colors, and uncluttered spaces';
-        break;
-      case 'scandinavian':
-        designSuffix += '. Scandinavian style with light woods, white walls, cozy textiles, and hygge elements';
-        break;
-      case 'industrial':
-        designSuffix += '. Industrial style with exposed brick, metal elements, concrete surfaces, and urban aesthetic';
-        break;
-      case 'bohemian':
-        designSuffix += '. Bohemian style with eclectic furniture, vibrant colors, patterns, and artistic elements';
-        break;
-      case 'custom':
-        // Keep original prompt as-is for custom designs
-        break;
+    let stylePrefix = stylePrefixes[style] || process.env.PROMPT_INTERIOR_STYLE_DEFAULT_PREFIX || 'Create an interior design of ';
+    let designSuffix = styleSuffixes[style] || '';
+
+    // Design type-specific enhancements from environment variables
+    const designTypeEnhancements: Record<string, string> = {
+      modern: process.env.PROMPT_INTERIOR_TYPE_MODERN || '. Modern contemporary style with clean lines, neutral colors, and minimalist furniture',
+      traditional: process.env.PROMPT_INTERIOR_TYPE_TRADITIONAL || '. Traditional style with classic furniture, rich textures, and warm color palette',
+      minimalist: process.env.PROMPT_INTERIOR_TYPE_MINIMALIST || '. Minimalist design with simple forms, neutral colors, and uncluttered spaces',
+      scandinavian: process.env.PROMPT_INTERIOR_TYPE_SCANDINAVIAN || '. Scandinavian style with light woods, white walls, cozy textiles, and hygge elements',
+      industrial: process.env.PROMPT_INTERIOR_TYPE_INDUSTRIAL || '. Industrial style with exposed brick, metal elements, concrete surfaces, and urban aesthetic',
+      bohemian: process.env.PROMPT_INTERIOR_TYPE_BOHEMIAN || '. Bohemian style with eclectic furniture, vibrant colors, patterns, and artistic elements'
+    };
+
+    if (designType !== 'custom' && designTypeEnhancements[designType]) {
+      designSuffix += designTypeEnhancements[designType];
     }
 
     return `${stylePrefix}${originalPrompt}${designSuffix}. Transform the existing room with this interior design concept.`;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, CheckCircle, AlertCircle, MailCheck, Clock, Copy, Bell } from 'lucide-react';
@@ -28,11 +28,88 @@ const LoginForm: React.FC<LoginFormProps> = ({
   const [autoSubmitAttempted, setAutoSubmitAttempted] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [codeSentTime, setCodeSentTime] = useState<number | null>(null);
+  const [hasAutoSubmitError, setHasAutoSubmitError] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
+  const autoSubmitTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const { sendCode, signIn } = useAuth();
   const navigate = useNavigate();
+
+  const STORAGE_KEY = 'login_form_state';
+  const CODE_EXPIRY_DURATION = 2 * 60 * 1000; // 2 minutes
+
+  // Restore state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const now = Date.now();
+        
+        // Check if code is still valid (not expired)
+        if (parsed.codeSentTime && (now - parsed.codeSentTime) < CODE_EXPIRY_DURATION) {
+          // Restore state only if code hasn't expired
+          if (parsed.email) setEmail(parsed.email);
+          if (parsed.step) setStep(parsed.step);
+          if (parsed.codeSentTime) {
+            setCodeSentTime(parsed.codeSentTime);
+            // The countdown timer will automatically recalculate from this time
+          }
+        } else {
+          // Clear expired state
+          sessionStorage.removeItem(STORAGE_KEY);
+        }
+      }
+    } catch (error) {
+      console.error('Error restoring login form state:', error);
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+    
+    // Cleanup on unmount - clear storage if user navigates away after successful auth
+    return () => {
+      // Only clear if we're not in the middle of a successful auth flow
+      // (storage will be cleared explicitly on success)
+    };
+  }, []);
+
+  // Save state to sessionStorage whenever relevant values change
+  useEffect(() => {
+    try {
+      if (step === 'code' && email && codeSentTime) {
+        const state = {
+          email,
+          step,
+          codeSentTime,
+          timestamp: Date.now()
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } else if (step === 'email') {
+        // Clear storage when back to email step
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error('Error saving login form state:', error);
+    }
+  }, [step, email, codeSentTime]);
+
+  // Track component mount state
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Cleanup timers on unmount
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = null;
+      }
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // Auto-focus code input when step changes
   useEffect(() => {
@@ -44,48 +121,89 @@ const LoginForm: React.FC<LoginFormProps> = ({
     }
   }, [step]);
 
+  // Memoize the verify function to prevent unnecessary re-renders
+  const handleAutoVerify = useCallback(async () => {
+    if (!isMountedRef.current || !code || code.length !== 6 || loading || autoSubmitAttempted || hasAutoSubmitError) {
+      return;
+    }
+
+    try {
+      setAutoSubmitAttempted(true);
+      setLoading(true);
+      setMessage('');
+      
+      const result = await signIn(email, code);
+      
+      if (!isMountedRef.current) return; // Component unmounted during async operation
+      
+      if (result.success) {
+        setMessage(result.message);
+        setMessageType('success');
+        setHasAutoSubmitError(false); // Reset error flag on success
+        
+        // Clear persisted state on successful login
+        sessionStorage.removeItem(STORAGE_KEY);
+        
+        if (onSuccess) {
+          onSuccess();
+        }
+        
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            navigate(redirectTo);
+          }
+        }, 500);
+      } else {
+        setMessage(result.message);
+        setMessageType('error');
+        setAutoSubmitAttempted(true); // Keep as true to prevent retry
+        setHasAutoSubmitError(true); // Mark that we had an error, don't auto-retry
+      }
+    } catch (error) {
+      if (!isMountedRef.current) return;
+      console.error('Auto-verify error:', error);
+      setMessage('Authentication failed. Please try again.');
+      setMessageType('error');
+      setAutoSubmitAttempted(true); // Keep as true to prevent retry
+      setHasAutoSubmitError(true); // Mark that we had an error, don't auto-retry
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [code, email, loading, autoSubmitAttempted, hasAutoSubmitError, signIn, navigate, redirectTo, onSuccess]);
+
   // Auto-submit when 6 digits are entered
   useEffect(() => {
-    if (step === 'code' && code.length === 6 && !loading && !autoSubmitAttempted) {
-      setAutoSubmitAttempted(true);
+    // Clear any existing timer
+    if (autoSubmitTimerRef.current) {
+      clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
+    }
+
+    // Reset error flag when code changes (user is typing a new code)
+    if (code.length < 6) {
+      setAutoSubmitAttempted(false);
+      setHasAutoSubmitError(false);
+    }
+
+    // Only auto-submit if we haven't had an error and conditions are met
+    if (step === 'code' && code.length === 6 && !loading && !autoSubmitAttempted && !hasAutoSubmitError && isMountedRef.current) {
       // Small delay for better UX (user can see all digits entered)
-      const timer = setTimeout(async () => {
-        if (!code || code.length !== 6) return;
-        
-        setLoading(true);
-        setMessage('');
-        
-        try {
-          const result = await signIn(email, code);
-          if (result.success) {
-            setMessage(result.message);
-            setMessageType('success');
-            
-            if (onSuccess) {
-              onSuccess();
-            }
-            
-            setTimeout(() => {
-              navigate(redirectTo);
-            }, 500);
-          } else {
-            setMessage(result.message);
-            setMessageType('error');
-            setAutoSubmitAttempted(false);
-          }
-        } catch (error) {
-          setMessage('Authentication failed. Please try again.');
-          setMessageType('error');
-          setAutoSubmitAttempted(false);
-        } finally {
-          setLoading(false);
+      autoSubmitTimerRef.current = setTimeout(() => {
+        if (isMountedRef.current && code.length === 6 && !hasAutoSubmitError) {
+          handleAutoVerify();
         }
       }, 300);
-      return () => clearTimeout(timer);
-    } else if (code.length < 6) {
-      setAutoSubmitAttempted(false);
     }
-  }, [code, step, loading, email, signIn, navigate, redirectTo, onSuccess]);
+
+    return () => {
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = null;
+      }
+    };
+  }, [code, step, loading, autoSubmitAttempted, hasAutoSubmitError, handleAutoVerify]);
 
   // Track when code was entered for reminder
   useEffect(() => {
@@ -152,27 +270,37 @@ const LoginForm: React.FC<LoginFormProps> = ({
   // Browser notification when code is sent (if user allows)
   useEffect(() => {
     if (step === 'code' && codeSentTime && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Check your email!', {
-        body: `We sent a 6-digit code to ${email}. Please enter it to continue.`,
-        icon: '/logo_white.png',
-        tag: 'verification-code',
-        requireInteraction: false,
-      });
+      try {
+        new Notification('Check your email!', {
+          body: `We sent a 6-digit code to ${email}. Please enter it to continue.`,
+          icon: '/logo_white.png',
+          tag: 'verification-code',
+          requireInteraction: false,
+        });
+      } catch (error) {
+        console.error('Notification error:', error);
+        // Silently fail - notification is not critical
+      }
     }
   }, [step, codeSentTime, email]);
 
   const handleSendCode = async () => {
+    if (!isMountedRef.current) return;
+    
     if (!email || !email.includes('@')) {
       setMessage('Please enter a valid email address');
       setMessageType('error');
       return;
     }
 
-    setLoading(true);
-    setMessage('');
-
     try {
+      setLoading(true);
+      setMessage('');
+
       const result = await sendCode(email);
+      
+      if (!isMountedRef.current) return; // Component unmounted during async operation
+      
       if (result.success) {
         setMessage(result.message);
         setMessageType('success');
@@ -183,35 +311,51 @@ const LoginForm: React.FC<LoginFormProps> = ({
         
         // Request notification permission
         if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-          Notification.requestPermission();
+          Notification.requestPermission().catch(err => {
+            console.error('Notification permission error:', err);
+          });
         }
       } else {
         setMessage(result.message);
         setMessageType('error');
       }
     } catch (error) {
+      if (!isMountedRef.current) return;
+      console.error('Send code error:', error);
       setMessage('Failed to send code. Please try again.');
       setMessageType('error');
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const handleVerifyCode = async () => {
+    if (!isMountedRef.current) return;
+    
     if (!code || code.length !== 6) {
       setMessage('Please enter the 6-digit code');
       setMessageType('error');
       return;
     }
 
-    setLoading(true);
-    setMessage('');
-
     try {
+      setLoading(true);
+      setMessage('');
+      setHasAutoSubmitError(false); // Reset error flag on manual verify
+
       const result = await signIn(email, code);
+      
+      if (!isMountedRef.current) return; // Component unmounted during async operation
+      
       if (result.success) {
         setMessage(result.message);
         setMessageType('success');
+        setHasAutoSubmitError(false);
+        
+        // Clear persisted state on successful login
+        sessionStorage.removeItem(STORAGE_KEY);
         
         // Call onSuccess callback if provided
         if (onSuccess) {
@@ -220,19 +364,27 @@ const LoginForm: React.FC<LoginFormProps> = ({
         
         // Small delay to show success message before redirect
         setTimeout(() => {
-          navigate(redirectTo);
+          if (isMountedRef.current) {
+            navigate(redirectTo);
+          }
         }, 500);
       } else {
         setMessage(result.message);
         setMessageType('error');
-        setAutoSubmitAttempted(false);
+        setAutoSubmitAttempted(true); // Prevent auto-retry
+        setHasAutoSubmitError(true);
       }
     } catch (error) {
+      if (!isMountedRef.current) return;
+      console.error('Verify code error:', error);
       setMessage('Authentication failed. Please try again.');
       setMessageType('error');
-      setAutoSubmitAttempted(false);
+      setAutoSubmitAttempted(true); // Prevent auto-retry
+      setHasAutoSubmitError(true);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -242,8 +394,11 @@ const LoginForm: React.FC<LoginFormProps> = ({
     setMessage('');
     setCodeEnteredTime(null);
     setAutoSubmitAttempted(false);
+    setHasAutoSubmitError(false); // Reset error flag
     setCodeSentTime(null);
     setCountdown(null);
+    // Clear persisted state when going back
+    sessionStorage.removeItem(STORAGE_KEY);
   };
 
   const handleCopyEmail = () => {
@@ -261,6 +416,11 @@ const LoginForm: React.FC<LoginFormProps> = ({
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '').slice(0, 6);
     setCode(value);
+    // Reset error flags when user manually changes the code
+    if (value.length < 6) {
+      setAutoSubmitAttempted(false);
+      setHasAutoSubmitError(false);
+    }
   };
 
   const handleCodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -274,6 +434,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
     setMessage('');
     setCodeEnteredTime(null);
     setAutoSubmitAttempted(false);
+    setHasAutoSubmitError(false); // Reset error flag
     setCodeSentTime(null);
     setCountdown(null);
     await handleSendCode();
@@ -287,6 +448,18 @@ const LoginForm: React.FC<LoginFormProps> = ({
   const isCountdownActive = countdown !== null && countdown > 0;
   const isCountdownLow = countdown !== null && countdown < 60000; // Less than 1 minute
 
+  // Safety check: ensure step is valid
+  if (step !== 'email' && step !== 'code') {
+    console.error('Invalid step value:', step);
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-red-500">An error occurred. Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
+
   // Render based on variant
   if (isAuthPageVariant) {
     return (
@@ -299,11 +472,13 @@ const LoginForm: React.FC<LoginFormProps> = ({
           {/* Logo */}
           {showLogo && (
             <div className="text-center mb-4">
-              <img 
-                src="https://realvisionaire.com/logo_white.png" 
-                alt="Real Vision AI Logo" 
-                className="mx-auto h-32 w-auto object-contain"
-              />
+              <a href="/" title="Go home">
+                <img 
+                  src="https://realvisionaire.com/logo_white.png" 
+                  alt="Real Vision AI Logo" 
+                  className="mx-auto h-32 w-auto object-contain"
+                />
+              </a>
             </div>
           )}
 
@@ -357,57 +532,49 @@ const LoginForm: React.FC<LoginFormProps> = ({
 
           {/* Header */}
           <div className="text-center">
+            <h2 className={`text-3xl font-bold ${
+              step === 'email' 
+                ? 'text-white' 
+                : 'text-white'
+            }`}>
+              {step === 'email' ? 'Welcome Back' : 'Enter Your Code'}
+            </h2>
             {step === 'code' && (
-              <div className="mb-6 p-5 bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-500/20 border-2 border-blue-500/50 rounded-xl backdrop-blur-sm animate-pulse">
-                <div className="flex items-center justify-center mb-3">
-                  <MailCheck className="h-6 w-6 text-blue-400 mr-2 animate-pulse" />
-                  <h3 className="text-lg font-semibold text-blue-300">📧 Check Your Email!</h3>
-                </div>
-                <p className="text-sm text-gray-300 mb-2">
-                  We sent a 6-digit code to
+              <div className="mt-3 mb-6">
+                <p className="text-sm text-gray-400 mb-1">
+                  Code sent to
                 </p>
-                <div className="flex items-center justify-center gap-2 mb-3">
-                  <p className="text-sm font-medium text-blue-300 break-all">
+                <div className="flex items-center justify-center gap-2">
+                  <p className="text-sm font-medium text-blue-400 break-all">
                     {email}
                   </p>
                   <button
                     onClick={handleCopyEmail}
-                    className="p-1 hover:bg-blue-500/30 rounded transition-colors"
+                    className="p-1 hover:bg-blue-500/20 rounded transition-colors"
                     title="Copy email"
                   >
                     <Copy className="h-4 w-4 text-blue-400" />
                   </button>
                 </div>
                 {isCountdownActive && (
-                  <div className={`mt-3 p-2 rounded-lg ${
+                  <div className={`mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full ${
                     isCountdownLow 
-                      ? 'bg-red-500/20 border border-red-500/50' 
-                      : 'bg-blue-500/10 border border-blue-500/30'
+                      ? 'bg-red-500/20 text-red-300 border border-red-500/50' 
+                      : 'bg-blue-500/10 text-blue-300 border border-blue-500/30'
                   }`}>
-                    <div className="flex items-center justify-center gap-2">
-                      <Clock className={`h-4 w-4 ${isCountdownLow ? 'text-red-400 animate-pulse' : 'text-blue-400'}`} />
-                      <span className={`text-xs font-semibold ${isCountdownLow ? 'text-red-300' : 'text-blue-300'}`}>
-                        {isCountdownLow ? '⏰ Hurry! ' : ''}
-                        {formatTime(countdown)} remaining to enter your code
-                      </span>
-                    </div>
+                    <Clock className={`h-4 w-4 ${isCountdownLow ? 'animate-pulse' : ''}`} />
+                    <span className={`text-xs font-semibold`}>
+                      {formatTime(countdown)}
+                    </span>
                   </div>
                 )}
               </div>
             )}
-            <h2 className={`text-3xl font-bold ${
-              step === 'email' 
-                ? 'text-white' 
-                : 'bg-gradient-to-r from-blue-400 via-indigo-400 to-blue-400 bg-clip-text text-transparent animate-pulse'
-            }`}>
-              {step === 'email' ? 'Welcome Back' : 'We Sent You The Code Confirmation'}
-            </h2>
-            <p className="mt-2 text-sm text-gray-300">
-              {step === 'email' 
-                ? 'Enter your email to receive a login code'
-                : 'Enter the 6-digit verification code below'
-              }
-            </p>
+            {step === 'email' && (
+              <p className="mt-2 text-sm text-gray-300">
+                Enter your email to receive a login code
+              </p>
+            )}
           </div>
 
           {/* Form */}
@@ -450,36 +617,20 @@ const LoginForm: React.FC<LoginFormProps> = ({
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Reminder banner positioned above Verification Code */}
-                <div className={`p-4 rounded-xl border-2 backdrop-blur-sm animate-pulse ${
-                  isCountdownLow
-                    ? 'bg-gradient-to-r from-red-500/20 via-orange-500/20 to-yellow-500/20 border-red-400'
-                    : 'bg-gradient-to-r from-yellow-400/20 via-amber-400/20 to-orange-400/20 border-yellow-300 dark:border-yellow-400'
-                }`}>
-                  <div className="space-y-3">
+                {/* Simplified reminder - only show if countdown is low or code not entered */}
+                {isCountdownLow && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
                     <div className="flex items-center justify-center gap-2">
-                      <Bell className={`h-5 w-5 ${isCountdownLow ? 'text-red-400 animate-pulse' : 'text-yellow-500'}`} />
-                      <span className={`text-sm font-semibold text-center ${isCountdownLow ? 'text-red-300' : 'text-yellow-200'}`}>
-                        {isCountdownLow ? '⚠️ Check your email for the verification code.' : '📧 '}
-                        Take a look in the SPAM folder if you don't see it.
+                      <Bell className="h-4 w-4 text-red-400 animate-pulse" />
+                      <span className="text-xs font-medium text-red-300 text-center">
+                        Check your email now • Code expires soon
                       </span>
                     </div>
-                    {isCountdownActive && (
-                      <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg ${
-                        isCountdownLow ? 'bg-red-500/30' : 'bg-yellow-500/30'
-                      }`}>
-                        <Clock className={`h-5 w-5 ${isCountdownLow ? 'text-red-300 animate-pulse' : 'text-yellow-300'}`} />
-                        <span className={`text-base font-bold ${isCountdownLow ? 'text-red-200' : 'text-yellow-200'}`}>
-                          {formatTime(countdown)}
-                        </span>
-                      </div>
-                    )}
                   </div>
-                </div>
+                )}
                 
                 <div>
-                  <label htmlFor="code" className="block text-sm font-semibold text-gray-200 mb-3 flex items-center">
-                    <Lock className="h-4 w-4 mr-2 text-blue-400" />
+                  <label htmlFor="code" className="block text-sm font-semibold text-gray-200 mb-3">
                     Verification Code
                   </label>
                   <div className="relative">
@@ -510,14 +661,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
                       ></div>
                     ))}
                   </div>
-                  <p className="mt-3 text-xs text-center text-gray-400">
-                    {code.length === 0 
-                      ? 'Enter the 6-digit code sent to your email'
-                      : code.length < 6
-                        ? `${code.length}/6 digits entered • Auto-verifying when complete...`
-                        : 'Verifying code...'
-                    }
-                  </p>
                 </div>
 
                 <div className="flex space-x-3 pt-2">
@@ -549,7 +692,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
                     ) : (
                       <>
                         <span>Verify Code</span>
-                        <CheckCircle className="h-5 w-5" />
                       </>
                     )}
                   </button>
@@ -581,20 +723,16 @@ const LoginForm: React.FC<LoginFormProps> = ({
                 Don't have an account? No problem! Just enter your email and we'll create one for you.
               </p>
             ) : (
-              <div className="space-y-2">
-                <p className={`font-semibold ${isCountdownLow ? 'text-red-300 animate-pulse' : 'text-gray-300'}`}>
-                  {isCountdownLow ? '⏰ Time is running out! ' : ''}
-                  Didn't receive the code?
-                </p>
-                <p>
-                  Check your spam folder or click "Resend" to get a new code.
-                </p>
-                {isCountdownActive && (
-                  <p className="text-xs text-gray-400 mt-2">
-                    Code expires in {formatTime(countdown)} • Check your email now!
-                  </p>
-                )}
-              </div>
+              <p className="text-xs">
+                Didn't receive it? Check spam or{' '}
+                <button
+                  onClick={handleResendCode}
+                  disabled={loading}
+                  className="text-blue-400 hover:text-blue-300 underline disabled:opacity-50"
+                >
+                  resend
+                </button>
+              </p>
             )}
           </div>
         </div>
@@ -675,32 +813,41 @@ const LoginForm: React.FC<LoginFormProps> = ({
           )}
         </div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-          {step === 'email' ? 'Get Started Today' : '📧 Enter Your Code'}
+          {step === 'email' ? 'Get Started Today' : 'Enter Your Code'}
         </h2>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-          {step === 'email'
-            ? 'Enter your email to receive a secure login code.'
-            : (
-              <div className="space-y-2">
-                <p>We sent a 6-digit code to</p>
-                <div className="flex items-center justify-center gap-2">
-                  <span className="font-semibold text-blue-600 dark:text-blue-400 break-all">{email}</span>
-                  <button
-                    onClick={handleCopyEmail}
-                    className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
-                    title="Copy email"
-                  >
-                    <Copy className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </button>
-                </div>
-                {isCountdownActive && (
-                  <p className={`text-xs font-semibold ${isCountdownLow ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
-                    ⏰ {formatTime(countdown)} remaining • Don't forget to check your inbox!
-                  </p>
-                )}
+        {step === 'email' ? (
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Enter your email to receive a secure login code.
+          </p>
+        ) : (
+          <div className="mt-3 mb-6">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              Code sent to
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-sm font-medium text-blue-600 dark:text-blue-400 break-all">{email}</span>
+              <button
+                onClick={handleCopyEmail}
+                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded transition-colors"
+                title="Copy email"
+              >
+                <Copy className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              </button>
+            </div>
+            {isCountdownActive && (
+              <div className={`mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full ${
+                isCountdownLow 
+                  ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30' 
+                  : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+              }`}>
+                <Clock className={`h-4 w-4 ${isCountdownLow ? 'animate-pulse' : ''}`} />
+                <span className="text-xs font-semibold">
+                  {formatTime(countdown)}
+                </span>
               </div>
             )}
-        </p>
+          </div>
+        )}
       </div>
 
       <div className={`space-y-6 rounded-2xl p-6 shadow-xl ring-offset-2 transition-all duration-500 ${
@@ -745,32 +892,17 @@ const LoginForm: React.FC<LoginFormProps> = ({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Reminder banner positioned above Verification Code */}
-            <div className={`p-4 rounded-xl border-2 backdrop-blur-sm animate-pulse ${
-              isCountdownLow
-                ? 'bg-gradient-to-r from-red-500/20 via-orange-500/20 to-yellow-500/20 border-red-500'
-                : 'bg-gradient-to-r from-yellow-500/20 via-amber-500/20 to-orange-500/20 border-yellow-400'
-            }`}>
-              <div className="space-y-3">
+            {/* Simplified reminder - only show if countdown is low */}
+            {isCountdownLow && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 dark:bg-red-500/20 dark:border-red-500/50">
                 <div className="flex items-center justify-center gap-2">
-                  <Bell className={`h-5 w-5 ${isCountdownLow ? 'text-red-400 animate-pulse' : 'text-yellow-500'}`} />
-                  <span className={`text-sm font-semibold text-center ${isCountdownLow ? 'text-red-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
-                    {isCountdownLow ? '⚠️ Check now in your email for the verification code! ' : '📧 '}
-                    Take a look in the SPAM folder if you don't see it.
+                  <Bell className="h-4 w-4 text-red-500 dark:text-red-400 animate-pulse" />
+                  <span className="text-xs font-medium text-red-600 dark:text-red-400 text-center">
+                    Check your email now • Code expires soon
                   </span>
                 </div>
-                {isCountdownActive && (
-                  <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg ${
-                    isCountdownLow ? 'bg-red-500/30' : 'bg-yellow-500/30'
-                  }`}>
-                    <Clock className={`h-5 w-5 ${isCountdownLow ? 'text-red-300 animate-pulse' : 'text-yellow-600 dark:text-yellow-400'}`} />
-                    <span className={`text-base font-bold ${isCountdownLow ? 'text-red-200' : 'text-yellow-700 dark:text-yellow-300'}`}>
-                      {formatTime(countdown)}
-                    </span>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
             
             <div>
               <label htmlFor="code-landing" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -806,14 +938,6 @@ const LoginForm: React.FC<LoginFormProps> = ({
                   ></div>
                 ))}
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {code.length === 0
-                  ? 'Enter the 6-digit code sent to your email'
-                  : code.length < 6
-                    ? `${code.length}/6 digits entered • Auto-verifying when complete...`
-                    : 'Verifying code...'
-                }
-              </p>
             </div>
             <div className="flex space-x-3">
               <button
@@ -870,18 +994,16 @@ const LoginForm: React.FC<LoginFormProps> = ({
         {step === 'email' ? (
           <p>Don't have an account? Enter your email and we'll create one instantly.</p>
         ) : (
-          <div className="space-y-2">
-            <p className={`font-semibold ${isCountdownLow ? 'text-red-600 dark:text-red-400 animate-pulse' : ''}`}>
-              {isCountdownLow ? '⏰ Hurry! ' : ''}
-              Didn't receive the code?
-            </p>
-            <p>Check spam or click 'Resend' to get a new code.</p>
-            {isCountdownActive && (
-              <p className="text-xs mt-2">
-                Code expires in {formatTime(countdown)} • Check your email now!
-              </p>
-            )}
-          </div>
+          <p className="text-xs">
+            Didn't receive it? Check spam or{' '}
+            <button
+              onClick={handleResendCode}
+              disabled={loading}
+              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline disabled:opacity-50"
+            >
+              resend
+            </button>
+          </p>
         )}
       </div>
     </div>

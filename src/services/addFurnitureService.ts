@@ -79,10 +79,13 @@ export class AddFurnitureService {
         // Prepare input based on whether we have a specific furniture image
         let input: any;
         
+        const furnitureSpecificPrompt = process.env.PROMPT_FURNITURE_SPECIFIC || 'Use the style and design of the furniture in the second image as inspiration to add similar furniture to the room. Do not copy the exact furniture, but create furniture that matches the style, color, and design aesthetic.';
+        const furnitureGeneralPrompt = process.env.PROMPT_FURNITURE_GENERAL || 'Add modern furniture to this room.';
+
         if (furnitureImageBase64) {
           // Specific furniture addition - use furniture image as style reference
           input = {
-            prompt: `${prompt}. Use the style and design of the furniture in the second image as inspiration to add similar furniture to the room. Do not copy the exact furniture, but create furniture that matches the style, color, and design aesthetic.`,
+            prompt: `${prompt}. ${furnitureSpecificPrompt}`,
             image_input: [`data:image/jpeg;base64,${roomImageBase64}`, `data:image/jpeg;base64,${furnitureImageBase64}`]
           };
           logger.info('🚀 Using specific furniture addition mode (style reference)', {
@@ -93,7 +96,7 @@ export class AddFurnitureService {
         } else {
           // General furniture addition
           input = {
-            prompt: `${prompt}. Add modern furniture to this room.`,
+            prompt: `${prompt}. ${furnitureGeneralPrompt}`,
             image_input: [`data:image/jpeg;base64,${roomImageBase64}`]
           };
           logger.info('🚀 Using general furniture addition mode', {

@@ -362,6 +362,9 @@ export class VideoMotionService {
       // Build prompt - include camera movement if provided
       // For Veo-3.1-Fast, camera movement should be integrated into the prompt naturally
       let prompt: string;
+      const defaultVideoMotionPrompt = process.env.PROMPT_VIDEO_MOTION_DEFAULT || 'Add a impressive ultrarealistic movement to this image';
+      const videoMotionWithCameraTemplate = process.env.PROMPT_VIDEO_MOTION_WITH_CAMERA || 'Add a impressive ultrarealistic movement to this image with smooth {CAMERA_MOVEMENT} camera movement. The scene should come to life with natural motion while maintaining the camera perspective.';
+      
       if (options.cameraMovement) {
         // If camera movement is provided, create a prompt that emphasizes camera movement
         // Remove brackets if present (legacy format)
@@ -370,11 +373,11 @@ export class VideoMotionService {
           // If custom prompt is provided, append camera movement to it
           prompt = `${options.prompt} with smooth ${cleanCameraMovement} camera movement.`;
         } else {
-          // Default prompt with camera movement
-          prompt = `Add a impressive ultrarealistic movement to this image with smooth ${cleanCameraMovement} camera movement. The scene should come to life with natural motion while maintaining the camera perspective.`;
+          // Default prompt with camera movement from environment variable
+          prompt = videoMotionWithCameraTemplate.replace('{CAMERA_MOVEMENT}', cleanCameraMovement);
         }
       } else {
-        prompt = options.prompt || 'Add a impressive ultrarealistic movement to this image';
+        prompt = options.prompt || defaultVideoMotionPrompt;
       }
 
       // Prepare input for Veo-3.1-Fast

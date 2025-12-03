@@ -9,16 +9,18 @@ export interface RoomAnalysis {
 }
 
 export class PromptingUtils {
-  private static readonly STYLE_PROMPTS = {
-    modern: 'clean lines, minimalist furniture, neutral colors, contemporary design',
-    contemporary: 'sleek furniture, bold accents, modern art, sophisticated color palette',
-    traditional: 'classic furniture, warm wood tones, elegant fabrics, timeless design',
-    rustic: 'natural wood furniture, cozy textures, earth tones, farmhouse elements',
-    scandinavian: 'light wood, white and natural tones, cozy textiles, hygge atmosphere',
-    industrial: 'exposed elements, metal fixtures, raw materials, urban loft aesthetic',
-    bohemian: 'eclectic mix, colorful textiles, plants, artistic elements',
-    luxury: 'high-end furniture, rich materials, elegant details, sophisticated ambiance'
-  };
+  private static getStylePrompts() {
+    return {
+      modern: process.env.PROMPT_STYLE_MODERN || 'clean lines, minimalist furniture, neutral colors, contemporary design',
+      contemporary: process.env.PROMPT_STYLE_CONTEMPORARY || 'sleek furniture, bold accents, modern art, sophisticated color palette',
+      traditional: process.env.PROMPT_STYLE_TRADITIONAL || 'classic furniture, warm wood tones, elegant fabrics, timeless design',
+      rustic: process.env.PROMPT_STYLE_RUSTIC || 'natural wood furniture, cozy textures, earth tones, farmhouse elements',
+      scandinavian: process.env.PROMPT_STYLE_SCANDINAVIAN || 'light wood, white and natural tones, cozy textiles, hygge atmosphere',
+      industrial: process.env.PROMPT_STYLE_INDUSTRIAL || 'exposed elements, metal fixtures, raw materials, urban loft aesthetic',
+      bohemian: process.env.PROMPT_STYLE_BOHEMIAN || 'eclectic mix, colorful textiles, plants, artistic elements',
+      luxury: process.env.PROMPT_STYLE_LUXURY || 'high-end furniture, rich materials, elegant details, sophisticated ambiance'
+    };
+  }
 
   // New comprehensive interior design styles for real estate agents
   private static readonly INTERIOR_DESIGN_STYLES = {
@@ -100,14 +102,23 @@ export class PromptingUtils {
     }
   };
 
-  private static readonly ROOM_SPECIFIC_ELEMENTS = {
-    living_room: ['comfortable seating arrangement', 'coffee table', 'area rug', 'ambient lighting', 'decorative pillows', 'wall art', 'plants'],
-    bedroom: ['bed with quality bedding', 'nightstands', 'table lamps', 'dresser', 'comfortable seating', 'window treatments', 'decorative accents'],
-    kitchen: ['modern appliances', 'clean countertops', 'stylish backsplash', 'pendant lighting', 'bar stools', 'decorative bowls', 'fresh flowers'],
-    bathroom: ['fresh towels', 'spa-like accessories', 'plants', 'candles', 'modern fixtures', 'clean lines', 'natural elements'],
-    dining_room: ['dining table with chairs', 'centerpiece', 'pendant or chandelier lighting', 'sideboard', 'wall art', 'elegant place settings'],
-    office: ['desk setup', 'ergonomic chair', 'organized storage', 'task lighting', 'plants', 'motivational art', 'clean workspace']
-  };
+  private static getRoomSpecificElements() {
+    const parseElements = (envVar: string | undefined, defaultElements: string[]): string[] => {
+      if (envVar) {
+        return envVar.split(',').map(e => e.trim());
+      }
+      return defaultElements;
+    };
+
+    return {
+      living_room: parseElements(process.env.PROMPT_ROOM_LIVING_ROOM_ELEMENTS, ['comfortable seating arrangement', 'coffee table', 'area rug', 'ambient lighting', 'decorative pillows', 'wall art', 'plants']),
+      bedroom: parseElements(process.env.PROMPT_ROOM_BEDROOM_ELEMENTS, ['bed with quality bedding', 'nightstands', 'table lamps', 'dresser', 'comfortable seating', 'window treatments', 'decorative accents']),
+      kitchen: parseElements(process.env.PROMPT_ROOM_KITCHEN_ELEMENTS, ['modern appliances', 'clean countertops', 'stylish backsplash', 'pendant lighting', 'bar stools', 'decorative bowls', 'fresh flowers']),
+      bathroom: parseElements(process.env.PROMPT_ROOM_BATHROOM_ELEMENTS, ['fresh towels', 'spa-like accessories', 'plants', 'candles', 'modern fixtures', 'clean lines', 'natural elements']),
+      dining_room: parseElements(process.env.PROMPT_ROOM_DINING_ROOM_ELEMENTS, ['dining table with chairs', 'centerpiece', 'pendant or chandelier lighting', 'sideboard', 'wall art', 'elegant place settings']),
+      office: parseElements(process.env.PROMPT_ROOM_OFFICE_ELEMENTS, ['desk setup', 'ergonomic chair', 'organized storage', 'task lighting', 'plants', 'motivational art', 'clean workspace'])
+    };
+  }
 
   /**
    * Generate an optimized prompt for interior design based on room analysis
@@ -122,8 +133,10 @@ export class PromptingUtils {
         return this.enhanceCustomPrompt(customPrompt, style);
       }
 
-      const styleDescription = this.STYLE_PROMPTS[style as keyof typeof this.STYLE_PROMPTS] || this.STYLE_PROMPTS.modern;
-      const roomElements = this.ROOM_SPECIFIC_ELEMENTS[roomType as keyof typeof this.ROOM_SPECIFIC_ELEMENTS] || this.ROOM_SPECIFIC_ELEMENTS.living_room;
+      const stylePrompts = this.getStylePrompts();
+      const styleDescription = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts.modern;
+      const roomElementsMap = this.getRoomSpecificElements();
+      const roomElements = roomElementsMap[roomType as keyof typeof roomElementsMap] || roomElementsMap.living_room;
 
       const prompt = [
         'professionally staged',
@@ -148,13 +161,8 @@ export class PromptingUtils {
    * Enhance a custom prompt with interior design best practices
    */
   static enhanceCustomPrompt(customPrompt: string, style: string): string {
-    const enhancements = [
-      'professionally staged',
-      'architectural preservation',
-      'realistic proportions',
-      'perfect lighting',
-      'high-end interior photography'
-    ];
+    const enhancementsStr = process.env.PROMPT_ENHANCEMENTS || 'professionally staged, architectural preservation, realistic proportions, perfect lighting, high-end interior photography';
+    const enhancements = enhancementsStr.split(',').map(e => e.trim());
 
     // Check if the prompt already contains professional terminology
     const hasEnhancements = enhancements.some(enhancement => 
@@ -172,14 +180,8 @@ export class PromptingUtils {
    * Generate negative prompt to avoid common issues in interior design AI
    */
   static generateNegativePrompt(customNegative?: string): string {
-    const baseNegatives = [
-      'blurry', 'low quality', 'distorted', 'unrealistic proportions',
-      'structural changes', 'architectural modifications', 'wall removal',
-      'ceiling changes', 'window modifications', 'door changes',
-      'cluttered', 'messy', 'oversaturated', 'artificial looking',
-      'poor lighting', 'dark', 'grainy', 'pixelated',
-      'furniture floating', 'impossible perspectives', 'duplicate objects'
-    ];
+    const baseNegativesStr = process.env.PROMPT_NEGATIVE_BASE || 'blurry, low quality, distorted, unrealistic proportions, structural changes, architectural modifications, wall removal, ceiling changes, window modifications, door changes, cluttered, messy, oversaturated, artificial looking, poor lighting, dark, grainy, pixelated, furniture floating, impossible perspectives, duplicate objects';
+    const baseNegatives = baseNegativesStr.split(',').map(n => n.trim());
 
     if (customNegative) {
       // Combine custom negative with base negatives, avoiding duplicates
@@ -200,20 +202,20 @@ export class PromptingUtils {
   static getQualityPrompt(quality: 'fast' | 'balanced' | 'high' | 'ultra'): { prefix: string; suffix: string } {
     const qualityPrompts = {
       fast: {
-        prefix: 'clean and modern',
-        suffix: 'well-lit, professional photo'
+        prefix: process.env.PROMPT_QUALITY_FAST_PREFIX || 'clean and modern',
+        suffix: process.env.PROMPT_QUALITY_FAST_SUFFIX || 'well-lit, professional photo'
       },
       balanced: {
-        prefix: 'professionally staged and designed',
-        suffix: 'perfect lighting, high-quality interior photography'
+        prefix: process.env.PROMPT_QUALITY_BALANCED_PREFIX || 'professionally staged and designed',
+        suffix: process.env.PROMPT_QUALITY_BALANCED_SUFFIX || 'perfect lighting, high-quality interior photography'
       },
       high: {
-        prefix: 'expertly designed luxury interior',
-        suffix: 'studio quality lighting, architectural photography, magazine worthy'
+        prefix: process.env.PROMPT_QUALITY_HIGH_PREFIX || 'expertly designed luxury interior',
+        suffix: process.env.PROMPT_QUALITY_HIGH_SUFFIX || 'studio quality lighting, architectural photography, magazine worthy'
       },
       ultra: {
-        prefix: 'award-winning interior design, luxury staging',
-        suffix: 'professional architectural photography, perfect composition, museum quality, ultra-detailed'
+        prefix: process.env.PROMPT_QUALITY_ULTRA_PREFIX || 'award-winning interior design, luxury staging',
+        suffix: process.env.PROMPT_QUALITY_ULTRA_SUFFIX || 'professional architectural photography, perfect composition, museum quality, ultra-detailed'
       }
     };
 
@@ -257,15 +259,15 @@ export class PromptingUtils {
    * Generate prompts for specific furniture placement scenarios
    */
   static getFurniturePlacementPrompt(furnitureType: string, roomContext: string): string {
-    const furniturePrompts = {
-      sofa: 'comfortable sectional sofa arranged for conversation, proper scale and proportion',
-      coffee_table: 'stylish coffee table at appropriate height, centered with seating area',
-      dining_table: 'elegant dining table with matching chairs, proper spacing for movement',
-      bed: 'comfortable bed with quality bedding, proper positioning relative to windows',
-      desk: 'functional desk setup with ergonomic positioning and proper lighting'
+    const furniturePrompts: Record<string, string> = {
+      sofa: process.env.PROMPT_FURNITURE_PLACEMENT_SOFA || 'comfortable sectional sofa arranged for conversation, proper scale and proportion',
+      coffee_table: process.env.PROMPT_FURNITURE_PLACEMENT_COFFEE_TABLE || 'stylish coffee table at appropriate height, centered with seating area',
+      dining_table: process.env.PROMPT_FURNITURE_PLACEMENT_DINING_TABLE || 'elegant dining table with matching chairs, proper spacing for movement',
+      bed: process.env.PROMPT_FURNITURE_PLACEMENT_BED || 'comfortable bed with quality bedding, proper positioning relative to windows',
+      desk: process.env.PROMPT_FURNITURE_PLACEMENT_DESK || 'functional desk setup with ergonomic positioning and proper lighting'
     };
 
-    const basePrompt = furniturePrompts[furnitureType as keyof typeof furniturePrompts] || 'well-placed furniture';
+    const basePrompt = furniturePrompts[furnitureType] || 'well-placed furniture';
     return `${basePrompt} in ${roomContext}, realistic proportions, professional staging`;
   }
 

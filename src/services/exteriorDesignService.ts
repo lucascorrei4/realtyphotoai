@@ -176,48 +176,36 @@ export class ExteriorDesignService {
     designType: string,
     style: string
   ): string {
-    let stylePrefix = '';
-    let designSuffix = '';
+    // Style-specific prefixes from environment variables
+    const stylePrefixes: Record<string, string> = {
+      isometric: process.env.PROMPT_EXTERIOR_STYLE_ISOMETRIC_PREFIX || 'Create an isometric architectural view of ',
+      realistic: process.env.PROMPT_EXTERIOR_STYLE_REALISTIC_PREFIX || 'Create a photorealistic exterior design of ',
+      architectural: process.env.PROMPT_EXTERIOR_STYLE_ARCHITECTURAL_PREFIX || 'Create an architectural exterior visualization of '
+    };
 
-    // Style-specific prefixes
-    switch (style) {
-      case 'isometric':
-        stylePrefix = 'Create an isometric architectural view of ';
-        designSuffix = '. Show clean geometric lines and technical drawing style';
-        break;
-      case 'realistic':
-        stylePrefix = 'Create a photorealistic exterior design of ';
-        designSuffix = '. Include realistic lighting, shadows, and materials';
-        break;
-      case 'architectural':
-        stylePrefix = 'Create an architectural exterior visualization of ';
-        designSuffix = '. Focus on structural elements and building form';
-        break;
-      default:
-        stylePrefix = 'Create an exterior design of ';
-    }
+    const styleSuffixes: Record<string, string> = {
+      isometric: process.env.PROMPT_EXTERIOR_STYLE_ISOMETRIC_SUFFIX || '. Show clean geometric lines and technical drawing style',
+      realistic: process.env.PROMPT_EXTERIOR_STYLE_REALISTIC_SUFFIX || '. Include realistic lighting, shadows, and materials',
+      architectural: process.env.PROMPT_EXTERIOR_STYLE_ARCHITECTURAL_SUFFIX || '. Focus on structural elements and building form'
+    };
 
-    // Design type-specific enhancements
-    switch (designType) {
-      case 'modern':
-        designSuffix += '. Modern contemporary style with clean lines, large windows, and minimalist facade';
-        break;
-      case 'traditional':
-        designSuffix += '. Traditional architectural style with classical elements and detailed facade';
-        break;
-      case 'minimalist':
-        designSuffix += '. Minimalist design with simple forms, neutral colors, and clean surfaces';
-        break;
-      case 'industrial':
-        designSuffix += '. Industrial style with exposed materials, metal elements, and urban aesthetic';
-        break;
-      case 'custom':
-        // Keep original prompt as-is for custom designs
-        break;
+    let stylePrefix = stylePrefixes[style] || process.env.PROMPT_EXTERIOR_STYLE_DEFAULT_PREFIX || 'Create an exterior design of ';
+    let designSuffix = styleSuffixes[style] || '';
+
+    // Design type-specific enhancements from environment variables
+    const designTypeEnhancements: Record<string, string> = {
+      modern: process.env.PROMPT_EXTERIOR_TYPE_MODERN || '. Modern contemporary style with clean lines, large windows, and minimalist facade',
+      traditional: process.env.PROMPT_EXTERIOR_TYPE_TRADITIONAL || '. Traditional architectural style with classical elements and detailed facade',
+      minimalist: process.env.PROMPT_EXTERIOR_TYPE_MINIMALIST || '. Minimalist design with simple forms, neutral colors, and clean surfaces',
+      industrial: process.env.PROMPT_EXTERIOR_TYPE_INDUSTRIAL || '. Industrial style with exposed materials, metal elements, and urban aesthetic'
+    };
+
+    if (designType !== 'custom' && designTypeEnhancements[designType]) {
+      designSuffix += designTypeEnhancements[designType];
     }
 
     // CRITICAL: Add preservation instructions to maintain original building structure
-    const preservationInstructions = 
+    const preservationInstructions = process.env.PROMPT_EXTERIOR_PRESERVATION || 
       ' PRESERVE the exact original building structure, shape, size, dimensions, roof lines, window positions, door locations, and overall architectural layout. ' +
       'ONLY modify exterior materials, colors, textures, finishes, and design elements. ' +
       'Maintain the same camera angle, perspective, and building footprint. ' +

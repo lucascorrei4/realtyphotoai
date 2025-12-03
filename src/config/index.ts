@@ -29,8 +29,8 @@ class ConfigManager {
       //    - :v1.0.0 = Semantic version (stable, if supported by model)
       //    - :hash = Specific version hash (most stable, never changes)
       stableDiffusionModel: process.env.STABLE_DIFFUSION_MODEL || 'asiryan/juggernaut-xl-v7:latest',
-      defaultPrompt: process.env.DEFAULT_PROMPT || 'modern furnished living room, stylish furniture, warm lighting, professional interior design, photorealistic',
-      defaultNegativePrompt: process.env.NEGATIVE_PROMPT || 'blurry, low quality, distorted, cluttered, messy, dark, poor lighting, oversaturated, unrealistic',
+      defaultPrompt: process.env.PROMPT_DEFAULT || process.env.DEFAULT_PROMPT || 'modern furnished living room, stylish furniture, warm lighting, professional interior design, photorealistic',
+      defaultNegativePrompt: process.env.PROMPT_DEFAULT_NEGATIVE || process.env.NEGATIVE_PROMPT || 'blurry, low quality, distorted, cluttered, messy, dark, poor lighting, oversaturated, unrealistic',
       useControlNet: process.env.USE_CONTROLNET === 'true',
       controlNetModel: process.env.CONTROLNET_MODEL || 'depth',
       enableInpaintingWorkflow: process.env.ENABLE_INPAINTING_WORKFLOW === 'true',

@@ -1,13 +1,16 @@
 import React from 'react';
 import LoginForm from '../components/LoginForm';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 const Auth: React.FC = () => {
   return (
-    <LoginForm 
-      variant="auth-page" 
-      showLogo={true}
-      redirectTo="/dashboard"
-    />
+    <ErrorBoundary>
+      <LoginForm 
+        variant="auth-page" 
+        showLogo={true}
+        redirectTo="/dashboard"
+      />
+    </ErrorBoundary>
   );
 };
 

@@ -15,6 +15,15 @@ const QuickActions: React.FC = () => {
         Quick Actions
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+
+        <button
+          onClick={() => handleNavigate('/smart-effects')}
+          className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-pink-400 dark:hover:border-pink-500 transition-colors group"
+        >
+          <Sparkles className="h-6 w-6 text-gray-400 group-hover:text-pink-500 mr-2 transition-colors" />
+          <span className="text-gray-600 dark:text-gray-400 group-hover:text-pink-600 transition-colors">Smart Effects</span>
+        </button>
+        
         <button
           onClick={() => handleNavigate('/image-enhancement')}
           className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-400 dark:hover:border-blue-500 transition-colors group"
@@ -55,13 +64,7 @@ const QuickActions: React.FC = () => {
           <span className="text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 transition-colors">Exterior Design</span>
         </button>
 
-        <button
-          onClick={() => handleNavigate('/smart-effects')}
-          className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-pink-400 dark:hover:border-pink-500 transition-colors group"
-        >
-          <Sparkles className="h-6 w-6 text-gray-400 group-hover:text-pink-500 mr-2 transition-colors" />
-          <span className="text-gray-600 dark:text-gray-400 group-hover:text-pink-600 transition-colors">Smart Effects</span>
-        </button>
+
       </div>
     </div>
   );

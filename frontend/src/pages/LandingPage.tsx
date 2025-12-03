@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import LoginForm from '../components/LoginForm';
 import {
   ArrowRight,
   CheckCircle,
@@ -35,7 +34,8 @@ import {
   Video,
   Move,
   RotateCw,
-  ArrowLeft
+  ArrowLeft,
+  Mail
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageJson from '../../package.json';
@@ -1246,13 +1246,30 @@ const LandingPage: React.FC = () => {
           </div>
         </section>
 
-        {/* Login Form Section - Moved to top for better visibility and conversion */}
+        {/* Login Form Section - Redirect to /auth page */}
         <section
           id="auth-section"
           className={`px-4 py-12 sm:px-6 lg:px-8 pt-28 sm:pt-32 ${showAuth ? 'scroll-mt-32' : ''}`}
         >
           <div className="mx-auto max-w-md">
-            <LoginForm variant="landing" />
+            <div className="text-center space-y-6 rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-xl ring-offset-2 ring-offset-white dark:ring-offset-slate-950">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600">
+                <Mail className="h-8 w-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
+                Get Started Today
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Sign in or create an account to start enhancing your property photos with AI.
+              </p>
+              <button
+                onClick={() => navigate('/auth')}
+                className="flex w-full items-center justify-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 font-medium text-white transition-all hover:from-blue-700 hover:to-indigo-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <span>Go to Login</span>
+                <ArrowRight className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </section>
 

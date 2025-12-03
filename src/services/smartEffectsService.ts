@@ -182,40 +182,20 @@ export class SmartEffectsService {
     effectType: EffectType,
     customPrompt?: string
   ): string {
-    let effectDescription = '';
+    // Get effect description from environment variable or use default
+    const effectPrompts: Record<EffectType, string> = {
+      dusk: process.env.PROMPT_EFFECT_DUSK || 'Transform the house with beautiful evening dusk lighting, warm golden hour colors, dramatic sky with purple and orange hues, soft ambient lighting from windows, creating a cozy and magical evening atmosphere',
+      balloons: process.env.PROMPT_EFFECT_BALLOONS || 'Add a thousand colorful balloons floating over and around the house like a gift celebration, vibrant balloons in various colors and sizes, festive atmosphere, balloons rising from the ground and floating in the sky, making the house look like a special gift',
+      helicopter: process.env.PROMPT_EFFECT_HELICOPTER || 'A helicopter removing big fabric from over the house roof showing completely the house as if it were a launch show open house some ropes tied to the fabric connecting to the helicopter',
+      gift_bow: process.env.PROMPT_EFFECT_GIFT_BOW || 'A big decorative red ribbon bow elegantly placed over the house making it look like a giant gift, festive gift wrapping, elegant bow with flowing ribbons, celebration aesthetic, the house wrapped like a present',
+      fireworks: process.env.PROMPT_EFFECT_FIREWORKS || 'Spectacular fireworks display exploding over the house, colorful fireworks bursting in the night sky, celebration atmosphere, brilliant colors and light trails, festive celebration scene, nighttime setting',
+      confetti: process.env.PROMPT_EFFECT_CONFETTI || 'Colorful confetti raining down around the house in celebration, vibrant confetti particles floating in the air, festive atmosphere, party celebration, colorful paper confetti scattered everywhere, joyful scene',
+      holiday_lights: process.env.PROMPT_EFFECT_HOLIDAY_LIGHTS || 'Beautiful holiday lights decorating the entire house, colorful Christmas lights, festive illumination, warm glowing lights on roof and windows, holiday decoration, magical evening atmosphere',
+      snow: process.env.PROMPT_EFFECT_SNOW || 'Gentle snow falling on the house creating a winter wonderland, soft snowflakes drifting down, snow accumulation on roof and ground, cozy winter scene, peaceful atmosphere, beautiful winter lighting',
+      sunrise: process.env.PROMPT_EFFECT_SUNRISE || 'Stunning sunrise lighting illuminating the house, beautiful golden morning light, warm sunrise colors in sky, peaceful morning atmosphere, soft radiant lighting, dramatic sky with pink and orange hues'
+    };
 
-    // Effect-specific descriptions
-    switch (effectType) {
-      case 'dusk':
-        effectDescription = 'Transform the house with beautiful evening dusk lighting, warm golden hour colors, dramatic sky with purple and orange hues, soft ambient lighting from windows, creating a cozy and magical evening atmosphere';
-        break;
-      case 'balloons':
-        effectDescription = 'Add a thousand colorful balloons floating over and around the house like a gift celebration, vibrant balloons in various colors and sizes, festive atmosphere, balloons rising from the ground and floating in the sky, making the house look like a special gift';
-        break;
-      case 'helicopter':
-        effectDescription = 'A helicopter delivering a large package with unboxing effect, helicopter hovering above the house, large gift box being lowered, dramatic dynamic scene, unboxing celebration, professional delivery moment, cinematic lighting';
-        break;
-      case 'gift_bow':
-        effectDescription = 'A big decorative red ribbon bow elegantly placed over the house making it look like a giant gift, festive gift wrapping, elegant bow with flowing ribbons, celebration aesthetic, the house wrapped like a present';
-        break;
-      case 'fireworks':
-        effectDescription = 'Spectacular fireworks display exploding over the house, colorful fireworks bursting in the night sky, celebration atmosphere, brilliant colors and light trails, festive celebration scene, nighttime setting';
-        break;
-      case 'confetti':
-        effectDescription = 'Colorful confetti raining down around the house in celebration, vibrant confetti particles floating in the air, festive atmosphere, party celebration, colorful paper confetti scattered everywhere, joyful scene';
-        break;
-      case 'holiday_lights':
-        effectDescription = 'Beautiful holiday lights decorating the entire house, colorful Christmas lights, festive illumination, warm glowing lights on roof and windows, holiday decoration, magical evening atmosphere';
-        break;
-      case 'snow':
-        effectDescription = 'Gentle snow falling on the house creating a winter wonderland, soft snowflakes drifting down, snow accumulation on roof and ground, cozy winter scene, peaceful atmosphere, beautiful winter lighting';
-        break;
-      case 'sunrise':
-        effectDescription = 'Stunning sunrise lighting illuminating the house, beautiful golden morning light, warm sunrise colors in sky, peaceful morning atmosphere, soft radiant lighting, dramatic sky with pink and orange hues';
-        break;
-      default:
-        effectDescription = 'Apply a magical visual effect to transform the house';
-    }
+    let effectDescription = effectPrompts[effectType] || 'Apply a magical visual effect to transform the house';
 
     // Combine with custom prompt if provided
     let finalPrompt = effectDescription;
@@ -224,7 +204,7 @@ export class SmartEffectsService {
     }
 
     // CRITICAL: Add preservation instructions to maintain original house structure
-    const preservationInstructions = 
+    const preservationInstructions = process.env.PROMPT_EFFECT_PRESERVATION || 
       ' PRESERVE the exact original house structure, shape, size, dimensions, roof lines, window positions, door locations, and overall architectural layout. ' +
       'ONLY add the visual effects around and over the house without modifying the house itself. ' +
       'Maintain the same camera angle, perspective, and house footprint. ' +
