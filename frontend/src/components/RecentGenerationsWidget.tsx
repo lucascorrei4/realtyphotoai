@@ -922,6 +922,44 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     );
   };
 
+  const handleVideoDownload = async (videoUrl: string) => {
+    try {
+      // Use backend proxy to bypass CORS issues with R2
+      const backendUrl = getBackendUrl();
+      const proxyUrl = `${backendUrl}/api/v1/proxy-image?url=${encodeURIComponent(videoUrl)}`;
+
+      // Get auth token for authenticated request
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch(proxyUrl, {
+        headers: token ? {
+          'Authorization': `Bearer ${token}`
+        } : {}
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download video: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      // Try to extract extension from URL or default to mp4
+      const extension = videoUrl.split('.').pop()?.split(/[#?]/)[0] || 'mp4';
+      a.download = `video-${Date.now()}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to download video:', error);
+      showError('Failed to download video. Please try again.');
+    }
+  };
+
   const renderImageComparison = (generation: Generation) => {
     if (!generation.input_image_url && !generation.output_image_url) {
       return (
@@ -982,6 +1020,18 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                 <Video className="h-3 w-3" />
                 Video
               </div>
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const url = getVideoUrl(generation) || outputImageUrl;
+                  if (url) handleVideoDownload(url);
+                }}
+                className="absolute top-2 right-2 p-1.5 bg-blue-600/80 hover:bg-blue-700 text-white rounded-full backdrop-blur-sm transition-all duration-200 hover:scale-110 z-20 shadow-sm"
+                title="Download Video"
+              >
+                <Download className="h-4 w-4" />
+              </button>
             </div>
           ) : (
             // Image with video generation buttons
