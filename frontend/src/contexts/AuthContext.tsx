@@ -452,13 +452,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               const profileResult = await profileResponse.json();
               if (profileResult.success && profileResult.user) {
                 // Use the complete user profile from backend (same as fetchUserProfile does)
-                console.log('[AuthContext] ✅ Loaded full user profile from backend:', {
-                  userId: profileResult.user.id,
-                  email: profileResult.user.email,
-                  subscriptionPlan: profileResult.user.subscription_plan,
-                  totalGenerations: profileResult.user.total_generations,
-                  successfulGenerations: profileResult.user.successful_generations
-                });
                 
                 // Set user with complete profile data (matching normal OTP login flow)
                 setUser({
@@ -469,13 +462,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 markLoadingComplete();
               } else {
                 // Fallback to user data from verify-code response
-                console.log('[AuthContext] ⚠️ Using user data from verify-code response (fallback)');
                 setUser(result.user as User);
                 markLoadingComplete();
               }
             } else {
               // Fallback to user data from verify-code response
-              console.log('[AuthContext] ⚠️ Profile refresh failed, using verify-code response');
               setUser(result.user as User);
               markLoadingComplete();
             }

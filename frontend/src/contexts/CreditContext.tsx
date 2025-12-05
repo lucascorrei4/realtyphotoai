@@ -50,15 +50,11 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
         if (dbPlan) {
           userPlan = dbPlan;
-          console.log(`[CreditContext] ✅ Loaded plan: ${dbPlan.displayName} (${dbPlan.features.displayCredits} display credits)`);
-        } else {
-          console.warn(`[CreditContext] ⚠️ Plan not found in database for: ${user.subscription_plan}, using starter fallback`);
-        }
+        } 
       }
       
       // Ensure we never use free plan as fallback for paid users
       if (user.subscription_plan && user.subscription_plan !== 'free' && userPlan.id === 'free') {
-        console.warn('[CreditContext] ⚠️ Fallback to free plan detected for paid user, using starter instead');
         userPlan = SUBSCRIPTION_PLANS.starter;
       }
 
@@ -124,29 +120,11 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           credits: getVideoCredits(g.metadata?.duration || g.metadata?.duration_seconds || 6)
         }));
       
-      console.log('[CreditContext] Credit calculation from database:', {
-        generationsCount: generations?.length || 0,
-        imageCount,
-        videoCount,
-        displayCreditsUsed,
-        currentMonthStart: currentMonth.toISOString(),
-        currentMonthEnd: nextMonth.toISOString(),
-        videoBreakdown: videoBreakdown.slice(0, 5) // Show first 5 for debugging
-      });
-
       // Get display credits total from plan (which comes from database plan_rules.monthly_generations_limit)
       // Database is the single source of truth for credit limits
       const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
       const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
       
-      console.log('[CreditContext] Credit balance from database:', {
-        displayCreditsTotal,
-        displayCreditsUsed,
-        displayCreditsRemaining,
-        planName: user.subscription_plan,
-        planDisplayName: userPlan.displayName
-      });
-
       // Calculate actual credits for comparison (convert back from display)
       const actualCreditsTotal = userPlan.features.monthlyCredits;
       const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 

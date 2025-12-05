@@ -77,11 +77,9 @@ const Dashboard: React.FC = () => {
 
   const fetchUserStats = useCallback(async () => {
     if (!user?.id) {
-      console.log('[Dashboard] ⚠️ No user ID available, skipping stats fetch');
       return;
     }
 
-    console.log('[Dashboard] 🔍 Fetching user stats for user ID:', user.id, 'email:', user.email);
     setStatsLoading(true);
     try {
     
@@ -93,13 +91,11 @@ const Dashboard: React.FC = () => {
     let error: any = null;
     
     if (isSuperAdminBypass) {
-      console.log('[Dashboard] 🔑 Using super admin bypass - fetching via backend API');
       try {
         const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
         const { getAuthHeaders } = await import('../utils/apiUtils');
         const headers = await getAuthHeaders();
         
-        console.log('[Dashboard] 🔄 Calling backend API with userId:', user.id);
         const backendResponse = await fetch(`${backendUrl}/api/v1/user/generations?userId=${encodeURIComponent(user.id)}&limit=1000`, {
           method: 'GET',
           headers: {
@@ -110,27 +106,17 @@ const Dashboard: React.FC = () => {
         
         if (backendResponse.ok) {
           const backendData = await backendResponse.json();
-          console.log('[Dashboard] 📦 Backend API response:', {
-            success: backendData.success,
-            hasData: !!backendData.data,
-            generationsCount: backendData.data?.generations?.length || 0,
-            totalCount: backendData.data?.totalCount || 0
-          });
           
           if (backendData.success && backendData.data?.generations) {
-            console.log('[Dashboard] ✅ Found generations via backend API:', backendData.data.generations.length);
             generations = backendData.data.generations;
           } else if (backendData.success && Array.isArray(backendData.data)) {
             // Handle case where API returns array directly
-            console.log('[Dashboard] ✅ Found generations via backend API (array format):', backendData.data.length);
             generations = backendData.data;
           } else {
-            console.log('[Dashboard] ⚠️ Backend API returned no generations');
             generations = [];
           }
         } else {
           const errorText = await backendResponse.text();
-          console.log('[Dashboard] ⚠️ Backend API failed:', backendResponse.status, errorText);
           error = { message: `Backend API error: ${backendResponse.status}` };
           generations = [];
         }
@@ -141,7 +127,6 @@ const Dashboard: React.FC = () => {
       }
     } else {
       // Normal flow: use Supabase
-      console.log('[Dashboard] 🔐 Using normal Supabase flow');
       try {
         // First try to fetch by user ID
         let { data: supabaseGenerations, error: supabaseError } = await supabase
@@ -150,18 +135,12 @@ const Dashboard: React.FC = () => {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
         
-        console.log('[Dashboard] 📊 Generations fetched by user_id:', {
-          count: supabaseGenerations?.length || 0,
-          userId: user.id,
-          error: supabaseError?.message
-        });
 
         generations = supabaseGenerations;
         error = supabaseError;
 
         // If no generations found by ID, try by email as fallback
         if (!generations || generations.length === 0) {
-          console.log('[Dashboard] 🔄 No generations found by user_id, trying email fallback:', user.email);
           const { data: generationsByEmail, error: emailError } = await supabase
             .from('generations')
             .select('*')
@@ -169,11 +148,8 @@ const Dashboard: React.FC = () => {
             .order('created_at', { ascending: false });
 
           if (generationsByEmail && !emailError) {
-            console.log('[Dashboard] ✅ Found generations by email:', generationsByEmail.length);
             generations = generationsByEmail;
-          } else {
-            console.log('[Dashboard] ⚠️ No generations found by email either:', emailError?.message);
-          }
+          } 
         }
       } catch (supabaseError) {
         console.error('[Dashboard] ❌ Supabase error:', supabaseError);
@@ -241,19 +217,16 @@ const Dashboard: React.FC = () => {
 
       if (user.subscription_plan) {
         try {
-          console.log(`[Dashboard] 🔍 Loading plan for: ${user.subscription_plan}`);
           const dbPlan = await getUserPlanFromDatabase(user.subscription_plan);
           if (dbPlan) {
             userPlan = dbPlan;
             lastValidPlanRef.current = dbPlan; // Store successful plan load
-            console.log(`[Dashboard] ✅ Successfully loaded plan: ${dbPlan.displayName} (${dbPlan.features.displayCredits} display credits, ${dbPlan.features.monthlyCredits} monthly credits)`);
           } else {
             planLoadError = `Plan rule not found in database for: ${user.subscription_plan}`;
             console.warn(`[Dashboard] ⚠️ ${planLoadError}. Using last valid plan or default.`);
             // If we have a last valid plan and it matches the user's subscription_plan, keep using it
             if (lastValidPlanRef.current && lastValidPlanRef.current.id === user.subscription_plan) {
               userPlan = lastValidPlanRef.current;
-              console.log(`[Dashboard] ✅ Using cached plan: ${userPlan.displayName} (${userPlan.features.displayCredits} display credits)`);
             } else {
               // Silently refresh user data in case subscription_plan is stale
               // Don't await - let it refresh in background
@@ -270,7 +243,6 @@ const Dashboard: React.FC = () => {
           // Use last valid plan if available
           if (lastValidPlanRef.current && lastValidPlanRef.current.id === user.subscription_plan) {
             userPlan = lastValidPlanRef.current;
-            console.log(`[Dashboard] ✅ Using cached plan after error: ${userPlan.displayName} (${userPlan.features.displayCredits} display credits)`);
           }
         }
       } else {
@@ -396,15 +368,8 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      console.log('[Dashboard] 👤 User changed, fetching stats:', {
-        userId: user.id,
-        email: user.email,
-        subscriptionPlan: user.subscription_plan
-      });
-      
       // If subscription plan changed, clear cached plan and refresh user data first
       if (prevSubscriptionPlanRef.current !== user.subscription_plan) {
-        console.log(`[Dashboard] 🔄 Subscription plan changed from "${prevSubscriptionPlanRef.current}" to "${user.subscription_plan}". Clearing cached plan.`);
         lastValidPlanRef.current = null; // Clear cached plan when plan changes
         prevSubscriptionPlanRef.current = user.subscription_plan;
         if (refreshUser) {
@@ -420,9 +385,7 @@ const Dashboard: React.FC = () => {
       } else {
         fetchUserStats();
       }
-    } else {
-      console.log('[Dashboard] ⚠️ No user available');
-    }
+    } 
   }, [user, fetchUserStats, refreshUser]);
 
   const syncSubscription = useCallback(async () => {
