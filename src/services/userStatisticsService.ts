@@ -411,6 +411,42 @@ export class UserStatisticsService {
   }
 
   /**
+   * Get a generation by output image URL or generation ID
+   */
+  async getGenerationByImageUrlOrId(userId: string, imageUrl?: string, generationId?: string): Promise<UserGeneration | null> {
+    try {
+      let query = supabase
+        .from('generations')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (generationId) {
+        query = query.eq('id', generationId);
+      } else if (imageUrl) {
+        query = query.eq('output_image_url', imageUrl);
+      } else {
+        return null;
+      }
+
+      const { data, error } = await query.single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows found
+          return null;
+        }
+        logger.error('Error looking up generation:', error);
+        return null;
+      }
+
+      return data as UserGeneration;
+    } catch (error) {
+      logger.error('Error in getGenerationByImageUrlOrId:', error as Error);
+      return null;
+    }
+  }
+
+  /**
    * Create a new generation record
    */
   async createGenerationRecord(generationData: {

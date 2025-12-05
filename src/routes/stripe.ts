@@ -333,14 +333,14 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
   }
 
   try {
-    // Get user's Stripe customer ID
-    const { data: user } = await supabase
+    // Get user's current profile including subscription_plan and role
+    const { data: userProfile } = await supabase
       .from('user_profiles')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, subscription_plan, role')
       .eq('id', userId)
       .single();
 
-    if (!user?.stripe_customer_id) {
+    if (!userProfile?.stripe_customer_id) {
       res.status(404).json({ 
         success: false,
         error: 'NO_CUSTOMER_ID',
@@ -349,18 +349,56 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
       return;
     }
 
+    // Get current database plan
+    const currentDbPlan = userProfile.subscription_plan?.toLowerCase().trim() || 'free';
+    const userRole = userProfile.role || 'user';
+    
+    // Plan hierarchy for comparison (higher number = higher tier)
+    const planHierarchy: Record<string, number> = {
+      'free': 0,
+      'basic': 1,
+      'premium': 2,
+      'enterprise': 3,
+      'ultra': 4
+    };
+
     // Get active subscriptions from Stripe
     const subscriptions = await stripe.subscriptions.list({
-      customer: user.stripe_customer_id,
+      customer: userProfile.stripe_customer_id,
       status: 'active',
       limit: 1,
     });
 
     if (subscriptions.data.length === 0) {
-      // No active subscription found in Stripe - update local records to reflect cancellation
+      // No active subscription found in Stripe
+      // Only downgrade to free if current plan is not manually set higher
+      // Admins or manually set higher plans should be preserved
+      if (userRole === 'admin' || userRole === 'super_admin' || planHierarchy[currentDbPlan] > planHierarchy['free']) {
+        logger.info(`No active Stripe subscriptions for user ${userId}, but preserving current plan ${currentDbPlan} (admin or manually set).`);
+        
+        // Just mark subscription records as canceled, don't change user plan
+        await supabase
+          .from('stripe_subscriptions')
+          .update({
+            status: 'canceled',
+            cancel_at_period_end: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', userId)
+          .neq('status', 'canceled');
+
+        res.json({
+          success: true,
+          message: 'No active Stripe subscription found. Current plan preserved.',
+          subscription: null,
+          preserved_plan: currentDbPlan
+        });
+        return;
+      }
+
+      // No active subscription and not admin/manually set - downgrade to free
       logger.info(`No active Stripe subscriptions for user ${userId}. Resetting local subscription state.`);
 
-      // Mark existing subscription records as canceled
       await supabase
         .from('stripe_subscriptions')
         .update({
@@ -371,7 +409,6 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
         .eq('user_id', userId)
         .neq('status', 'canceled');
 
-      // Downgrade user to free plan
       await supabase
         .from('user_profiles')
         .update({
@@ -423,8 +460,51 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
       logger.warn(`Plan name ${planName} not in valid plans, attempting to use as-is`);
       // Don't fail here - let the database error if it's truly invalid
     }
+
+    // Check if database has a higher tier plan than Stripe (manual override)
+    const stripePlanLevel = planHierarchy[planName] || 0;
+    const dbPlanLevel = planHierarchy[currentDbPlan] || 0;
     
-    logger.info(`Syncing subscription with plan name: ${planName} for user ${userId}`);
+    // If database plan is higher than Stripe plan, preserve it (manual override)
+    if (dbPlanLevel > stripePlanLevel) {
+      logger.info(`User ${userId} has manually set plan ${currentDbPlan} (level ${dbPlanLevel}) which is higher than Stripe plan ${planName} (level ${stripePlanLevel}). Preserving database plan.`);
+      
+      // Still update subscription record, but don't change user plan
+      // Check if subscription already exists
+      const { data: existingSub } = await supabase
+        .from('stripe_subscriptions')
+        .select('id')
+        .eq('stripe_subscription_id', subscription.id)
+        .single();
+
+      if (existingSub) {
+        await supabase
+          .from('stripe_subscriptions')
+          .update({
+            status: subscription.status,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            cancel_at_period_end: subscription.cancel_at_period_end,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('stripe_subscription_id', subscription.id);
+      }
+
+      res.json({
+        success: true,
+        message: `Subscription synced. Database plan ${currentDbPlan} preserved (higher than Stripe plan ${planName}).`,
+        subscription: {
+          plan_name: planName,
+          status: subscription.status,
+          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+        },
+        preserved_plan: currentDbPlan,
+        stripe_plan: planName
+      });
+      return;
+    }
+    
+    logger.info(`Syncing subscription with plan name: ${planName} for user ${userId} (upgrading from ${currentDbPlan})`);
 
     // Get plan limits from database
     const { data: planRule } = await supabase
@@ -550,7 +630,7 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
       const { error: rpcError } = await supabase.rpc('create_stripe_subscription', {
         p_user_id: userId,
         p_stripe_subscription_id: subscription.id,
-        p_stripe_customer_id: user.stripe_customer_id,
+        p_stripe_customer_id: userProfile.stripe_customer_id,
         p_stripe_price_id: priceId,
         p_plan_name: planName,
         p_status: subscription.status,
@@ -574,7 +654,7 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
           .insert({
             user_id: userId,
             stripe_subscription_id: subscription.id,
-            stripe_customer_id: user.stripe_customer_id,
+            stripe_customer_id: userProfile.stripe_customer_id,
             stripe_price_id: priceId,
             plan_name: planName, // Use plan_name TEXT column
             status: subscription.status,

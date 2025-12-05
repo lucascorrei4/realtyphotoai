@@ -32,6 +32,12 @@ interface EffectOption {
 
 const EFFECT_OPTIONS: EffectOption[] = [
   {
+    value: 'helicopter',
+    label: 'Helicopter Reveal',
+    description: 'Helicopter lifts fabric to unveil house for open house event',
+    emoji: '🚁'
+  },
+  {
     value: 'dusk',
     label: 'Dusk Effect',
     description: 'Transform the house with beautiful evening dusk lighting',
@@ -42,12 +48,6 @@ const EFFECT_OPTIONS: EffectOption[] = [
     label: 'Thousand Balloons',
     description: 'Add a thousand colorful balloons over the house like a gift',
     emoji: '🎈'
-  },
-  {
-    value: 'helicopter',
-    label: 'Helicopter Reveal',
-    description: 'Helicopter lifts fabric to unveil house for open house event',
-    emoji: '🚁'
   },
   {
     value: 'gift_bow',
@@ -92,7 +92,7 @@ const SmartEffects: React.FC = () => {
   const { refreshCredits, creditBalance } = useCredits();
   const { showSuccess, showError, showWarning } = useToast();
   const [houseImage, setHouseImage] = useState<File | null>(null);
-  const [effectType, setEffectType] = useState<EffectType>('dusk');
+  const [effectType, setEffectType] = useState<EffectType>('helicopter');
   const [customPrompt, setCustomPrompt] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);

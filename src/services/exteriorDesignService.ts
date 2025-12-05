@@ -171,7 +171,7 @@ export class ExteriorDesignService {
    * Generate enhanced prompt based on design type and style
    * CRITICAL: Must preserve original building structure, shape, size, and layout
    */
-  private generateExteriorPrompt(
+  public generateExteriorPrompt(
     originalPrompt: string,
     designType: string,
     style: string

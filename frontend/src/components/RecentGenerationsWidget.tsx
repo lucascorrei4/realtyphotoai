@@ -468,6 +468,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         body: JSON.stringify({
           imageUrl,
           motionType,
+          generationId: generationId, // Pass generationId so backend can look up original prompt
           options: {
             prompt: 'Add a impressive ultrarealistic movement to this image',
             cameraMovement: cameraMovement,

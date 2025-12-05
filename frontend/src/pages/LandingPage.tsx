@@ -1205,9 +1205,9 @@ const LandingPage: React.FC = () => {
                 id="hero-heading"
                 className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
               >
-                Sell Homes 72% Faster with
-                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  {' '}AI-Enhanced Listings That Captivate Buyers
+                Your AI Videos and Images Platform
+                <span className="bg-gradient-to-r from-emerald-500 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  {' '}That Creates Listings That Captivate Buyers
                 </span>
               </h1>
               

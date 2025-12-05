@@ -15,6 +15,21 @@ export class AddFurnitureService {
   }
 
   /**
+   * Generate the full furniture prompt with environment variables
+   * This method can be called before creating generation records to get the complete prompt
+   */
+  public generateFurniturePrompt(prompt: string, hasFurnitureImage: boolean = false): string {
+    const furnitureSpecificPrompt = process.env.PROMPT_FURNITURE_SPECIFIC || 'Use the style and design of the furniture in the second image as inspiration to add similar furniture to the room. Do not copy the exact furniture, but create furniture that matches the style, color, and design aesthetic.';
+    const furnitureGeneralPrompt = process.env.PROMPT_FURNITURE_GENERAL || 'Add modern furniture to this room.';
+
+    if (hasFurnitureImage) {
+      return `${prompt}. ${furnitureSpecificPrompt}`;
+    } else {
+      return `${prompt}. ${furnitureGeneralPrompt}`;
+    }
+  }
+
+  /**
    * Add furniture to room using google/nano-banana model
    * 
    * ⚠️ CRITICAL: Parameters are fixed and tested - DO NOT CHANGE
@@ -79,13 +94,13 @@ export class AddFurnitureService {
         // Prepare input based on whether we have a specific furniture image
         let input: any;
         
-        const furnitureSpecificPrompt = process.env.PROMPT_FURNITURE_SPECIFIC || 'Use the style and design of the furniture in the second image as inspiration to add similar furniture to the room. Do not copy the exact furniture, but create furniture that matches the style, color, and design aesthetic.';
-        const furnitureGeneralPrompt = process.env.PROMPT_FURNITURE_GENERAL || 'Add modern furniture to this room.';
+        // Generate full prompt (includes base prompt from .env)
+        const fullPrompt = this.generateFurniturePrompt(prompt, furnitureImageBase64 !== null);
 
         if (furnitureImageBase64) {
           // Specific furniture addition - use furniture image as style reference
           input = {
-            prompt: `${prompt}. ${furnitureSpecificPrompt}`,
+            prompt: fullPrompt,
             image_input: [`data:image/jpeg;base64,${roomImageBase64}`, `data:image/jpeg;base64,${furnitureImageBase64}`]
           };
           logger.info('🚀 Using specific furniture addition mode (style reference)', {
@@ -96,7 +111,7 @@ export class AddFurnitureService {
         } else {
           // General furniture addition
           input = {
-            prompt: `${prompt}. ${furnitureGeneralPrompt}`,
+            prompt: fullPrompt,
             image_input: [`data:image/jpeg;base64,${roomImageBase64}`]
           };
           logger.info('🚀 Using general furniture addition mode', {

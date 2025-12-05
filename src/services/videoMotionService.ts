@@ -169,6 +169,139 @@ export class VideoMotionService {
   }
 
   /**
+   * Detect effect type from smart effects prompt by matching keywords
+   */
+  private detectEffectTypeFromPrompt(prompt: string): string | null {
+    const promptLower = prompt.toLowerCase();
+    
+    if (promptLower.includes('helicopter') || promptLower.includes('drape') || promptLower.includes('unveiling')) {
+      return 'helicopter';
+    } else if (promptLower.includes('balloon')) {
+      return 'balloons';
+    } else if (promptLower.includes('dusk') || promptLower.includes('evening') || promptLower.includes('golden hour')) {
+      return 'dusk';
+    } else if (promptLower.includes('firework')) {
+      return 'fireworks';
+    } else if (promptLower.includes('confetti')) {
+      return 'confetti';
+    } else if (promptLower.includes('holiday') || promptLower.includes('christmas') || promptLower.includes('light')) {
+      return 'holiday_lights';
+    } else if (promptLower.includes('snow') || promptLower.includes('winter')) {
+      return 'snow';
+    } else if (promptLower.includes('sunrise') || promptLower.includes('morning light')) {
+      return 'sunrise';
+    } else if (promptLower.includes('gift') || promptLower.includes('bow') || promptLower.includes('ribbon')) {
+      return 'gift_bow';
+    }
+    
+    return null;
+  }
+
+  /**
+   * Generate effect-specific video prompt with complete movement sequence optimized for 6 seconds
+   */
+  private generateEffectSpecificVideoPrompt(effectType: string | null): string | null {
+    if (!effectType) {
+      return null;
+    }
+
+    // Effect-specific video prompts that describe the complete movement sequence in 6 seconds
+    const effectVideoPrompts: Record<string, string> = {
+      helicopter: process.env.PROMPT_VIDEO_HELICOPTER || 
+        `Create a dynamic 6-second video: The sleek black helicopter rapidly ascends, pulling the massive black fabric drape upward from the center. The fabric splits and peels away symmetrically like curtains opening, completely revealing the entire house from top to bottom in the first 3 seconds. The helicopter then flies away at high speed, pulling the fabric behind it like a banner, exiting the scene in the remaining 3 seconds. Fast, cinematic movement with fabric billowing in the wind, sunlight glinting off helicopter rotors, and smooth camera tracking. The entire sequence completes in exactly 6 seconds with dynamic, fast-paced motion.`,
+      
+      balloons: process.env.PROMPT_VIDEO_BALLOONS ||
+        `Create a dynamic 6-second video: Colorful balloons float and rise around the house, ascending into the sky with gentle but noticeable movement. The balloons drift upward and away from the house, creating a festive celebration scene. Smooth, floating motion throughout the 6-second sequence.`,
+      
+      fireworks: process.env.PROMPT_VIDEO_FIREWORKS ||
+        `Create a dynamic 6-second video: Spectacular fireworks explode and burst in sequence over the house in the night sky. Multiple colorful fireworks launch, explode, and create brilliant light trails across the sky. Fast, explosive movements with colorful bursts filling the scene throughout the 6-second sequence.`,
+      
+      confetti: process.env.PROMPT_VIDEO_CONFETTI ||
+        `Create a dynamic 6-second video: Colorful confetti rains down and swirls around the house. Confetti particles float, drift, and dance in the air with dynamic movement, creating a festive celebration atmosphere. Continuous motion throughout the 6-second sequence.`,
+      
+      snow: process.env.PROMPT_VIDEO_SNOW ||
+        `Create a dynamic 6-second video: Gentle snowflakes fall continuously from the sky, drifting down and accumulating around the house. Snow particles float and swirl with natural wind movement, creating a peaceful winter scene. Smooth, continuous snowfall motion throughout the 6-second sequence.`,
+      
+      dusk: process.env.PROMPT_VIDEO_DUSK ||
+        `Create a dynamic 6-second video: The sky transitions with dramatic dusk lighting, warm golden hour colors, and purple-orange hues. Clouds move slowly, lighting shifts subtly, and the scene shows the beautiful evening atmosphere with natural, gentle movement throughout the 6-second sequence.`,
+      
+      sunrise: process.env.PROMPT_VIDEO_SUNRISE ||
+        `Create a dynamic 6-second video: The sky shows stunning sunrise lighting with beautiful golden morning light. Warm sunrise colors transition in the sky, clouds move gently, and the scene illuminates with soft radiant lighting. Natural, gentle movement throughout the 6-second sequence.`,
+      
+      holiday_lights: process.env.PROMPT_VIDEO_HOLIDAY_LIGHTS ||
+        `Create a dynamic 6-second video: Holiday lights twinkle and glow on the house. Lights pulse gently, creating a festive illumination that shifts subtly. Warm glowing lights create a magical evening atmosphere with gentle, twinkling motion throughout the 6-second sequence.`,
+      
+      gift_bow: process.env.PROMPT_VIDEO_GIFT_BOW ||
+        `Create a dynamic 6-second video: The decorative red ribbon bow and flowing ribbons move gently in the breeze. Ribbons flutter and sway naturally, creating a festive gift-wrapping aesthetic with smooth, flowing motion throughout the 6-second sequence.`
+    };
+
+    if (effectVideoPrompts[effectType]) {
+      return effectVideoPrompts[effectType];
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate the full video prompt with environment variables and camera movement
+   * This method can be called before creating generation records to get the complete prompt
+   * @param options - Video motion options including prompt and camera movement
+   * @param originalPrompt - Optional original prompt from the source image generation (e.g., from smart effects)
+   * @param originalModelType - Optional original model type to understand the context (e.g., 'smart_effects')
+   */
+  public generateVideoPrompt(options: VideoMotionOptions = {}, originalPrompt?: string, originalModelType?: string): string {
+    const defaultVideoMotionPrompt = process.env.PROMPT_VIDEO_MOTION_DEFAULT || 'Add a impressive ultrarealistic movement to this image';
+    
+    // If we have an original prompt (especially from smart effects), enhance the video prompt with context
+    let basePrompt = options.prompt || defaultVideoMotionPrompt;
+    
+    if (originalPrompt && originalModelType === 'smart_effects') {
+      // For smart effects, create effect-specific video prompts that describe the complete movement sequence
+      // Extract effect type from prompt or detect it
+      const effectType = this.detectEffectTypeFromPrompt(originalPrompt);
+      
+      // Generate effect-specific video prompt that describes the complete movement sequence in 6 seconds
+      const effectVideoPrompt = this.generateEffectSpecificVideoPrompt(effectType);
+      
+      if (effectVideoPrompt) {
+        basePrompt = effectVideoPrompt;
+        logger.info('🎬 Enhanced video prompt with effect-specific movement sequence', {
+          effectType,
+          originalPromptLength: originalPrompt.length,
+          enhancedPromptLength: basePrompt.length
+        });
+      } else {
+        // Fallback: extract core intent and enhance
+        let effectIntent = originalPrompt
+          .replace(/^Create a photorealistic image showing\s*/i, '')
+          .replace(/\s*PRESERVE.*$/is, '')
+          .trim();
+        
+        basePrompt = `${defaultVideoMotionPrompt} The scene shows ${effectIntent}. Bring this effect to life with realistic, dynamic movement that completes the full sequence within 6 seconds.`;
+      }
+    } else if (originalPrompt) {
+      // For other generation types, still include the original prompt context
+      basePrompt = `${defaultVideoMotionPrompt} Based on the original scene: ${originalPrompt.substring(0, 200)}... Bring this scene to life with realistic movement.`;
+    }
+    
+    if (options.cameraMovement) {
+      // If camera movement is provided, create a prompt that emphasizes camera movement
+      // Remove brackets if present (legacy format)
+      const cleanCameraMovement = options.cameraMovement.replace(/[\[\]]/g, '');
+      
+      if (options.prompt && !originalPrompt) {
+        // If custom prompt is provided and no original context, append camera movement to it
+        return `${options.prompt} with smooth ${cleanCameraMovement} camera movement.`;
+      } else {
+        // Use enhanced base prompt with camera movement from environment variable
+        return `${basePrompt} Use smooth ${cleanCameraMovement} camera movement. The scene should come to life with natural motion while maintaining the camera perspective.`;
+      }
+    } else {
+      return basePrompt;
+    }
+  }
+
+  /**
    * Generate video using Veo-3.1-Fast model
    * General video generation with movement
    */
@@ -361,24 +494,7 @@ export class VideoMotionService {
 
       // Build prompt - include camera movement if provided
       // For Veo-3.1-Fast, camera movement should be integrated into the prompt naturally
-      let prompt: string;
-      const defaultVideoMotionPrompt = process.env.PROMPT_VIDEO_MOTION_DEFAULT || 'Add a impressive ultrarealistic movement to this image';
-      const videoMotionWithCameraTemplate = process.env.PROMPT_VIDEO_MOTION_WITH_CAMERA || 'Add a impressive ultrarealistic movement to this image with smooth {CAMERA_MOVEMENT} camera movement. The scene should come to life with natural motion while maintaining the camera perspective.';
-      
-      if (options.cameraMovement) {
-        // If camera movement is provided, create a prompt that emphasizes camera movement
-        // Remove brackets if present (legacy format)
-        const cleanCameraMovement = options.cameraMovement.replace(/[\[\]]/g, '');
-        if (options.prompt) {
-          // If custom prompt is provided, append camera movement to it
-          prompt = `${options.prompt} with smooth ${cleanCameraMovement} camera movement.`;
-        } else {
-          // Default prompt with camera movement from environment variable
-          prompt = videoMotionWithCameraTemplate.replace('{CAMERA_MOVEMENT}', cleanCameraMovement);
-        }
-      } else {
-        prompt = options.prompt || defaultVideoMotionPrompt;
-      }
+      const prompt = this.generateVideoPrompt(options);
 
       // Prepare input for Veo-3.1-Fast
       // Duration must be 4, 6, or 8 seconds (default to 6)

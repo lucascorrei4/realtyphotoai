@@ -178,7 +178,7 @@ export class InteriorDesignService {
   /**
    * Generate enhanced prompt based on design type and style
    */
-  private generateInteriorPrompt(
+  public generateInteriorPrompt(
     originalPrompt: string,
     designType: string,
     style: string

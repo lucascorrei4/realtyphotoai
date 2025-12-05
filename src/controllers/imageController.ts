@@ -549,13 +549,22 @@ export class ImageController {
         );
       }
 
-      // Create generation record in database with actual image URL
+      // Generate the full prompt first (includes base prompt from .env + design type/style enhancements)
+      const designType = req.body.designType || 'modern';
+      const style = req.body.style || 'realistic';
+      const fullPrompt = this.interiorDesignService.generateInteriorPrompt(
+        req.body.prompt,
+        designType,
+        style
+      );
+
+      // Create generation record in database with FULL prompt (not just user input)
       generationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'interior_design',
         status: 'processing',
         input_image_url: interiorDesignOriginalStorageResult.url,
-        prompt: req.body.prompt
+        prompt: fullPrompt
       });
 
       // Parse interior design specific parameters
@@ -1538,13 +1547,20 @@ export class ImageController {
         }
       }
 
-      // Create generation record in database with actual image URL
+      // Generate the full prompt first (includes base prompt from .env)
+      const hasFurnitureImage = !!furnitureImageProcessingPath;
+      const fullPrompt = this.addFurnitureService.generateFurniturePrompt(
+        req.body.prompt,
+        hasFurnitureImage
+      );
+
+      // Create generation record in database with FULL prompt (not just user input)
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'add_furnitures',
         status: 'processing',
         input_image_url: roomImageStorageResult.url,
-        prompt: req.body.prompt
+        prompt: fullPrompt
       });
 
       // Process the furniture addition
@@ -1789,13 +1805,22 @@ export class ImageController {
         );
       }
 
-      // Create generation record in database with actual image URL
+      // Generate the full prompt first (includes base prompt from .env + preservation instructions)
+      const designType = req.body.designType || 'modern';
+      const style = req.body.style || 'architectural';
+      const fullPrompt = this.exteriorDesignService.generateExteriorPrompt(
+        req.body.designPrompt,
+        designType,
+        style
+      );
+
+      // Create generation record in database with FULL prompt (not just user input)
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'exterior_design',
         status: 'processing',
         input_image_url: buildingImageStorageResult.url,
-        prompt: req.body.designPrompt
+        prompt: fullPrompt
       });
       generationId = dbGenerationId;
 
@@ -1804,16 +1829,17 @@ export class ImageController {
         processingPathIsBuffer: Buffer.isBuffer(buildingImageProcessingPath),
         processingPathSize: Buffer.isBuffer(buildingImageProcessingPath) ? buildingImageProcessingPath.length : 'N/A',
         designPrompt: req.body.designPrompt,
-        designType: req.body.designType || 'modern',
-        style: req.body.style || 'architectural'
+        designType: designType,
+        style: style,
+        fullPromptLength: fullPrompt.length
       });
 
       // Process the exterior design
       const result = await this.exteriorDesignService.generateExteriorDesign(
         buildingImageProcessingPath,
         req.body.designPrompt,
-        req.body.designType || 'modern',
-        req.body.style || 'architectural'
+        designType,
+        style
       );
 
       if (result.outputUrl) {
@@ -2060,13 +2086,19 @@ export class ImageController {
         );
       }
 
-      // Create generation record in database with actual image URL
+      // Generate the full prompt first (includes base prompt from .env + preservation instructions)
+      const fullPrompt = this.smartEffectsService.generateEffectPrompt(
+        effectType as EffectType,
+        req.body.customPrompt || undefined
+      );
+
+      // Create generation record in database with FULL prompt (not just effectType)
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: 'smart_effects',
         status: 'processing',
         input_image_url: houseImageStorageResult.url,
-        prompt: effectType + (req.body.customPrompt ? `: ${req.body.customPrompt}` : '')
+        prompt: fullPrompt
       });
       generationId = dbGenerationId;
 
@@ -2075,7 +2107,8 @@ export class ImageController {
         processingPathIsBuffer: Buffer.isBuffer(houseImageProcessingPath),
         processingPathSize: Buffer.isBuffer(houseImageProcessingPath) ? houseImageProcessingPath.length : 'N/A',
         effectType: effectType,
-        customPrompt: req.body.customPrompt || undefined
+        customPrompt: req.body.customPrompt || undefined,
+        fullPromptLength: fullPrompt.length
       });
 
       // Process the smart effect
@@ -2256,26 +2289,60 @@ export class ImageController {
         imageUrl,
         motionType,
         options,
-        userId
+        userId,
+        generationId: req.body.generationId
       });
 
-      // Create generation record in database first
+      // Look up original generation to get context (especially for smart effects)
+      const originalGeneration = await this.userStatsService.getGenerationByImageUrlOrId(
+        userId,
+        imageUrl,
+        req.body.generationId
+      );
+
+      let originalPrompt: string | undefined;
+      let originalModelType: string | undefined;
+
+      if (originalGeneration) {
+        originalPrompt = originalGeneration.prompt;
+        originalModelType = originalGeneration.model_type;
+        logger.info('📋 Found original generation context', {
+          originalModelType,
+          hasPrompt: !!originalPrompt,
+          promptLength: originalPrompt?.length || 0
+        });
+      }
+
+      // Generate the full prompt first (includes base prompt from .env + original context + camera movement if provided)
+      const fullPrompt = this.videoMotionService.generateVideoPrompt(
+        options || {},
+        originalPrompt,
+        originalModelType
+      );
+
+      // Create generation record in database with FULL prompt (not just user input)
       const dbGenerationId = await this.userStatsService.createGenerationRecord({
         user_id: userId,
         model_type: `video_${motionType}`,
         status: 'processing',
         input_image_url: imageUrl,
-        prompt: options?.prompt || 'Add a impressive ultrarealistic movement to this image'
+        prompt: fullPrompt
       });
       generationId = dbGenerationId;
 
       // Generate video using veo3_fast
       // Pass the URL directly to Replicate (it accepts URLs for images)
       // This avoids unnecessary download/upload cycles
+      // Note: The prompt is already enhanced above, but we need to pass it through options
+      const enhancedOptions = {
+        ...options,
+        prompt: fullPrompt // Override with enhanced prompt
+      };
+      
       const result = await this.videoMotionService.generateVideo(
         motionType as VideoMotionType,
         imageUrl, // Pass URL directly - Replicate accepts URLs
-        options || {}
+        enhancedOptions
       );
 
       if (result.outputUrl) {

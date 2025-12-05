@@ -187,17 +187,60 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
         .single();
 
       if (subscriptionRecord) {
-        await supabase
+        // Get current user plan to check for manual overrides
+        const { data: userProfile } = await supabase
           .from('user_profiles')
-          .update({
-            subscription_plan: planName,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', subscriptionRecord.user_id);
+          .select('subscription_plan')
+          .eq('id', subscriptionRecord.user_id)
+          .single();
+
+        if (userProfile) {
+          const normalizedPlanName = planName.toLowerCase().trim();
+          const currentDbPlan = userProfile.subscription_plan?.toLowerCase().trim() || 'free';
+          
+          // Plan hierarchy for comparison (higher number = higher tier)
+          const planHierarchy: Record<string, number> = {
+            'free': 0,
+            'basic': 1,
+            'premium': 2,
+            'enterprise': 3,
+            'ultra': 4
+          };
+
+          const stripePlanLevel = planHierarchy[normalizedPlanName] || 0;
+          const dbPlanLevel = planHierarchy[currentDbPlan] || 0;
+
+          // Only update if Stripe plan is higher or same
+          // Preserve manually set higher-tier plans
+          if (dbPlanLevel > stripePlanLevel) {
+            logger.info(`Webhook: User ${subscriptionRecord.user_id} has manually set plan ${currentDbPlan} (level ${dbPlanLevel}) which is higher than Stripe plan ${normalizedPlanName} (level ${stripePlanLevel}). Preserving database plan.`);
+            // Don't update - preserve the manually set plan
+          } else if (dbPlanLevel <= stripePlanLevel) {
+            // Stripe plan is higher or same - update to Stripe plan
+            await supabase
+              .from('user_profiles')
+              .update({
+                subscription_plan: normalizedPlanName,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', subscriptionRecord.user_id);
+            logger.info(`Subscription updated via webhook: ${subscription.id} - ${normalizedPlanName}`);
+          }
+        } else {
+          // Fallback: if we can't get user profile, update anyway
+          await supabase
+            .from('user_profiles')
+            .update({
+              subscription_plan: planName.toLowerCase().trim(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', subscriptionRecord.user_id);
+          logger.info(`Subscription updated via webhook (fallback): ${subscription.id} - ${planName}`);
+        }
       }
     }
 
-    logger.info(`Subscription updated: ${subscription.id} - ${planName}`);
+    logger.info(`Subscription webhook processed: ${subscription.id} - ${planName}`);
   } catch (error) {
     logger.error('Error handling subscription update:', error as Error);
   }

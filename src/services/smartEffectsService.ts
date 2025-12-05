@@ -178,7 +178,7 @@ export class SmartEffectsService {
    * Generate effect-specific prompt based on effect type
    * CRITICAL: Must preserve original house structure, shape, size, and layout
    */
-  private generateEffectPrompt(
+  public generateEffectPrompt(
     effectType: EffectType,
     customPrompt?: string
   ): string {
@@ -186,7 +186,7 @@ export class SmartEffectsService {
     const effectPrompts: Record<EffectType, string> = {
       dusk: process.env.PROMPT_EFFECT_DUSK || 'Transform the house with beautiful evening dusk lighting, warm golden hour colors, dramatic sky with purple and orange hues, soft ambient lighting from windows, creating a cozy and magical evening atmosphere',
       balloons: process.env.PROMPT_EFFECT_BALLOONS || 'Add a thousand colorful balloons floating over and around the house like a gift celebration, vibrant balloons in various colors and sizes, festive atmosphere, balloons rising from the ground and floating in the sky, making the house look like a special gift',
-      helicopter: process.env.PROMPT_EFFECT_HELICOPTER || 'A helicopter ascending vertically into the sky, lifting a massive fabric cover that completely wraps the house. The fabric is pulled upward by thick ropes attached to the helicopter, dramatically revealing the house underneath from bottom to top as the helicopter flies higher. Cinematic reveal shot, the fabric ripples and flows as it is lifted away, unveiling the architecture.',
+      helicopter: process.env.PROMPT_EFFECT_HELICOPTER || 'A dynamic image of this house unveiling ceremony on a sunny day with a clear blue sky and scattered white clouds. A sleek black helicopter hovers above it.  The house is initially covered by a massive black fabric drape. The helicopter, attached to the drape via a central cable and hook, slowly ascends and pulls the fabric upward from the center, causing it to split and peel away symmetrically like curtains opening, gradually revealing the house from top to bottom over 10 seconds. Start with a wide establishing shot from ground level looking up, then transition to a smooth tracking camera that circles slightly around the scene as the reveal happens, emphasizing the fabric billowing in the wind and the sunlight glinting off the helicopter rotors. Realistic style, high detail, cinematic lighting with lens flare from the sun, no text or people visible.',
       gift_bow: process.env.PROMPT_EFFECT_GIFT_BOW || 'A big decorative red ribbon bow elegantly placed over the house making it look like a giant gift, festive gift wrapping, elegant bow with flowing ribbons, celebration aesthetic, the house wrapped like a present',
       fireworks: process.env.PROMPT_EFFECT_FIREWORKS || 'Spectacular fireworks display exploding over the house, colorful fireworks bursting in the night sky, celebration atmosphere, brilliant colors and light trails, festive celebration scene, nighttime setting',
       confetti: process.env.PROMPT_EFFECT_CONFETTI || 'Colorful confetti raining down around the house in celebration, vibrant confetti particles floating in the air, festive atmosphere, party celebration, colorful paper confetti scattered everywhere, joyful scene',
