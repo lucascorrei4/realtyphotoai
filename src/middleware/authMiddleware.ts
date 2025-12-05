@@ -424,8 +424,9 @@ export const checkGenerationLimit = async (
 
 /**
  * Middleware to check if user can access specific AI model
+ * Note: All plans have access to all models - only credits differ between plans
  */
-export const checkModelAccess = (modelType: string) => {
+export const checkModelAccess = (_modelType: string) => {
   return async (
     req: AuthenticatedRequest,
     res: Response,
@@ -437,34 +438,8 @@ export const checkModelAccess = (modelType: string) => {
         return;
       }
 
-      // Get user profile to check model access
-      const userProfile = await authService.getUserProfile(req.user.id);
-      if (!userProfile) {
-        res.status(404).json({ error: 'User profile not found' });
-        return;
-      }
-
-      // Check if user's plan allows this model
-      // This would typically check against plan_rules table
-      // For now, we'll implement basic checks
-      const allowedModels = {
-        'free': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
-        'basic': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
-        'premium': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation'],
-        'enterprise': ['image_enhancement', 'interior_design', 'exterior_design', 'element_replacement', 'add_furnitures', 'smart_effects', 'video_generation']
-      };
-
-      const userAllowedModels = allowedModels[userProfile.subscription_plan as keyof typeof allowedModels] || [];
-
-      if (!userAllowedModels.includes(modelType)) {
-        res.status(403).json({
-          error: `Model '${modelType}' not available in your current plan`,
-          currentPlan: userProfile.subscription_plan,
-          allowedModels: userAllowedModels
-        });
-        return;
-      }
-
+      // All plans have access to all models - only credits differ
+      // The checkGenerationLimit middleware handles credit-based access control
       next();
     } catch (error) {
       logger.error('Model access check error:', error as Error);
