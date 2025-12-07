@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   Users, 
   BarChart3, 
@@ -56,6 +56,8 @@ interface User {
   subscription_plan: string;
   monthly_generations_limit: number;
   total_generations: number;
+  monthly_credits_used?: number; // Credits used this month
+  monthly_credits_total?: number; // Total credits available this month
   is_active: boolean;
   created_at: string;
 }
@@ -78,16 +80,17 @@ const AdminDashboard: React.FC = () => {
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   
   // Set initial tab based on route
-  const getInitialTab = (): 'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'dashboard' | 'generations' => {
+  const getInitialTab = (): 'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'generations' => {
     if (location.pathname === '/admin/generations') {
       return 'generations';
     }
     return 'overview';
   };
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'dashboard' | 'generations'>(getInitialTab());
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'plans' | 'stripe' | 'settings' | 'generations'>(getInitialTab());
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [plans, setPlans] = useState<PlanRule[]>([]);
@@ -143,9 +146,9 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Fetch recent generations when dashboard tab is active
+  // Fetch recent generations when overview tab is active
   useEffect(() => {
-    if (activeTab === 'dashboard' && user) {
+    if (activeTab === 'overview' && user) {
       fetchRecentGenerations();
     }
   }, [activeTab, user]);
@@ -355,6 +358,30 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const deleteUser = async (userId: string, userEmail: string) => {
+    // Confirm deletion
+    if (!window.confirm(`Are you sure you want to delete user ${userEmail}? This will deactivate their account.`)) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(`/api/v1/admin/users/${userId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        showSuccess('User deleted successfully');
+        await fetchUsers();
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        showError(errorData.error || 'Failed to delete user');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      showError('Error deleting user');
+    }
+  };
+
   const viewUserGenerations = (userId: string) => {
     navigate(`/admin/generations?userId=${userId}`);
   };
@@ -497,7 +524,6 @@ const AdminDashboard: React.FC = () => {
           <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto scrollbar-hide -mx-2 sm:-mx-4 lg:mx-0 px-2 sm:px-4 lg:px-0">
             {[
               { id: 'overview', label: 'Overview', icon: BarChart3, shortLabel: 'Overview' },
-              { id: 'dashboard', label: 'Dashboard', icon: Shield, shortLabel: 'Dashboard' },
               { id: 'generations', label: 'Generations', icon: Image, shortLabel: 'Generations' },
               { id: 'users', label: 'Users', icon: Users, shortLabel: 'Users' },
               { id: 'plans', label: 'Plans', icon: Crown, shortLabel: 'Plans' },
@@ -541,10 +567,30 @@ const AdminDashboard: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Overview Tab */}
+            {/* Overview Tab - Merged with Dashboard */}
             {activeTab === 'overview' && systemStats && (
               <div className="space-y-4 sm:space-y-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">System Overview</h2>
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
+                      System Overview
+                    </h1>
+                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1 sm:mt-2">
+                      Monitor system activity and manage your platform
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      fetchData();
+                      fetchRecentGenerations();
+                    }}
+                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors w-full sm:w-auto"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
                 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -658,106 +704,6 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Admin Dashboard Tab */}
-            {activeTab === 'dashboard' && (
-              <div className="space-y-4 sm:space-y-6">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-                  <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-                      Admin Dashboard
-                    </h1>
-                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1 sm:mt-2">
-                      Monitor system activity and manage your platform
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      fetchData();
-                      fetchRecentGenerations();
-                    }}
-                    className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors w-full sm:w-auto"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    <span>Refresh</span>
-                  </button>
-                </div>
-
-                {/* Real Stats Grid */}
-                {systemStats && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Users</p>
-                          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                            {systemStats.totalUsers.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {users.filter(u => u.is_active).length} active
-                          </p>
-                        </div>
-                        <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full">
-                          <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Generations</p>
-                          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                            {systemStats.totalGenerations.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {systemStats.monthlyGenerations} this month
-                          </p>
-                        </div>
-                        <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
-                          <Image className="h-6 w-6 text-green-600 dark:text-green-400" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Success Rate</p>
-                          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                            {systemStats.successRate}%
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            {systemStats.successfulGenerations.toLocaleString()} successful
-                          </p>
-                        </div>
-                        <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
-                          <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Monthly Activity</p>
-                          <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
-                            {systemStats.monthlyGenerations.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            Current month
-                          </p>
-                        </div>
-                        <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-full">
-                          <Activity className="h-6 w-6 text-orange-600 dark:text-orange-400" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Quick Links */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -820,8 +766,8 @@ const AdminDashboard: React.FC = () => {
                         <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600 dark:text-orange-400" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white truncate">System Overview</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">View analytics</p>
+                        <p className="text-sm sm:text-base font-medium text-gray-900 dark:text-white truncate">System Analytics</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">View detailed stats</p>
                       </div>
                     </div>
                   </button>
@@ -927,6 +873,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             )}
 
+
             {/* Users Tab */}
             {activeTab === 'users' && (
               <div className="space-y-4 sm:space-y-6">
@@ -1012,6 +959,9 @@ const AdminDashboard: React.FC = () => {
                             Usage
                           </th>
                           <th className="px-4 xl:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Credits
+                          </th>
+                          <th className="px-4 xl:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                             Status
                           </th>
                           <th className="px-4 xl:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -1025,7 +975,7 @@ const AdminDashboard: React.FC = () => {
                       <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {filteredUsers.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-6 py-12 text-center">
+                            <td colSpan={8} className="px-6 py-12 text-center">
                               <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                               <p className="text-gray-500 dark:text-gray-400">
                                 {searchTerm || roleFilter !== 'all' || planFilter !== 'all' || statusFilter !== 'all'
@@ -1074,10 +1024,37 @@ const AdminDashboard: React.FC = () => {
                                 </span>
                               </td>
                               <td className="px-4 xl:px-6 py-3 sm:py-4 whitespace-nowrap">
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1">
-                                  <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">{user.total_generations}</span>
-                                  <span className="text-gray-500 dark:text-gray-400 hidden sm:inline">/</span>
-                                  <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{user.monthly_generations_limit}</span>
+                                <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">
+                                  {user.total_generations.toLocaleString()}
+                                </span>
+                              </td>
+                              <td className="px-4 xl:px-6 py-3 sm:py-4 whitespace-nowrap">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">
+                                      {(user.monthly_credits_used || 0).toLocaleString()}
+                                    </span>
+                                    <span className="text-gray-500 dark:text-gray-400">/</span>
+                                    <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
+                                      {(user.monthly_credits_total || user.monthly_generations_limit || 0).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {user.monthly_credits_total && user.monthly_credits_total > 0 && (
+                                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                                      <div
+                                        className={`h-1.5 rounded-full transition-all ${
+                                          ((user.monthly_credits_used || 0) / user.monthly_credits_total) > 0.9
+                                            ? 'bg-red-500'
+                                            : ((user.monthly_credits_used || 0) / user.monthly_credits_total) > 0.7
+                                            ? 'bg-yellow-500'
+                                            : 'bg-green-500'
+                                        }`}
+                                        style={{
+                                          width: `${Math.min(100, ((user.monthly_credits_used || 0) / user.monthly_credits_total) * 100)}%`
+                                        }}
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 xl:px-6 py-3 sm:py-4 whitespace-nowrap">
@@ -1251,6 +1228,13 @@ const AdminDashboard: React.FC = () => {
                               >
                                 {user.is_active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                               </button>
+                              <button
+                                onClick={() => deleteUser(user.id, user.email)}
+                                className="p-2 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 rounded transition-colors"
+                                title="Delete user"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
                               <div className="relative user-action-menu">
                                 <button
                                   onClick={() => setUserActionMenu(userActionMenu === user.id ? null : user.id)}
@@ -1335,10 +1319,32 @@ const AdminDashboard: React.FC = () => {
                               </span>
                             </div>
                             <div>
-                              <span className="text-gray-500 dark:text-gray-400">Usage:</span>
+                              <span className="text-gray-500 dark:text-gray-400">Generations:</span>
                               <span className="ml-1 font-medium text-gray-900 dark:text-white">
-                                {user.total_generations} / {user.monthly_generations_limit}
+                                {user.total_generations.toLocaleString()}
                               </span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="text-gray-500 dark:text-gray-400">Credits:</span>
+                              <span className="ml-1 font-medium text-gray-900 dark:text-white">
+                                {(user.monthly_credits_used || 0).toLocaleString()} / {(user.monthly_credits_total || user.monthly_generations_limit || 0).toLocaleString()}
+                              </span>
+                              {user.monthly_credits_total && user.monthly_credits_total > 0 && (
+                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-1">
+                                  <div
+                                    className={`h-1.5 rounded-full transition-all ${
+                                      ((user.monthly_credits_used || 0) / user.monthly_credits_total) > 0.9
+                                        ? 'bg-red-500'
+                                        : ((user.monthly_credits_used || 0) / user.monthly_credits_total) > 0.7
+                                        ? 'bg-yellow-500'
+                                        : 'bg-green-500'
+                                    }`}
+                                    style={{
+                                      width: `${Math.min(100, ((user.monthly_credits_used || 0) / user.monthly_credits_total) * 100)}%`
+                                    }}
+                                  />
+                                </div>
+                              )}
                             </div>
                             <div>
                               <span className="text-gray-500 dark:text-gray-400">Status:</span>
@@ -1571,18 +1577,36 @@ const AdminDashboard: React.FC = () => {
             {activeTab === 'generations' && (
               <div className="space-y-4 sm:space-y-6">
                 <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">All Generations</h2>
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+                    {searchParams.get('userId') ? 'User Generations' : 'All Generations'}
+                  </h2>
                   <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1 sm:mt-2">
-                    View all generations across all users in real-time
+                    {searchParams.get('userId') 
+                      ? 'View generations for this specific user'
+                      : 'View all generations across all users in real-time'}
                   </p>
+                  {searchParams.get('userId') && (
+                    <button
+                      onClick={() => {
+                        navigate('/admin/generations');
+                      }}
+                      className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center space-x-1"
+                    >
+                      <X className="h-4 w-4" />
+                      <span>Clear filter</span>
+                    </button>
+                  )}
                 </div>
                 
                 <RecentGenerationsWidget
-                  title="All User Generations"
-                  description="Monitor all AI generations across the platform with user identification"
+                  title={searchParams.get('userId') ? 'User Generations' : 'All User Generations'}
+                  description={searchParams.get('userId') 
+                    ? 'Monitor generations for this specific user'
+                    : 'Monitor all AI generations across the platform with user identification'}
                   showFilters={true}
                   maxItems={20}
                   adminMode={true}
+                  userId={searchParams.get('userId') || undefined}
                 />
               </div>
             )}

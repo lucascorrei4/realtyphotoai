@@ -265,4 +265,27 @@ router.post('/verify-token', authenticateToken, async (req, res) => {
   }
 });
 
+// Send CompleteRegistration event after OTP verification (for Supabase OTP flow)
+router.post('/complete-registration', async (req, res) => {
+  try {
+    const { email, userId } = req.body;
+    
+    if (!email || !userId) {
+      return res.status(400).json({ error: 'Email and userId are required' });
+    }
+
+    const conversionMetadata = buildConversionMetadata(req);
+    const result = await authService.checkAndSendCompleteRegistration(email, userId, conversionMetadata);
+    
+    return res.json({
+      success: true,
+      sent: result.sent,
+      isFirstSignIn: result.isFirstSignIn
+    });
+  } catch (error) {
+    logger.error('Error sending CompleteRegistration:', error as Error);
+    return res.status(500).json({ error: 'Failed to send CompleteRegistration event' });
+  }
+});
+
 export default router;

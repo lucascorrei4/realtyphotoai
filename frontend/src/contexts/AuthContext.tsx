@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import supabase from '../config/supabase';
-import { sendConversionEvent } from '../utils/conversionTracking';
+import { sendConversionEvent, buildConversionMetadata } from '../utils/conversionTracking';
 
 export interface User {
   id: string;
@@ -529,9 +529,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (data.user) {
         // Send CompleteRegistration conversion event to backend (fire and forget)
-        // The backend will check if user exists and send CompleteRegistration event for new users
-        sendConversionEvent('verify-code', email, code).catch(() => {
+        // The backend will check if user is new (first sign-in) and send CompleteRegistration event
+        const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+        const conversionMetadata = buildConversionMetadata(email, data.user.id);
+        
+        fetch(`${backendUrl}/api/v1/auth/complete-registration`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: data.user.id,
+            ...conversionMetadata,
+          }),
+        }).catch((error) => {
           // Silently ignore errors - conversion tracking should not block user flow
+          console.debug('CompleteRegistration event tracking failed (non-blocking):', error);
         });
 
         // Set user immediately from session, don't wait for profile fetch

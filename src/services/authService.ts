@@ -311,6 +311,56 @@ export class AuthService {
       return null;
     }
   }
+
+  /**
+   * Check if user is new (first sign-in) and send CompleteRegistration event
+   * This is called after Supabase OTP verification to ensure CompleteRegistration is sent
+   */
+  async checkAndSendCompleteRegistration(
+    email: string,
+    userId: string,
+    metadata?: Partial<ConversionEventPayload>
+  ): Promise<{ sent: boolean; isFirstSignIn: boolean }> {
+    try {
+      const user = await this.getUserProfile(userId);
+      
+      if (!user) {
+        logger.warn(`User profile not found for userId: ${userId}, email: ${email}`);
+        return { sent: false, isFirstSignIn: false };
+      }
+
+      // Check if this is a first sign-in (profile created within last 10 minutes)
+      const profileCreatedAt = new Date(user.created_at);
+      const now = new Date();
+      const minutesSinceCreation = (now.getTime() - profileCreatedAt.getTime()) / (1000 * 60);
+      const isFirstSignIn = minutesSinceCreation < 10; // 10 minutes window
+
+      logger.info(`CompleteRegistration check for ${email}: profile created ${minutesSinceCreation.toFixed(2)} minutes ago, isFirstSignIn: ${isFirstSignIn}`);
+
+      if (isFirstSignIn) {
+        const conversionPayload: ConversionEventPayload = {
+          email: user.email,
+          createdAt: user.created_at,
+          ...metadata,
+          externalId: metadata?.externalId ?? user.id,
+        };
+
+        logger.info(`Sending CompleteRegistration event for ${email} (new signup after OTP verification)`);
+        // Send CompleteRegistration event to webhook (fire and forget)
+        conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload).catch((error) => {
+          logger.error('Failed to send CompleteRegistration event:', error);
+        });
+
+        return { sent: true, isFirstSignIn: true };
+      } else {
+        logger.info(`Skipping CompleteRegistration event for ${email} (existing user login)`);
+        return { sent: false, isFirstSignIn: false };
+      }
+    } catch (error) {
+      logger.error('Error checking and sending CompleteRegistration:', error as Error);
+      return { sent: false, isFirstSignIn: false };
+    }
+  }
 }
 
 export default new AuthService();

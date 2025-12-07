@@ -50,8 +50,9 @@ export interface GenerationStats {
 export class AdminService {
   /**
    * Get all users (admin only)
+   * Includes monthly credits used calculation
    */
-  async getAllUsers(): Promise<UserProfile[]> {
+  async getAllUsers(): Promise<any[]> {
     try {
       const { data: users, error } = await supabase
         .from('user_profiles')
@@ -63,7 +64,82 @@ export class AdminService {
         throw new Error('Failed to fetch users');
       }
 
-      return users || [];
+      if (!users || users.length === 0) {
+        return [];
+      }
+
+      // Calculate monthly credits used for each user
+      const now = new Date();
+      const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      // Get all monthly generations for all users in one query
+      const { data: monthlyGenerations, error: generationsError } = await supabase
+        .from('generations')
+        .select('user_id, model_type, status, created_at, is_deleted, metadata')
+        .eq('status', 'completed')
+        .eq('is_deleted', false)
+        .gte('created_at', currentMonth.toISOString())
+        .lt('created_at', nextMonth.toISOString());
+
+      if (generationsError) {
+        logger.error('Error fetching monthly generations:', generationsError);
+        // Continue without credits calculation if this fails
+      }
+
+      // Calculate credits used per user
+      const creditsByUser: { [userId: string]: number } = {};
+      if (monthlyGenerations) {
+        monthlyGenerations.forEach((gen: any) => {
+          if (!creditsByUser[gen.user_id]) {
+            creditsByUser[gen.user_id] = 0;
+          }
+          
+          // Check if it's a video generation
+          const isVideoGeneration = gen.model_type?.startsWith('video_') || gen.model_type === 'video_motion';
+          
+          if (isVideoGeneration) {
+            // Video: 40 credits per second (VIDEO_PER_SECOND from CREDIT_COSTS)
+            // Default 6 seconds = 240 credits
+            const duration = gen.metadata?.duration || gen.metadata?.duration_seconds || 6;
+            creditsByUser[gen.user_id] += duration * 40;
+          } else {
+            // Image: 40 credits per image (IMAGE from CREDIT_COSTS)
+            creditsByUser[gen.user_id] += 40;
+          }
+        });
+      }
+
+      // Get plan rules to get the actual display credits for each plan
+      const { data: planRules, error: planRulesError } = await supabase
+        .from('plan_rules')
+        .select('plan_name, monthly_generations_limit')
+        .eq('is_active', true);
+
+      if (planRulesError) {
+        logger.error('Error fetching plan rules:', planRulesError);
+      }
+
+      // Create a map of plan name to display credits
+      const planCreditsMap: { [planName: string]: number } = {};
+      if (planRules) {
+        planRules.forEach((plan: any) => {
+          planCreditsMap[plan.plan_name] = plan.monthly_generations_limit || 0;
+        });
+      }
+
+      // Add credits information to each user
+      // Use the plan's display credits from plan_rules, fallback to user's monthly_generations_limit
+      return users.map((user: any) => {
+        const planName = user.subscription_plan || 'free';
+        const planDisplayCredits = planCreditsMap[planName] || user.monthly_generations_limit || 0;
+        
+        return {
+          ...user,
+          monthly_credits_used: creditsByUser[user.id] || 0,
+          monthly_credits_total: planDisplayCredits
+        };
+      });
     } catch (error) {
       logger.error('Error in getAllUsers:', error as Error);
       throw error;
@@ -117,6 +193,7 @@ export class AdminService {
 
   /**
    * Deactivate/activate user
+   * Sets is_active to the provided boolean value (true for active, false for inactive)
    */
   async toggleUserStatus(userId: string, isActive: boolean): Promise<boolean> {
     try {
@@ -133,6 +210,38 @@ export class AdminService {
       return true;
     } catch (error) {
       logger.error('Error in toggleUserStatus:', error as Error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete user (soft delete by setting is_active to false and optionally marking as deleted)
+   * For hard delete, we'll set is_active = false and can add additional cleanup if needed
+   */
+  async deleteUser(userId: string): Promise<boolean> {
+    try {
+      // First, deactivate the user
+      const { error: deactivateError } = await supabase
+        .from('user_profiles')
+        .update({ is_active: false })
+        .eq('id', userId);
+
+      if (deactivateError) {
+        logger.error('Error deactivating user during delete:', deactivateError);
+        return false;
+      }
+
+      // Optionally, you can add a deleted_at timestamp or is_deleted flag here
+      // For now, we'll just deactivate the user
+      // If you want hard delete, you can use:
+      // const { error: deleteError } = await supabase
+      //   .from('user_profiles')
+      //   .delete()
+      //   .eq('id', userId);
+
+      return true;
+    } catch (error) {
+      logger.error('Error in deleteUser:', error as Error);
       return false;
     }
   }

@@ -1,6 +1,6 @@
 import express from 'express';
 import adminService from '../services/adminService';
-import { authenticateToken, requireAdmin, requireSuperAdmin } from '../middleware/authMiddleware';
+import { authenticateToken, requireAdmin, requireSuperAdmin, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
 
 const router = express.Router();
@@ -123,6 +123,35 @@ router.patch('/users/:userId/toggle-status', requireAdmin, async (req, res) => {
   } catch (error) {
     logger.error('Error in admin toggle user status route:', error as Error);
     return res.status(500).json({ error: 'Failed to toggle user status' });
+  }
+});
+
+/**
+ * Delete user (admin only)
+ * DELETE /admin/users/:userId
+ */
+router.delete('/users/:userId', requireAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Prevent deleting yourself
+    if (userId === req.user?.id) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
+
+    const success = await adminService.deleteUser(userId);
+    
+    if (success) {
+      return res.json({
+        success: true,
+        message: 'User deleted successfully'
+      });
+    } else {
+      return res.status(500).json({ error: 'Failed to delete user' });
+    }
+  } catch (error) {
+    logger.error('Error in admin delete user route:', error as Error);
+    return res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 

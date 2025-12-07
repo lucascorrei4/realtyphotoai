@@ -68,6 +68,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   const [cameraMovementModal, setCameraMovementModal] = useState<{ isOpen: boolean; generationId: string; imageUrl: string } | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; generationId: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const deletedGenerationIdsRef = useRef<Set<string>>(new Set());
   const generalPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const { showSuccess, showError, showWarning, showInfo, updateToast, dismiss } = useToast();
   const { canStartGeneration, getProcessingCount, addToQueue, updateQueueItem, removeFromQueue } = useVideoGenerationQueue();
@@ -88,9 +89,9 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
   // General polling for any processing generations
   useEffect(() => {
-    // Check if there are any processing generations
+    // Check if there are any processing generations (excluding deleted ones)
     const hasProcessingGenerations = generations.some(
-      g => g.status === 'processing' || g.status === 'pending'
+      g => (g.status === 'processing' || g.status === 'pending') && !deletedGenerationIdsRef.current.has(g.id)
     );
 
     // If there are processing generations, start polling
@@ -138,8 +139,11 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         ...(filters.dateTo && { dateTo: filters.dateTo })
       });
 
-      // In admin mode, don't require userId
-      if (!adminMode && userId) {
+      // In admin mode, if userId is provided, use it to filter by that user
+      // In non-admin mode, userId is required
+      if (adminMode && userId) {
+        params.set('userId', userId);
+      } else if (!adminMode && userId) {
         params.set('userId', userId);
       }
 
@@ -168,7 +172,26 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       const result = await response.json();
 
       if (result.success) {
-        setGenerations(result.data.generations || []);
+        // Filter out deleted generations to prevent them from reappearing
+        // Use ref to always get the latest deleted IDs without closure issues
+        const allGenerations = result.data.generations || [];
+        const deletedIds = Array.from(deletedGenerationIdsRef.current);
+        const fetchedGenerations = allGenerations.filter(
+          (g: Generation) => {
+            const isDeleted = deletedGenerationIdsRef.current.has(g.id);
+            if (isDeleted) {
+              console.log('Filtering out deleted generation:', g.id);
+            }
+            return !isDeleted;
+          }
+        );
+        
+        // Log if we filtered anything
+        if (allGenerations.length !== fetchedGenerations.length) {
+          console.log(`Filtered ${allGenerations.length - fetchedGenerations.length} deleted generation(s) from fetch`);
+        }
+        
+        setGenerations(fetchedGenerations);
         setTotalPages(result.data.totalPages || 1);
         setTotalCount(result.data.total || result.data.totalCount || 0);
       } else {
@@ -393,28 +416,61 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         ? `/api/v1/admin/generations/${generationIdToDelete}`
         : `/api/v1/user/generations/${generationIdToDelete}?userId=${userId}`;
 
+      console.log('Deleting generation:', generationIdToDelete, 'from endpoint:', endpoint);
+
       const response = await authenticatedFetch(endpoint, {
         method: 'DELETE',
       });
 
+      console.log('Delete response status:', response.status, response.statusText);
+
+      // Check if response is OK (status 200-299)
+      if (!response.ok) {
+        const errorResult = await response.json().catch(() => ({ message: 'Failed to delete generation' }));
+        console.error('Delete failed:', errorResult);
+        showError(errorResult.message || `Failed to delete generation (${response.status})`);
+        return;
+      }
+
       const result = await response.json();
+      console.log('Delete result:', result);
 
       if (result.success) {
+        // Add to deleted set FIRST to prevent it from reappearing
+        // This must happen before any state updates or async operations
+        deletedGenerationIdsRef.current.add(generationIdToDelete);
+        console.log('✅ Added to deleted set:', generationIdToDelete, 'Current deleted set size:', deletedGenerationIdsRef.current.size);
+
+        // Optimistically remove the item from local state for immediate UI update
+        // Use functional update to ensure we're working with latest state
+        setGenerations(prev => {
+          const beforeCount = prev.length;
+          const filtered = prev.filter(g => {
+            const shouldKeep = g.id !== generationIdToDelete;
+            if (!shouldKeep) {
+              console.log('🗑️ Removing generation from state:', g.id, 'status:', g.status);
+            }
+            return shouldKeep;
+          });
+          console.log(`📊 State update: ${beforeCount} → ${filtered.length} generations (removed ${beforeCount - filtered.length})`);
+          return filtered;
+        });
+        setTotalCount(prev => {
+          const newCount = Math.max(0, prev - 1);
+          console.log('📊 Total count update:', prev, '→', newCount);
+          return newCount;
+        });
+
         showSuccess('Generation deleted successfully');
         // Close modal
         setDeleteModal(null);
 
-        // Optimistically remove the item from local state for immediate UI update
-        setGenerations(prev => prev.filter(g => g.id !== generationIdToDelete));
-        setTotalCount(prev => Math.max(0, prev - 1));
-
-        // Refresh the list after a short delay to ensure backend has processed and get accurate counts
-        // This ensures pagination and total counts are correct
-        setTimeout(() => {
-          fetchGenerations();
-        }, 500);
+        // Don't refresh immediately - the item is already removed optimistically
+        // Only refresh if we need to update counts or if user manually refreshes
+        // This prevents the item from reappearing due to polling or backend delays
       } else {
         // If deletion failed, show error
+        console.error('Delete result indicates failure:', result);
         showError(result.message || 'Failed to delete generation');
       }
     } catch (error) {
