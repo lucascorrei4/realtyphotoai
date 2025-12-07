@@ -87,39 +87,14 @@ export class AuthService {
           if (updateError) {
             logger.warn(`Failed to update meta_event_name for ${email}`, {
               error: updateError.message || String(updateError),
-              code: updateError.code,
-              details: updateError
+              code: updateError.code
             });
           } else {
             logger.info(`Set meta_event_name='Lead' for ${email}`);
           }
         } else {
-          // Profile doesn't exist yet - it will be created by frontend/Supabase
-          // Try to set meta_event_name='Lead' after a short delay to catch the profile creation
-          // This is a fallback in case the profile is created between now and when we check
-          setTimeout(async () => {
-            const { data: userAfterDelay } = await supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('email', email)
-              .single();
-            
-            if (userAfterDelay && !userAfterDelay.meta_event_name) {
-              const { error: delayUpdateError } = await supabase
-                .from('user_profiles')
-                .update({ 
-                  meta_event_name: 'Lead',
-                  updated_at: new Date().toISOString()
-                })
-                .eq('email', email);
-              
-              if (!delayUpdateError) {
-                logger.info(`Set meta_event_name='Lead' for ${email} (delayed update after profile creation)`);
-              }
-            }
-          }, 2000); // 2 second delay to allow profile creation
-          
-          logger.info(`Profile not found for ${email}, will attempt to set meta_event_name='Lead' after profile is created`);
+          // Profile doesn't exist yet - will be set when profile is created or on OTP confirmation
+          logger.info(`Profile not found for ${email}, Lead event sent but meta_event_name will be set later`);
         }
 
         return {
@@ -367,9 +342,8 @@ export class AuthService {
   }
 
   /**
-   * Check if user needs CompleteRegistration event and send it
-   * This is called after Supabase OTP verification
-   * Only sends CompleteRegistration if meta_event_name is 'Lead' (not already sent)
+   * Send CompleteRegistration event after OTP confirmation
+   * Simple: If not already 'CompleteRegistration', send it and update
    */
   async checkAndSendCompleteRegistration(
     email: string,
@@ -384,89 +358,44 @@ export class AuthService {
         return { sent: false, isFirstSignIn: false };
       }
 
-      // Check if meta_event_name is 'Lead' or null - meaning user entered email but hasn't confirmed OTP yet
-      // Also check if profile was created recently (within last 10 minutes) as fallback
-      const profileCreatedAt = new Date(user.created_at);
-      const now = new Date();
-      const minutesSinceCreation = (now.getTime() - profileCreatedAt.getTime()) / (1000 * 60);
-      const isRecentlyCreated = minutesSinceCreation < 10;
-      
-      // If meta_event_name is NULL and profile is recent, it means Lead wasn't set
-      // In this case, we should send CompleteRegistration (treating it as new signup)
-      const isFirstSignIn = user.meta_event_name === 'Lead' || 
-                           (user.meta_event_name === null && isRecentlyCreated);
-
-      logger.info(`CompleteRegistration check for ${email}: meta_event_name='${user.meta_event_name}', isFirstSignIn: ${isFirstSignIn}, profileAgeMinutes: ${minutesSinceCreation.toFixed(2)}`);
-
-      if (isFirstSignIn) {
-        // If meta_event_name is NULL, it means Lead event wasn't sent
-        // Send Lead event first, then CompleteRegistration
-        if (user.meta_event_name === null && isRecentlyCreated) {
-          logger.info(`meta_event_name is NULL for new profile, sending Lead event first for ${email}`);
-          
-          const leadPayload: ConversionEventPayload = {
-            email: user.email,
-            createdAt: user.created_at,
-            ...metadata,
-            externalId: metadata?.externalId ?? user.id,
-          };
-          
-          // Send Lead event (fire and forget)
-          conversionEventService.sendConversionEvent('Lead', leadPayload).catch((error) => {
-            logger.error('Failed to send Lead event (fallback):', error);
-          });
-          
-          // Set meta_event_name to 'Lead' first
-          await supabase
-            .from('user_profiles')
-            .update({ 
-              meta_event_name: 'Lead',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', userId);
-          
-          logger.info(`Set meta_event_name='Lead' for ${email} (fallback after OTP confirmation)`);
-        }
-        const conversionPayload: ConversionEventPayload = {
-          email: user.email,
-          createdAt: user.created_at,
-          ...metadata,
-          externalId: metadata?.externalId ?? user.id,
-        };
-
-        logger.info(`Sending CompleteRegistration event for ${email} (OTP confirmed, transitioning from Lead)`);
-        
-        // Send CompleteRegistration event to webhook (fire and forget)
-        conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload).catch((error) => {
-          logger.error('Failed to send CompleteRegistration event:', error);
-        });
-
-        // Update meta_event_name to 'CompleteRegistration'
-        const { error: updateError } = await supabase
-          .from('user_profiles')
-          .update({ 
-            meta_event_name: 'CompleteRegistration',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (updateError) {
-          logger.error(`Failed to update meta_event_name to 'CompleteRegistration' for ${email}`, {
-            error: updateError.message || String(updateError),
-            code: updateError.code,
-            details: updateError
-          });
-        } else {
-          logger.info(`Updated meta_event_name to 'CompleteRegistration' for ${email}`);
-        }
-
-        return { sent: true, isFirstSignIn: true };
-      } else {
-        logger.info(`Skipping CompleteRegistration event for ${email} (meta_event_name: '${user.meta_event_name}', already completed)`);
+      // Simple: If already CompleteRegistration, skip
+      if (user.meta_event_name === 'CompleteRegistration') {
+        logger.info(`CompleteRegistration already sent for ${email}`);
         return { sent: false, isFirstSignIn: false };
       }
+
+      // Send CompleteRegistration event
+      const conversionPayload: ConversionEventPayload = {
+        email: user.email,
+        createdAt: user.created_at,
+        ...metadata,
+        externalId: metadata?.externalId ?? user.id,
+      };
+
+      logger.info(`Sending CompleteRegistration event for ${email}`);
+      await conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload);
+
+      // Update meta_event_name
+      const { error: updateError } = await supabase
+        .from('user_profiles')
+        .update({ 
+          meta_event_name: 'CompleteRegistration',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        logger.error(`Failed to update meta_event_name for ${email}`, {
+          error: updateError.message || String(updateError),
+          code: updateError.code
+        });
+      } else {
+        logger.info(`Set meta_event_name='CompleteRegistration' for ${email}`);
+      }
+
+      return { sent: true, isFirstSignIn: true };
     } catch (error) {
-      logger.error('Error checking and sending CompleteRegistration:', error as Error);
+      logger.error('Error sending CompleteRegistration:', error as Error);
       return { sent: false, isFirstSignIn: false };
     }
   }
