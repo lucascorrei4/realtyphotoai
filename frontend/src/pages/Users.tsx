@@ -30,6 +30,7 @@ interface UserProfile {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  meta_event_name?: string | null; // 'Lead' when email entered, 'CompleteRegistration' when OTP confirmed
 }
 
 interface UserStats {

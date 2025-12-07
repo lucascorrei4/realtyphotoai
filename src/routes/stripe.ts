@@ -341,7 +341,7 @@ router.post('/sync-subscription', authenticateToken, asyncHandler(async (req: Au
       .single();
 
     if (!userProfile?.stripe_customer_id) {
-      res.status(404).json({ 
+      res.status(400).json({ 
         success: false,
         error: 'NO_CUSTOMER_ID',
         message: 'No Stripe customer ID found. Please subscribe first.' 

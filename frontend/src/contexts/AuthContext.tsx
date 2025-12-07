@@ -17,6 +17,7 @@ export interface User {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  meta_event_name?: string | null; // 'Lead' when email entered, 'CompleteRegistration' when OTP confirmed
 }
 
 interface AuthContextType {
@@ -542,9 +543,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             userId: data.user.id,
             ...conversionMetadata,
           }),
-        }).catch((error) => {
-          // Silently ignore errors - conversion tracking should not block user flow
-          console.debug('CompleteRegistration event tracking failed (non-blocking):', error);
+        })
+        .then(async (response) => {
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.warn('CompleteRegistration endpoint returned error:', response.status, errorText);
+          } else {
+            const result = await response.json();
+            console.log('CompleteRegistration event result:', result);
+          }
+        })
+        .catch((error) => {
+          // Log errors for debugging - conversion tracking should not block user flow
+          console.error('CompleteRegistration event tracking failed (non-blocking):', error);
         });
 
         // Set user immediately from session, don't wait for profile fetch

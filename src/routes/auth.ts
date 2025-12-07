@@ -268,14 +268,22 @@ router.post('/verify-token', authenticateToken, async (req, res) => {
 // Send CompleteRegistration event after OTP verification (for Supabase OTP flow)
 router.post('/complete-registration', async (req, res) => {
   try {
-    const { email, userId } = req.body;
+    const { email, userId, ...metadata } = req.body;
     
-    if (!email || !userId) {
+    // Email can be in body or in metadata (from buildConversionMetadata)
+    const userEmail = email || metadata.email;
+    
+    logger.info(`CompleteRegistration endpoint called: email=${userEmail}, userId=${userId}, body keys=${Object.keys(req.body).join(',')}`);
+    
+    if (!userEmail || !userId) {
+      logger.warn(`CompleteRegistration endpoint missing required fields: email=${userEmail}, userId=${userId}`);
       return res.status(400).json({ error: 'Email and userId are required' });
     }
 
     const conversionMetadata = buildConversionMetadata(req);
-    const result = await authService.checkAndSendCompleteRegistration(email, userId, conversionMetadata);
+    const result = await authService.checkAndSendCompleteRegistration(userEmail, userId, conversionMetadata);
+    
+    logger.info(`CompleteRegistration result: sent=${result.sent}, isFirstSignIn=${result.isFirstSignIn}`);
     
     return res.json({
       success: true,

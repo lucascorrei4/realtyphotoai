@@ -65,7 +65,8 @@ export const authenticateToken = async (
                 total_generations: 0,
                 successful_generations: 0,
                 failed_generations: 0,
-                is_active: true
+                is_active: true,
+                meta_event_name: null // Will be set to 'Lead' when email is entered via sendAuthCode
               })
               .select()
               .single();

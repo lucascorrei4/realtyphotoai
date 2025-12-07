@@ -140,16 +140,25 @@ const Dashboard: React.FC = () => {
         error = supabaseError;
 
         // If no generations found by ID, try by email as fallback
+        // Note: user_email column may not exist in all database schemas
         if (!generations || generations.length === 0) {
-          const { data: generationsByEmail, error: emailError } = await supabase
-            .from('generations')
-            .select('*')
-            .eq('user_email', user.email)
-            .order('created_at', { ascending: false });
+          try {
+            const { data: generationsByEmail, error: emailError } = await supabase
+              .from('generations')
+              .select('*')
+              .eq('user_email', user.email)
+              .order('created_at', { ascending: false });
 
-          if (generationsByEmail && !emailError) {
-            generations = generationsByEmail;
-          } 
+            if (generationsByEmail && !emailError) {
+              generations = generationsByEmail;
+            }
+          } catch (emailQueryError: any) {
+            // Silently ignore if user_email column doesn't exist (400 error)
+            // or if RLS blocks the query - this is expected for some database schemas
+            if (emailQueryError?.code !== 'PGRST116' && !emailQueryError?.message?.includes('column') && !emailQueryError?.message?.includes('user_email')) {
+              console.warn('[Dashboard] ⚠️ Fallback email query failed:', emailQueryError);
+            }
+          }
         }
       } catch (supabaseError) {
         console.error('[Dashboard] ❌ Supabase error:', supabaseError);
@@ -411,7 +420,10 @@ const Dashboard: React.FC = () => {
         await fetchUserStats();
       } else {
         const data = await response.json().catch(() => null);
-        console.warn('Sync subscription failed:', data || response.statusText);
+        // Don't show warning for NO_CUSTOMER_ID - this is expected for users without subscriptions
+        if (data?.error !== 'NO_CUSTOMER_ID') {
+          console.warn('Sync subscription failed:', data || response.statusText);
+        }
       }
     } catch (error) {
       console.error('Error syncing subscription from dashboard:', error);

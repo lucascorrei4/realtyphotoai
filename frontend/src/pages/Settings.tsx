@@ -341,6 +341,11 @@ const Settings: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        // Don't throw error for NO_CUSTOMER_ID - this is expected for users without subscriptions
+        if (errorData?.error === 'NO_CUSTOMER_ID') {
+          // Silently handle - user just needs to subscribe first
+          return;
+        }
         throw new Error(errorData.message || 'Failed to sync subscription');
       }
 
