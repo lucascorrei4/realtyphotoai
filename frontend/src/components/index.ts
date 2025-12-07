@@ -6,4 +6,8 @@ export { default as ImagePreview } from './ImagePreview';
 export { default as WorkflowGuide } from './WorkflowGuide';
 export { default as WorkflowGuideModal } from './WorkflowGuideModal';
 export { default as HowItWorksButton } from './HowItWorksButton';
+export { default as OfferCard } from './OfferCard';
+export { default as OffersSection } from './OffersSection';
 export type { Generation } from './RecentGenerationsWidget';
+export type { OfferCardProps } from './OfferCard';
+export type { Offer } from './OffersSection';

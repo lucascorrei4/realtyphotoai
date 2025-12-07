@@ -1,6 +1,6 @@
 import express from 'express';
 import Stripe from 'stripe';
-import stripeCheckoutService, { CheckoutSessionData, UserData, CustomData } from '../services/stripeCheckoutService';
+import stripeCheckoutService, { CheckoutSessionData, OneTimePaymentCheckoutData, UserData, CustomData } from '../services/stripeCheckoutService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -265,6 +265,117 @@ router.post('/checkout', asyncHandler(async (req: express.Request, res) => {
   const { sessionId, url } = await stripeCheckoutService.createCheckoutSession(sessionData);
 
   logger.info(`Checkout session created for user ${userId}, plan ${planId}`);
+
+  res.json({
+    success: true,
+    sessionId,
+    url
+  });
+}));
+
+/**
+ * Create one-time payment checkout session
+ * POST /stripe/checkout-one-time
+ */
+router.post('/checkout-one-time', asyncHandler(async (req: express.Request, res) => {
+  const { amount, credits, description, offerType = 'credits', email } = req.body;
+  
+  // Try to get user from auth token if provided
+  let userId: string | undefined;
+  let userEmail: string | undefined;
+  let isGuest = false;
+  
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (token) {
+      const authService = (await import('../services/authService')).default;
+      const decoded = authService.verifyToken(token);
+      
+      if (decoded) {
+        userId = decoded.id;
+        userEmail = decoded.email;
+      } else {
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (!error && user) {
+          userId = user.id;
+          userEmail = user.email;
+        }
+      }
+    }
+  } catch (error) {
+    logger.info('No valid auth token, proceeding with guest checkout');
+  }
+  
+  if (!userId || !userEmail) {
+    isGuest = true;
+    userId = `guest_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    userEmail = email || '';
+  }
+
+  if (!amount || !description) {
+    res.status(400).json({ 
+      success: false,
+      error: 'INVALID_REQUEST',
+      message: 'Amount and description are required' 
+    });
+    return;
+  }
+
+  // Extract conversion tracking data
+  const forwardedForHeader = req.headers['x-forwarded-for'];
+  const forwardedFor = Array.isArray(forwardedForHeader) ? forwardedForHeader[0] : forwardedForHeader;
+  const ipCandidate = forwardedFor?.split(',')[0]?.trim() ?? req.ip ?? '';
+  const userAgent = req.get('User-Agent') || '';
+
+  const userData: UserData = {
+    ...(userEmail ? { email: userEmail } : {}),
+    external_id: userId,
+    ip: ipCandidate,
+    user_agent: userAgent,
+  };
+
+  const customData: CustomData = {
+    value: amount,
+    currency: 'USD',
+    event_id: 'OneTimePurchase',
+    external_id: userId,
+  };
+
+  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  
+  // Success URL with session ID for magic link authentication
+  const successUrl = `${baseUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}&type=one_time`;
+  
+  // Build checkout data, only including optional properties when they have values
+  const checkoutData: OneTimePaymentCheckoutData = {
+    amount,
+    description,
+    userId,
+    successUrl,
+    cancelUrl: `${baseUrl}/pricing?payment=cancelled`,
+    offerType: offerType as 'credits' | 'videos',
+    metadata: {
+      source: 'web_app',
+      is_guest: isGuest ? 'true' : 'false',
+    },
+    userData,
+    customData,
+  };
+
+  // Conditionally add optional properties only if they have valid values
+  if (credits !== undefined && credits !== null && credits > 0) {
+    checkoutData.credits = credits;
+  }
+  
+  if (userEmail && userEmail.trim()) {
+    checkoutData.userEmail = userEmail;
+  }
+
+  const { sessionId, url } = await stripeCheckoutService.createOneTimePaymentCheckout(checkoutData);
+
+  logger.info(`One-time payment checkout session created for user ${userId}, amount $${amount}`);
 
   res.json({
     success: true,
@@ -1038,5 +1149,215 @@ router.delete('/account/:accountId', authenticateToken, async (req: Authenticate
     });
   }
 });
+
+/**
+ * Verify Stripe checkout session (for payment success page)
+ * GET /stripe/verify-session
+ */
+router.get('/verify-session', asyncHandler(async (req: express.Request, res) => {
+  const sessionId = req.query.session_id as string;
+
+  if (!sessionId) {
+    res.status(400).json({
+      success: false,
+      error: 'INVALID_REQUEST',
+      message: 'Session ID is required'
+    });
+    return;
+  }
+
+  try {
+    // Retrieve the session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['customer', 'customer_details']
+    });
+
+    if (!session) {
+      res.status(404).json({
+        success: false,
+        error: 'SESSION_NOT_FOUND',
+        message: 'Payment session not found'
+      });
+      return;
+    }
+
+    // Check if payment was successful
+    if (session.payment_status !== 'paid') {
+      res.status(400).json({
+        success: false,
+        error: 'PAYMENT_NOT_COMPLETED',
+        message: 'Payment has not been completed',
+        payment_status: session.payment_status
+      });
+      return;
+    }
+
+    // Extract customer email
+    const customerEmail = session.customer_email || 
+                         (typeof session.customer_details === 'object' && session.customer_details?.email) ||
+                         (typeof session.customer === 'object' && (session.customer as any)?.email) ||
+                         null;
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        payment_status: session.payment_status,
+        amount_total: session.amount_total,
+        currency: session.currency,
+        customer_email: customerEmail,
+        metadata: session.metadata || {}
+      },
+      customer_email: customerEmail
+    });
+  } catch (error) {
+    logger.error('Error verifying checkout session:', error as Error);
+    res.status(500).json({
+      success: false,
+      error: 'VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : 'Failed to verify payment session'
+    });
+  }
+}));
+
+/**
+ * Add credits from a Stripe checkout session (for guest users after account creation)
+ * POST /stripe/add-credits-from-session
+ */
+router.post('/add-credits-from-session', asyncHandler(async (req: express.Request, res) => {
+  const { sessionId, userId } = req.body;
+
+  if (!sessionId || !userId) {
+    res.status(400).json({
+      success: false,
+      error: 'INVALID_REQUEST',
+      message: 'Session ID and User ID are required'
+    });
+    return;
+  }
+
+  try {
+    // Retrieve the session from Stripe to verify payment
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['customer', 'customer_details']
+    });
+
+    if (!session || session.payment_status !== 'paid') {
+      res.status(400).json({
+        success: false,
+        error: 'INVALID_SESSION',
+        message: 'Payment session not found or payment not completed'
+      });
+      return;
+    }
+
+    // Check if payment type is one-time
+    const paymentType = session.metadata?.payment_type;
+    if (paymentType !== 'one_time') {
+      res.status(400).json({
+        success: false,
+        error: 'INVALID_PAYMENT_TYPE',
+        message: 'This endpoint is only for one-time payments'
+      });
+      return;
+    }
+
+    // Get credits from metadata
+    const credits = parseInt(session.metadata?.credits || '0', 10);
+    const description = session.metadata?.description || 'One-time payment';
+
+    if (credits <= 0) {
+      res.status(400).json({
+        success: false,
+        error: 'NO_CREDITS',
+        message: 'No credits found in payment session'
+      });
+      return;
+    }
+
+    // Check if credits were already added for this session
+    const { data: existingTransaction } = await supabase
+      .from('credit_transactions')
+      .select('id')
+      .eq('stripe_session_id', sessionId)
+      .eq('user_id', userId)
+      .single();
+
+    if (existingTransaction) {
+      res.json({
+        success: true,
+        message: 'Credits already added for this session',
+        credits: credits
+      });
+      return;
+    }
+
+    // Add credits using RPC function or direct insert
+    try {
+      // Try RPC function first
+      const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
+        p_user_id: userId,
+        p_credits: credits,
+        p_description: `One-time payment: ${description}`,
+        p_stripe_session_id: sessionId,
+        p_stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+        p_expires_at: null
+      });
+
+      if (rpcError) {
+        logger.warn('RPC function not available, trying direct insert:', { error: rpcError });
+        
+        // Fallback: direct insert
+        const { data: currentBalanceData } = await supabase
+          .from('credit_transactions')
+          .select('credits')
+          .eq('user_id', userId);
+        
+        const currentBalance = currentBalanceData?.reduce((sum, t) => sum + (t.credits || 0), 0) || 0;
+        const newBalance = currentBalance + credits;
+
+        const { error: insertError } = await supabase
+          .from('credit_transactions')
+          .insert({
+            user_id: userId,
+            transaction_type: 'purchase',
+            credits: credits,
+            balance_after: newBalance,
+            description: `One-time payment: ${description}`,
+            stripe_session_id: sessionId,
+            stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+            expires_at: null
+          });
+
+        if (insertError) {
+          throw insertError;
+        }
+      }
+
+      logger.info(`Successfully added ${credits} credits to user ${userId} from session ${sessionId}`);
+
+      res.json({
+        success: true,
+        message: 'Credits added successfully',
+        credits: credits
+      });
+    } catch (creditError) {
+      logger.error('Error adding credits:', creditError as Error);
+      res.status(500).json({
+        success: false,
+        error: 'CREDIT_ADD_FAILED',
+        message: 'Failed to add credits to account'
+      });
+      return;
+    }
+  } catch (error) {
+    logger.error('Error adding credits from session:', error as Error);
+    res.status(500).json({
+      success: false,
+      error: 'VERIFICATION_FAILED',
+      message: error instanceof Error ? error.message : 'Failed to process credit addition'
+    });
+  }
+}));
 
 export default router;

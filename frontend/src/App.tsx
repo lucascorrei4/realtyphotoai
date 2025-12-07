@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { supabase } from './config/supabase';
 import Layout from './components/Layout';
 import ToastProvider from './components/ToastProvider';
 import LandingPage from './pages/LandingPage';
@@ -18,6 +19,7 @@ import Settings from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 import Pricing from './pages/Pricing';
 import Privacy from './pages/Privacy';
+import PaymentSuccess from './pages/PaymentSuccess';
 import './App.css';
 
 // Protected Route Component
@@ -62,18 +64,59 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const AuthCallbackHandler: React.FC = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Handle hash changes for auth callbacks
-    const handleHashChange = () => {
+    const handleAuthCallback = async () => {
+      // Wait for user to be loaded
+      if (loading) return;
+
+      // Check for pending payment session from URL params or localStorage
+      const urlParams = new URLSearchParams(location.search);
+      const sessionId = urlParams.get('session_id') || localStorage.getItem('pending_payment_session');
+
+      // If user is authenticated and there's a pending payment session, add credits
+      if (user && sessionId) {
+        try {
+          const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+
+          if (token) {
+            const response = await fetch(`${backendUrl}/api/v1/stripe/add-credits-from-session`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                sessionId,
+                userId: user.id,
+              }),
+            });
+
+            if (response.ok) {
+              console.log('Credits added successfully from payment session');
+            }
+          }
+
+          // Clear pending payment session
+          localStorage.removeItem('pending_payment_session');
+        } catch (error) {
+          console.error('Error adding credits from payment session:', error);
+          // Don't block navigation - credits may have been added by webhook
+        }
+      }
+
+      // Handle hash changes for auth callbacks
       if (location.hash && location.hash.includes('access_token')) {
         // User clicked magic link, redirect to dashboard
-        window.location.href = '/dashboard';
+        navigate('/dashboard', { replace: true });
       }
     };
 
-    handleHashChange();
-  }, [location]);
+    handleAuthCallback();
+  }, [user, loading, location, navigate]);
 
   if (loading) {
     return (
@@ -99,6 +142,7 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/payment-success" element={<PaymentSuccess />} />
       <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <Auth />} />
       <Route path="/auth/callback" element={<AuthCallbackHandler />} />
       

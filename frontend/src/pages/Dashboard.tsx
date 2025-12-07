@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import { RecentGenerationsWidget, QuickActions } from '../components';
-import StripeCheckout from '../components/StripeCheckout';
+import OffersSection from '../components/OffersSection';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts';
 import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits, SubscriptionPlan } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
@@ -989,24 +989,27 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Stripe Checkout Modal */}
+      {/* Pricing/Offers Modal */}
       {showPricing && (
-        <StripeCheckout
-          onClose={() => setShowPricing(false)}
-          onSuccess={async (planId) => {
-            setShowPricing(false);
-            // Refresh user data first, then sync and fetch stats
-            if (refreshUser) {
-              await refreshUser();
-            }
-            await syncSubscription();
-            await fetchUserStats();
-            // Also refresh credits from context
-            if (refreshCredits) {
-              await refreshCredits();
-            }
-          }}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowPricing(false)}>
+          <div 
+            className="bg-transparent rounded-lg max-w-7xl w-full max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowPricing(false)}
+              className="absolute top-6 right-6 text-gray-700 dark:text-white hover:text-gray-900 dark:hover:text-gray-300 text-3xl font-bold z-10 bg-white/90 dark:bg-black/50 rounded-full w-10 h-10 flex items-center justify-center transition-colors backdrop-blur-sm shadow-lg"
+              aria-label="Close pricing modal"
+            >
+              ×
+            </button>
+            <OffersSection
+              title="Choose Your Plan"
+              subtitle="Pick the option that works best for your needs. All plans include full access to our AI-powered platform."
+              className="pt-8"
+            />
+          </div>
+        </div>
       )}
 
     </div>

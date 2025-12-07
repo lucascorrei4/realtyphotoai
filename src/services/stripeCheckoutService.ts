@@ -58,6 +58,20 @@ export interface CheckoutSessionData {
   customData?: CustomData;
 }
 
+export interface OneTimePaymentCheckoutData {
+  amount: number; // Amount in dollars
+  credits?: number; // Number of credits to add
+  description: string;
+  userId: string;
+  userEmail?: string;
+  successUrl: string;
+  cancelUrl: string;
+  metadata?: Record<string, string>;
+  userData?: UserData;
+  customData?: CustomData;
+  offerType: 'credits' | 'videos'; // Type of one-time offer
+}
+
 export class StripeCheckoutService {
   private stripe: Stripe;
   private splitConfig: SplitPaymentConfig;
@@ -273,6 +287,102 @@ export class StripeCheckoutService {
     } catch (error) {
       logger.error('Error creating checkout session:', error as Error);
       throw new Error('Failed to create checkout session');
+    }
+  }
+
+  /**
+   * Create a one-time payment checkout session
+   */
+  async createOneTimePaymentCheckout(data: OneTimePaymentCheckoutData): Promise<{ sessionId: string; url: string }> {
+    try {
+      // Check if user has existing Stripe customer
+      let customer: Stripe.Customer | null = null;
+      if (data.userId && !data.userId.startsWith('guest_')) {
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('stripe_customer_id')
+          .eq('id', data.userId)
+          .single();
+        
+        if (userProfile?.stripe_customer_id) {
+          try {
+            customer = await this.stripe.customers.retrieve(userProfile.stripe_customer_id) as Stripe.Customer;
+          } catch (error) {
+            logger.warn(`Could not retrieve customer ${userProfile.stripe_customer_id}`, {
+              error: error instanceof Error ? error.message : String(error)
+            });
+          }
+        }
+      }
+
+      const isGuest = data.userId.startsWith('guest_') || !data.userEmail;
+      
+      // Build metadata
+      const userData = data.userData || {};
+      const customData = data.customData || {};
+
+      const buildMetadataFromObject = (obj: Record<string, any>): Record<string, string> => {
+        const metadata: Record<string, string> = {};
+        Object.entries(obj).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            metadata[key] = stringValue;
+          }
+        });
+        return metadata;
+      };
+
+      const userDataMetadata = buildMetadataFromObject(userData);
+      const customDataMetadata = buildMetadataFromObject(customData);
+
+      const sessionMetadata = {
+        payment_type: 'one_time',
+        offer_type: data.offerType,
+        user_id: data.userId,
+        credits: data.credits?.toString() || '0',
+        amount: data.amount.toString(),
+        ...userDataMetadata,
+        ...customDataMetadata,
+        ...data.metadata,
+      };
+
+      // Create checkout session for one-time payment
+      const sessionConfig: Stripe.Checkout.SessionCreateParams = {
+        ...(customer ? { customer: customer.id } : {}),
+        ...(!isGuest && data.userEmail && !customer ? { customer_email: data.userEmail } : {}),
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: data.description,
+                description: data.description,
+              },
+              unit_amount: Math.round(data.amount * 100), // Convert to cents
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment', // One-time payment mode
+        success_url: data.successUrl,
+        cancel_url: data.cancelUrl,
+        metadata: sessionMetadata,
+        allow_promotion_codes: true,
+        billing_address_collection: 'required',
+      };
+
+      const session = await this.stripe.checkout.sessions.create(sessionConfig);
+
+      logger.info(`One-time payment checkout session created for user ${data.userId}, amount $${data.amount}`);
+      
+      return {
+        sessionId: session.id,
+        url: session.url!
+      };
+    } catch (error) {
+      logger.error('Error creating one-time payment checkout session:', error as Error);
+      throw new Error('Failed to create one-time payment checkout session');
     }
   }
 

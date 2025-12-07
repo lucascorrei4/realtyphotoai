@@ -110,9 +110,10 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
       )}
 
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
+        {/* Header - Fixed */}
+        <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <img
               src={theme === 'dark' ? '/logo_white.png' : '/logo_black.png'}
@@ -128,7 +129,8 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
           </button>
         </div>
 
-        <nav className="mt-6 px-3">
+        {/* Navigation - Scrollable */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-6">
           <div className="space-y-2">
             {navigation.map((item) => {
               const Icon = item.icon;
@@ -221,8 +223,8 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
           </div>
         </nav>
 
-        {/* Theme toggle and Logout */}
-        <div className="absolute bottom-6 left-6 right-6 space-y-3">
+        {/* Theme toggle and Logout - Fixed at bottom */}
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-3 bg-white dark:bg-gray-800">
           <button
             onClick={toggleTheme}
             className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
@@ -247,8 +249,9 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
             <LogOut size={20} className="mr-2" />
             Logout
           </button>
-           <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
-           <small className="text-xs text-gray-500 dark:text-gray-400 px-3 text-center block">RealVision AI {packageJson.version}</small>
+          
+          <div className="h-px w-full bg-gray-200 dark:bg-gray-700" />
+          <small className="text-xs text-gray-500 dark:text-gray-400 text-center block">RealVision AI {packageJson.version}</small>
         </div>
       </div>
 

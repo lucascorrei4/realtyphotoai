@@ -392,15 +392,172 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 }
 
 /**
+ * Handle one-time payment completion
+ */
+async function handleOneTimePaymentCompleted(
+  session: Stripe.Checkout.Session,
+  userId: string | null | undefined,
+  customerId: string | null | undefined,
+  customerEmail: string | null | undefined
+) {
+  try {
+    const credits = parseInt(session.metadata?.credits || '0', 10);
+    const offerType = session.metadata?.offer_type || 'credits';
+    const amount = parseFloat(session.metadata?.amount || '0');
+    const isGuest = session.metadata?.is_guest === 'true';
+    const description = session.metadata?.description || `One-time payment (${credits > 0 ? `${credits} credits` : offerType})`;
+
+    logger.info(`Processing one-time payment: userId=${userId}, credits=${credits}, email=${customerEmail}`);
+
+    // Get or create user account
+    let finalUserId = userId ?? undefined;
+    let userEmail = customerEmail ?? undefined;
+
+    // If guest checkout, find or create user by email
+    if (isGuest && userEmail) {
+      // Check if user exists by email
+      const { data: existingUser } = await supabase
+        .from('user_profiles')
+        .select('id, email')
+        .eq('email', userEmail)
+        .single();
+
+      if (existingUser) {
+        finalUserId = existingUser.id;
+        logger.info(`Found existing user for email ${userEmail}: ${finalUserId}`);
+      } else {
+        // Create new user account - we'll create it via Supabase Auth in the success page
+        // For now, just log that we need to create it
+        logger.info(`User account will be created for email ${userEmail} on success page`);
+      }
+    }
+
+    if (!finalUserId) {
+      logger.error('Cannot process one-time payment: no userId available');
+      return;
+    }
+
+    // Update Stripe customer ID if available
+    if (customerId && finalUserId && !finalUserId.startsWith('guest_')) {
+      await supabase
+        .from('user_profiles')
+        .update({
+          stripe_customer_id: customerId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', finalUserId)
+        .is('stripe_customer_id', null);
+    }
+
+    // Add credits to user using the RPC function
+    if (credits > 0 && finalUserId && !finalUserId.startsWith('guest_')) {
+      try {
+        // Try using RPC function first
+        const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
+          p_user_id: finalUserId,
+          p_credits: credits,
+          p_description: `One-time payment: ${description}`,
+          p_stripe_session_id: session.id,
+          p_stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+          p_expires_at: null // Credits don't expire
+        });
+
+        if (rpcError) {
+          logger.warn('RPC function not available, trying direct insert:', { error: rpcError });
+          
+          // Fallback: direct insert into credit_transactions table
+          // Get current balance first
+          const { data: currentBalanceData } = await supabase
+            .from('credit_transactions')
+            .select('credits')
+            .eq('user_id', finalUserId);
+          
+          const currentBalance = currentBalanceData?.reduce((sum, t) => sum + (t.credits || 0), 0) || 0;
+          const newBalance = currentBalance + credits;
+
+          const { error: insertError } = await supabase
+            .from('credit_transactions')
+            .insert({
+              user_id: finalUserId,
+              transaction_type: 'purchase',
+              credits: credits,
+              balance_after: newBalance,
+              description: `One-time payment: ${description}`,
+              stripe_session_id: session.id,
+              stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+              expires_at: null
+            });
+
+          if (insertError) {
+            logger.error('Error adding credits via direct insert:', insertError);
+            // Store in webhook event data for manual processing if needed
+            logger.warn(`Credits (${credits}) need to be manually added to user ${finalUserId}`);
+          } else {
+            logger.info(`Successfully added ${credits} credits to user ${finalUserId} via direct insert`);
+          }
+        } else {
+          logger.info(`Successfully added ${credits} credits to user ${finalUserId} via RPC function`);
+        }
+      } catch (creditError) {
+        logger.error('Error adding credits to user:', creditError as Error);
+        // Don't fail the webhook - log for manual processing
+      }
+    } else if (credits > 0 && (!finalUserId || finalUserId.startsWith('guest_'))) {
+      // For guest users, store credit info in webhook event for processing after account creation
+      logger.info(`Credits (${credits}) will be added after user account creation for email ${userEmail}`);
+    }
+
+    // Store payment record for reference
+    await supabase
+      .from('stripe_webhook_events')
+      .insert({
+        stripe_event_id: session.id,
+        event_type: 'checkout.session.completed.one_time',
+        event_data: {
+          ...session,
+          credits,
+          offerType,
+          amount,
+          userEmail,
+          userId: finalUserId
+        },
+        processed: true,
+      });
+
+    logger.info(`One-time payment processed: ${finalUserId}, credits: ${credits}, email: ${userEmail}`);
+  } catch (error) {
+    logger.error('Error handling one-time payment completion:', error as Error);
+  }
+}
+
+/**
  * Handle checkout session completion
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   try {
-    const userId = session.metadata?.user_id;
-    const planId = session.metadata?.plan_id;
-    const billingCycle = session.metadata?.billing_cycle;
-    const customerId = session.customer as string;
+    const userId = session.metadata?.user_id ?? undefined;
+    const planId = session.metadata?.plan_id || undefined;
+    const billingCycle = session.metadata?.billing_cycle || undefined;
+    const paymentType = session.metadata?.payment_type || undefined;
+    
+    // Extract customer ID - can be string, Customer object, or null
+    let customerId: string | null | undefined = undefined;
+    if (session.customer) {
+      if (typeof session.customer === 'string') {
+        customerId = session.customer;
+      } else if (typeof session.customer === 'object') {
+        customerId = (session.customer as any).id || undefined;
+      }
+    }
+    
     const subscriptionId = session.subscription as string;
+    const customerEmail = session.customer_email || session.customer_details?.email || undefined;
+
+    // Handle one-time payments
+    if (paymentType === 'one_time') {
+      await handleOneTimePaymentCompleted(session, userId ?? undefined, customerId ?? undefined, customerEmail ?? undefined);
+      return;
+    }
 
     if (!userId || !planId) {
       logger.error('Missing metadata in checkout session:', { userId, planId });

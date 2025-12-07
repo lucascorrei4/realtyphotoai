@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageJson from '../../package.json';
+import OffersSection from '../components/OffersSection';
 
 type BeforeAfterSliderProps = {
   beforeSrc: string;
@@ -1339,6 +1340,9 @@ const LandingPage: React.FC = () => {
               </div>
           </div>
         </section>
+
+        {/* Direct Offers Section */}
+        <OffersSection />
 
         {/* Login Form Section - Redirect to /auth page */}
         <section
