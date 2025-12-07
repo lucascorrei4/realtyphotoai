@@ -178,21 +178,88 @@ router.get('/users/:userId/generations', requireAdmin, async (req, res) => {
 });
 
 /**
- * Get all generations with pagination (admin only)
+ * Get all generations with pagination and filtering (admin only)
  * GET /admin/generations
  */
 router.get('/generations', requireAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    
+    // Extract filters
+    const filters = {
+      modelType: req.query.modelType as string,
+      status: req.query.status as string,
+      dateFrom: req.query.dateFrom as string,
+      dateTo: req.query.dateTo as string,
+      userId: req.query.userId as string
+    };
 
-    const result = await adminService.getAllGenerations(Number(page), Number(limit));
+    // Validate pagination parameters
+    if (page < 1 || limit < 1 || limit > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pagination parameters. Page must be >= 1, limit must be between 1 and 100',
+        error: 'INVALID_PAGINATION_PARAMS'
+      });
+    }
+
+    const result = await adminService.getAllGenerations(page, limit, filters);
+    
+    logger.info(`[AdminGenerations] Fetched ${result.generations.length} generations (Total: ${result.total})`);
+    
     return res.json({
       success: true,
-      ...result
+      data: result
     });
   } catch (error) {
     logger.error('Error in admin generations route:', error as Error);
-    return res.status(500).json({ error: 'Failed to fetch generations' });
+    return res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch generations' 
+    });
+  }
+});
+
+/**
+ * Delete a generation (admin only - can delete any generation)
+ * DELETE /admin/generations/:generationId
+ */
+router.delete('/generations/:generationId', requireAdmin, async (req, res) => {
+  try {
+    const { generationId } = req.params;
+
+    const success = await adminService.deleteGeneration(generationId);
+    
+    if (success) {
+      return res.json({
+        success: true,
+        message: 'Generation deleted successfully'
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete generation',
+        error: 'DELETE_FAILED'
+      });
+    }
+  } catch (error) {
+    logger.error('Error in admin delete generation route:', error as Error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    if (errorMessage.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        message: errorMessage,
+        error: 'GENERATION_NOT_FOUND'
+      });
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete generation',
+      error: 'INTERNAL_SERVER_ERROR'
+    });
   }
 });
 

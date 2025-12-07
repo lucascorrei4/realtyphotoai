@@ -500,38 +500,134 @@ export class AdminService {
   }
 
   /**
-   * Get all generations with pagination (admin view)
+   * Get all generations with pagination and filtering (admin view)
    */
-  async getAllGenerations(page: number = 1, limit: number = 50): Promise<{ generations: any[], total: number }> {
+  async getAllGenerations(
+    page: number = 1, 
+    limit: number = 50,
+    filters: {
+      modelType?: string;
+      status?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      userId?: string;
+    } = {}
+  ): Promise<{ 
+    generations: any[], 
+    total: number,
+    totalPages: number,
+    currentPage: number,
+    itemsPerPage: number
+  }> {
     try {
       const offset = (page - 1) * limit;
 
-      // Get total count
-      const { count: total } = await supabase
-        .from('generations')
-        .select('*', { count: 'exact', head: true });
-
-      // Get paginated results
-      const { data: generations, error } = await supabase
+      // Build query with filters
+      let query = supabase
         .from('generations')
         .select(`
           *,
           user_profiles!inner(email, name, subscription_plan)
-        `)
+        `, { count: 'exact' });
+
+      // Apply filters
+      if (filters.modelType && filters.modelType !== 'all') {
+        query = query.eq('model_type', filters.modelType);
+      }
+
+      if (filters.status && filters.status !== 'all') {
+        query = query.eq('status', filters.status);
+      }
+
+      if (filters.userId) {
+        query = query.eq('user_id', filters.userId);
+      }
+
+      if (filters.dateFrom) {
+        query = query.gte('created_at', filters.dateFrom);
+      }
+
+      if (filters.dateTo) {
+        // Add one day to include the end date
+        const endDate = new Date(filters.dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt('created_at', endDate.toISOString());
+      }
+
+      // Apply ordering and pagination
+      query = query
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
+
+      const { data: generations, error, count } = await query;
 
       if (error) {
         logger.error('Error fetching generations:', error);
         throw new Error('Failed to fetch generations');
       }
 
+      const total = count || 0;
+      const totalPages = Math.ceil(total / limit);
+
+      // Flatten user_profiles data into the generation object for easier access
+      const flattenedGenerations = (generations || []).map((gen: any) => {
+        const userProfile = gen.user_profiles;
+        return {
+          ...gen,
+          user_email: userProfile?.email || null,
+          user_name: userProfile?.name || null,
+          user_subscription_plan: userProfile?.subscription_plan || null,
+          user_profiles: undefined // Remove nested object
+        };
+      });
+
       return {
-        generations: generations || [],
-        total: total || 0
+        generations: flattenedGenerations,
+        total,
+        totalPages,
+        currentPage: page,
+        itemsPerPage: limit
       };
     } catch (error) {
       logger.error('Error in getAllGenerations:', error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a generation (admin only - can delete any generation)
+   */
+  async deleteGeneration(generationId: string): Promise<boolean> {
+    try {
+      // Verify the generation exists
+      const { data: generation, error: fetchError } = await supabase
+        .from('generations')
+        .select('id')
+        .eq('id', generationId)
+        .single();
+
+      if (fetchError || !generation) {
+        throw new Error('Generation not found');
+      }
+
+      // Soft delete the generation (admins can delete any generation)
+      const { error: updateError } = await supabase
+        .from('generations')
+        .update({ 
+          is_deleted: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', generationId);
+
+      if (updateError) {
+        logger.error('Error soft deleting generation:', updateError);
+        throw new Error(`Failed to delete generation: ${updateError.message}`);
+      }
+
+      logger.info('Generation soft deleted successfully by admin', { generationId });
+      return true;
+    } catch (error) {
+      logger.error('Error in deleteGeneration:', error as Error);
       throw error;
     }
   }

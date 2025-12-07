@@ -203,16 +203,18 @@ export class SmartEffectsService {
       finalPrompt = `${effectDescription}. ${customPrompt.trim()}`;
     }
 
-    // CRITICAL: Add preservation instructions to maintain original house structure
+    // CRITICAL: Add strong preservation instructions to maintain original house structure
+    // This is essential for video generation fidelity - the house must remain identical
     const preservationInstructions = process.env.PROMPT_EFFECT_PRESERVATION || 
-      ' PRESERVE the exact original house structure, shape, size, dimensions, roof lines, window positions, door locations, and overall architectural layout. ' +
-      'ONLY add the visual effects around and over the house without modifying the house itself. ' +
-      'Maintain the same camera angle, perspective, and house footprint. ' +
-      'Keep all structural elements (walls, roof shape, foundation) identical to the original. ' +
-      'Apply the effect while keeping the house structure completely unchanged. ' +
-      'The effect should enhance and decorate the house, not alter its architecture.';
+      ' CRITICAL PRESERVATION REQUIREMENTS: The house structure, shape, size, dimensions, roof lines, window positions, door locations, architectural layout, walls, foundation, and all structural elements MUST remain EXACTLY identical to the original image. ' +
+      'DO NOT modify, change, alter, resize, reshape, or transform the house in any way. ' +
+      'ONLY add visual effects around, over, or in the environment surrounding the house. ' +
+      'Maintain the exact same camera angle, perspective, house footprint, and architectural proportions. ' +
+      'The house must be pixel-perfect identical to preserve video generation fidelity. ' +
+      'The effect should ONLY enhance and decorate the scene, NEVER alter the house architecture or structure.';
 
-    return `Create a photorealistic image showing ${finalPrompt}.${preservationInstructions}`;
+    // Place preservation instructions at both the beginning (for emphasis) and end (as reinforcement)
+    return `CRITICAL: ${preservationInstructions} Create a photorealistic image showing ${finalPrompt}. ${preservationInstructions}`;
   }
 
   /**

@@ -175,6 +175,13 @@ function AppRoutes() {
           </Layout>
         </AdminRoute>
       } />
+      <Route path="/admin/generations" element={
+        <AdminRoute>
+          <Layout>
+            <AdminDashboard />
+          </Layout>
+        </AdminRoute>
+      } />
       
       <Route path="/users" element={
         <AdminRoute>

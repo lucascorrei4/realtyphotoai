@@ -66,7 +66,6 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
   ];
 
   const adminNavigation = [
-    { path: '/users', label: 'User Management', icon: Users, adminOnly: true },
     { path: '/admin', label: 'Admin Dashboard', icon: Shield, adminOnly: true },
   ];
 
@@ -199,11 +198,14 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
                 </h2>
                 {adminNavigation.map((item) => {
                   const Icon = item.icon;
+                  // Check if the current path matches or starts with the item path
+                  const isItemActive = location.pathname === item.path || 
+                    (item.path !== '/admin' && location.pathname.startsWith(item.path));
                   return (
                     <Link
                       key={item.path}
                       to={item.path}
-                      className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive(item.path)
+                      className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isItemActive
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                         : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
                         }`}

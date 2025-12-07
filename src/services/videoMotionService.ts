@@ -36,8 +36,25 @@ function calculateAspectRatio(width: number, height: number): '16:9' | '9:16' {
 }
 
 /**
+ * Get the correct displayed dimensions accounting for EXIF orientation
+ * EXIF orientations 5, 6, 7, 8 require swapping width and height
+ */
+function getOrientedDimensions(width: number, height: number, orientation?: number): { width: number; height: number } {
+  // EXIF orientations that require swapping dimensions:
+  // 5 = Rotate 90° CCW and flip horizontal
+  // 6 = Rotate 90° CW
+  // 7 = Rotate 90° CCW and flip vertical
+  // 8 = Rotate 90° CCW
+  if (orientation && [5, 6, 7, 8].includes(orientation)) {
+    return { width: height, height: width };
+  }
+  return { width, height };
+}
+
+/**
  * Get image dimensions from URL or buffer and calculate aspect ratio
  * Returns only '16:9' or '9:16' as those are the only values supported by Veo-3.1-Fast
+ * CRITICAL: Accounts for EXIF orientation to ensure correct aspect ratio detection
  */
 async function getImageAspectRatio(imagePath: string | Buffer): Promise<'16:9' | '9:16'> {
   try {
@@ -64,17 +81,23 @@ async function getImageAspectRatio(imagePath: string | Buffer): Promise<'16:9' |
       return '16:9';
     }
     
-    const aspectRatio = calculateAspectRatio(metadata.width, metadata.height);
-    const imageRatio = metadata.width / metadata.height;
+    // Get correct dimensions accounting for EXIF orientation
+    // This is critical for smartphone photos which often have orientation metadata
+    const orientedDims = getOrientedDimensions(metadata.width, metadata.height, metadata.orientation);
+    const aspectRatio = calculateAspectRatio(orientedDims.width, orientedDims.height);
+    const imageRatio = orientedDims.width / orientedDims.height;
     
     logger.info('📐 Calculated aspect ratio from image dimensions', {
-      width: metadata.width,
-      height: metadata.height,
+      rawWidth: metadata.width,
+      rawHeight: metadata.height,
+      orientedWidth: orientedDims.width,
+      orientedHeight: orientedDims.height,
+      exifOrientation: metadata.orientation,
       imageRatio: imageRatio.toFixed(3),
       aspectRatio,
-      isPortrait: metadata.height > metadata.width,
-      isLandscape: metadata.width > metadata.height,
-      isSquare: metadata.width === metadata.height
+      isPortrait: orientedDims.height > orientedDims.width,
+      isLandscape: orientedDims.width > orientedDims.height,
+      isSquare: orientedDims.width === orientedDims.height
     });
     
     return aspectRatio;
@@ -232,7 +255,7 @@ export class VideoMotionService {
         `Create a dynamic 6-second video: Holiday lights twinkle and glow on the house. Lights pulse gently, creating a festive illumination that shifts subtly. Warm glowing lights create a magical evening atmosphere with gentle, twinkling motion throughout the 6-second sequence.`,
       
       gift_bow: process.env.PROMPT_VIDEO_GIFT_BOW ||
-        `Create a dynamic 6-second video: The decorative red ribbon bow and flowing ribbons move gently in the breeze. Ribbons flutter and sway naturally, creating a festive gift-wrapping aesthetic with smooth, flowing motion throughout the 6-second sequence.`
+        `Create a dynamic 6-second video: The big decorative red ribbon bow elegantly placed over the house begins to untie and unwrap. The ribbons loosen and unfurl, gracefully falling away from the house in the first 3 seconds, completely revealing the house underneath. The bow and ribbons then drift away or fall off, leaving the house fully revealed in the remaining 3 seconds. Fast, elegant unwrapping motion with ribbons flowing and billowing as they come undone, creating a festive gift-unwrapping reveal. The entire sequence completes in exactly 6 seconds with dynamic, cinematic movement.`
     };
 
     if (effectVideoPrompts[effectType]) {
@@ -441,9 +464,12 @@ export class VideoMotionService {
             const base64Data = imageInput.replace(/^data:image\/[a-z]+;base64,/, '');
             const imageBuffer = Buffer.from(base64Data, 'base64');
             
+            // CRITICAL: Auto-orient image to apply EXIF orientation before resizing
+            // This ensures the image is correctly oriented and respects the original photo structure
             // Resize to target dimensions with proper aspect ratio fit
             // Use 'cover' to fill the entire target size, or 'contain' to fit inside
             const resizedBuffer = await sharp(imageBuffer)
+              .rotate() // Auto-apply EXIF orientation - this is critical for smartphone photos
               .resize(targetWidth, targetHeight, {
                 fit: 'cover', // Cover ensures full target size, may crop
                 position: 'center' // Center the crop

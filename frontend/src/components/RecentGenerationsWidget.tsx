@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X, Video, Play, Loader2, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Calendar, Image, RefreshCw, Camera, Palette, Wand2, Sofa, Building2, Maximize2, Download, Share2, X, Video, Play, Loader2, Trash2, Users } from 'lucide-react';
 import { getBackendUrl } from '../config/api';
 import { supabase } from '../config/supabase';
 import { authenticatedFetch } from '../utils/apiUtils';
@@ -21,6 +21,11 @@ export interface Generation {
   prompt?: string;
   error_message?: string;
   processing_time_ms?: number;
+  // Admin mode fields
+  user_email?: string;
+  user_name?: string;
+  user_subscription_plan?: string;
+  user_id?: string;
 }
 
 export interface RecentGenerationsWidgetProps {
@@ -32,6 +37,7 @@ export interface RecentGenerationsWidgetProps {
   className?: string;
   modelTypeFilter?: string; // Pre-filter by specific model type
   refreshTrigger?: number; // Trigger to refresh the widget
+  adminMode?: boolean; // If true, fetch all generations from admin endpoint
 }
 
 const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
@@ -42,7 +48,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   maxItems = 10,
   className = "",
   modelTypeFilter = "all",
-  refreshTrigger
+  refreshTrigger,
+  adminMode = false
 }) => {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +77,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
   useEffect(() => {
     fetchGenerations();
-  }, [userId, currentPage, filters]);
+  }, [userId, currentPage, filters, adminMode]);
 
   // Watch for refresh trigger changes
   useEffect(() => {
@@ -111,7 +118,8 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
   }, [generations]);
 
   const fetchGenerations = async () => {
-    if (!userId) {
+    // In admin mode, userId is not required
+    if (!adminMode && !userId) {
       setGenerations([]);
       setLoading(false);
       return;
@@ -123,13 +131,17 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
 
       // Build query parameters
       const params = new URLSearchParams({
-        userId,
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
         ...(filters.status !== 'all' && { status: filters.status }),
         ...(filters.dateFrom && { dateFrom: filters.dateFrom }),
         ...(filters.dateTo && { dateTo: filters.dateTo })
       });
+
+      // In admin mode, don't require userId
+      if (!adminMode && userId) {
+        params.set('userId', userId);
+      }
 
       // Handle modelType filter: use modelTypeFilter if explicitly provided (and not 'all'), 
       // otherwise use the user's filter selection
@@ -141,7 +153,13 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
         params.set('modelType', effectiveModelType);
       }
 
-      const response = await fetch(`${getBackendUrl()}/api/v1/user/generations?${params}`);
+      // Use admin endpoint in admin mode, user endpoint otherwise
+      // Note: authenticatedFetch already adds getBackendUrl(), so we only need the path
+      const endpoint = adminMode 
+        ? `/api/v1/admin/generations?${params}`
+        : `/api/v1/user/generations?${params}`;
+
+      const response = await authenticatedFetch(endpoint);
 
       if (!response.ok) {
         throw new Error('Failed to fetch generations');
@@ -152,7 +170,7 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       if (result.success) {
         setGenerations(result.data.generations || []);
         setTotalPages(result.data.totalPages || 1);
-        setTotalCount(result.data.totalCount || 0);
+        setTotalCount(result.data.total || result.data.totalCount || 0);
       } else {
         throw new Error(result.message || 'Failed to fetch generations');
       }
@@ -243,7 +261,13 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
       }
 
       try {
-        const response = await authenticatedFetch(`/api/v1/user/generations?userId=${userId}&limit=100`);
+        // Use admin endpoint in admin mode, user endpoint otherwise
+        // Note: authenticatedFetch already adds getBackendUrl(), so we only need the path
+        const endpoint = adminMode
+          ? `/api/v1/admin/generations?limit=100`
+          : `/api/v1/user/generations?userId=${userId}&limit=100`;
+
+        const response = await authenticatedFetch(endpoint);
 
         if (!response.ok) {
           console.error('Polling error: Response not OK', response.status, response.statusText);
@@ -364,7 +388,12 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
     setIsDeleting(true);
 
     try {
-      const response = await authenticatedFetch(`/api/v1/user/generations/${generationIdToDelete}?userId=${userId}`, {
+      // Use admin endpoint in admin mode, user endpoint otherwise
+      const endpoint = adminMode
+        ? `/api/v1/admin/generations/${generationIdToDelete}`
+        : `/api/v1/user/generations/${generationIdToDelete}?userId=${userId}`;
+
+      const response = await authenticatedFetch(endpoint, {
         method: 'DELETE',
       });
 
@@ -1288,6 +1317,36 @@ const RecentGenerationsWidget: React.FC<RecentGenerationsWidgetProps> = ({
                       </button>
                     </div>
                   </div>
+                  
+                  {/* Admin Mode: Show User Info */}
+                  {adminMode && (generation.user_email || generation.user_name) && (
+                    <div className="mb-2 pb-2 border-b border-gray-200 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Users className="h-3 w-3 text-gray-400 dark:text-gray-500" />
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            {generation.user_name || 'Unknown User'}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {generation.user_email}
+                        </span>
+                      </div>
+                      {generation.user_subscription_plan && (
+                        <div className="mt-1">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            generation.user_subscription_plan === 'free' ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' :
+                            generation.user_subscription_plan === 'basic' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' :
+                            generation.user_subscription_plan === 'premium' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' :
+                            'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                          }`}>
+                            {generation.user_subscription_plan.charAt(0).toUpperCase() + generation.user_subscription_plan.slice(1)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
                       <svg width="15" height="15" viewBox="0 0 20 20" fill="none" className="text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg">
