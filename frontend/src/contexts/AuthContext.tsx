@@ -396,8 +396,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message: error.message };
       }
 
+      // Wait a bit for Supabase Auth trigger to create user profile
+      // This reduces race condition with backend API call
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       // Send Lead conversion event to backend (fire and forget)
-      // The backend will check if user exists and send Lead event for new users
+      // The backend will check if user exists (with retry logic) and send Lead event for new users
       sendConversionEvent('send-code', email).catch(() => {
         // Silently ignore errors - conversion tracking should not block user flow
       });
@@ -531,6 +535,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (data.user) {
         // Send CompleteRegistration conversion event to backend (fire and forget)
         // The backend will check if user is new (first sign-in) and send CompleteRegistration event
+        // If meta_event_name is null, it will also send Lead event first
         const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
         const conversionMetadata = buildConversionMetadata(email, data.user.id);
         
@@ -541,16 +546,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           },
           body: JSON.stringify({
             userId: data.user.id,
-            ...conversionMetadata,
+            ...conversionMetadata, // conversionMetadata already includes email
           }),
         })
         .then(async (response) => {
           if (!response.ok) {
             const errorText = await response.text();
-            console.warn('CompleteRegistration endpoint returned error:', response.status, errorText);
+            console.error('CompleteRegistration endpoint returned error:', response.status, errorText);
           } else {
             const result = await response.json();
             console.log('CompleteRegistration event result:', result);
+            if (result.sent) {
+              console.log(`✅ CompleteRegistration event sent for ${email}`);
+            } else {
+              console.warn(`⚠️ CompleteRegistration event not sent for ${email} (may have already been sent)`);
+            }
           }
         })
         .catch((error) => {

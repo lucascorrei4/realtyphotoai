@@ -19,7 +19,8 @@ BEGIN
   END;
 
   -- Insert user profile with meta_event_name set to null
-  -- It will be set to 'Lead' when email is entered via sendAuthCode
+  -- It will be set to 'Lead' by the backend API when email is entered via sendAuthCode
+  -- This ensures the backend is the source of truth for event tracking
   INSERT INTO user_profiles (
     id,
     email,
@@ -50,7 +51,7 @@ BEGIN
     0,
     0,
     true,
-    NULL, -- Will be set to 'Lead' when email is entered via sendAuthCode
+    NULL, -- Set to NULL initially, backend will set to 'Lead' when email is entered
     NOW(),
     NOW()
   )
