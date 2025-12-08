@@ -9,11 +9,9 @@ import path from 'path';
 const getStorage = () => {
   if (config.useR2Storage) {
     // Use memory storage when R2 is enabled
-    logger.info('Using memory storage for R2 uploads');
     return multer.memoryStorage();
   } else {
     // Use disk storage when R2 is disabled
-    logger.info('Using disk storage for local uploads');
     return multer.diskStorage({
       destination: async (_, __, cb) => {
         try {

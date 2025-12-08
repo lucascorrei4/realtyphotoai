@@ -11,6 +11,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
 import webhookRoutes from './routes/webhooks';
 import stripeRoutes from './routes/stripe';
+const { version: frontendVersion } = require('../frontend/package.json');
 
 class App {
   public app: express.Application;
@@ -32,8 +33,6 @@ class App {
       await FileUtils.ensureDirectoryExists(config.outputDir);
       await FileUtils.ensureDirectoryExists(config.tempDir);
       await FileUtils.ensureDirectoryExists('logs');
-
-      logger.info('Required directories initialized successfully');
     } catch (error) {
       logger.error('Failed to initialize directories', { error });
       throw error;
@@ -159,7 +158,6 @@ class App {
       next();
     });
 
-    logger.info('Middleware initialized successfully');
   }
 
   private initializeRoutes(): void {
@@ -193,7 +191,6 @@ class App {
     // Webhook routes (no auth required)
     this.app.use('/webhooks', webhookRoutes);
 
-    logger.info('Routes initialized successfully');
   }
 
   private initializeErrorHandling(): void {
@@ -202,8 +199,6 @@ class App {
 
     // Global error handler
     this.app.use(errorHandler);
-
-    logger.info('Error handling initialized successfully');
   }
 
   public async start(): Promise<void> {
@@ -211,23 +206,16 @@ class App {
       // Initialize directories first
       await this.initializeDirectories();
 
+      // Import the frontend version from package.json
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      
+
       const server = this.app.listen(config.port, '0.0.0.0', () => {
         logger.info(`🚀 ${config.appName} started successfully!`, {
-          port: config.port,
           nodeEnv: config.nodeEnv,
-          apiPrefix: config.apiPrefix,
-          model: config.stableDiffusionModel,
-          workflow: config.enableInpaintingWorkflow ? 'depth_inpainting' : 'single_pass',
+          version: frontendVersion,
         });
 
-        logger.info('📖 API Endpoints:', {
-          root: `http://localhost:${config.port}/`,
-          health: `http://localhost:${config.port}${config.apiPrefix}/health`,
-          test: `http://localhost:${config.port}${config.apiPrefix}/test`,
-          upload: `http://localhost:${config.port}${config.apiPrefix}/upload`,
-          process: `http://localhost:${config.port}${config.apiPrefix}/process-image`,
-          modelInfo: `http://localhost:${config.port}${config.apiPrefix}/model-info`,
-        });
       });
 
       // Graceful shutdown

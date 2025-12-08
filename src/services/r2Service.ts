@@ -41,11 +41,6 @@ export class R2Service {
       },
     });
 
-    logger.info('R2Service initialized', {
-      bucketName: this.bucketName,
-      endpoint: `https://${r2Config.accountId}.r2.cloudflarestorage.com`,
-      hasPublicUrl: !!this.publicUrl,
-    });
   }
 
   /**

@@ -65,6 +65,7 @@ export interface AppConfig {
   r2BucketName: string;
   r2PublicUrl: string;
   useR2Storage: boolean;
+  frontendUrl: string;
 }
 
 export interface ReplicateInput {

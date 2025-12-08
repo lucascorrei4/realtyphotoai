@@ -30,9 +30,8 @@ export class HybridStorageService {
       };
       
       this.r2Service = new R2Service(r2Config);
-      logger.info('HybridStorageService initialized with R2 support');
     } else {
-      logger.info('HybridStorageService initialized with local storage only');
+      logger.error('HybridStorageService initialized with local storage only');
     }
   }
 

@@ -54,6 +54,7 @@ class ConfigManager {
       r2BucketName: process.env.R2_BUCKET_NAME || 'realvisionai',
       r2PublicUrl: process.env.R2_PUBLIC_URL || '',
       useR2Storage: process.env.USE_R2_STORAGE === 'true',
+      frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
     };
   }
 

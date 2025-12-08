@@ -2586,8 +2586,6 @@ export class ImageController {
           }
         }
 
-        logger.info('📦 Extracted R2 key', { key, originalUrl: url });
-
         try {
           // Get file from R2 via HybridStorageService
           // Check if storage service has R2 enabled

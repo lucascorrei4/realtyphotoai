@@ -37,6 +37,8 @@ export class AuthService {
    */
   async sendAuthCode(email: string, metadata?: Partial<ConversionEventPayload>): Promise<AuthResponse> {
     try {
+      logger.info(`📧 [sendAuthCode] START - Email: ${email}`);
+      
       // Generate a 6-digit code
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       
@@ -47,14 +49,16 @@ export class AuthService {
       // Store code in temporary table or use email service
       // This is a simplified version - in production, send actual email
       // ⚠️ FOR TESTING: Code is logged here and returned in response
-      logger.info(`🔐 AUTH CODE GENERATED for ${email}: ${code} (expires: ${codeExpiry.toISOString()})`);
-      logger.info(`📧 TESTING MODE: Code ${code} returned in response for ${email}`);
+      logger.info(`🔐 [sendAuthCode] AUTH CODE GENERATED for ${email}: ${code} (expires: ${codeExpiry.toISOString()})`);
+      logger.info(`📧 [sendAuthCode] TESTING MODE: Code ${code} returned in response for ${email}`);
 
       // Wait for user profile to be created (handles race condition with Supabase Auth trigger)
       // Retry up to 5 times with 500ms delay between attempts
       let existingUser = null;
       let retries = 0;
       const maxRetries = 5;
+      
+      logger.info(`🔍 [sendAuthCode] Starting user profile lookup for ${email} (max retries: ${maxRetries})`);
       
       while (retries < maxRetries) {
         const { data: user, error: fetchError } = await supabase
@@ -65,15 +69,23 @@ export class AuthService {
 
         if (user) {
           existingUser = user;
+          logger.info(`✅ [sendAuthCode] User profile found for ${email} on attempt ${retries + 1}`, {
+            userId: user.id,
+            meta_event_name: user.meta_event_name,
+            created_at: user.created_at,
+            updated_at: user.updated_at
+          });
           break;
         }
 
         // If error is not "not found", log it
         if (fetchError && fetchError.code !== 'PGRST116') {
-          logger.warn(`Error fetching user profile for ${email} (attempt ${retries + 1}):`, {
+          logger.warn(`⚠️ [sendAuthCode] Error fetching user profile for ${email} (attempt ${retries + 1}):`, {
             error: fetchError.message || String(fetchError),
             code: fetchError.code
           });
+        } else if (fetchError?.code === 'PGRST116') {
+          logger.info(`⏳ [sendAuthCode] User profile not found for ${email} (attempt ${retries + 1}/${maxRetries}) - waiting for Supabase trigger...`);
         }
 
         retries++;
@@ -83,8 +95,18 @@ export class AuthService {
         }
       }
 
+      if (!existingUser) {
+        logger.warn(`❌ [sendAuthCode] User profile NOT found for ${email} after ${maxRetries} retries`);
+      }
+
       // Check if this is a new signup (meta_event_name is null or not set)
       const isNewSignup = !existingUser || !existingUser.meta_event_name || existingUser.meta_event_name === null;
+
+      logger.info(`🔍 [sendAuthCode] Checking signup status for ${email}`, {
+        userExists: !!existingUser,
+        meta_event_name: existingUser?.meta_event_name ?? 'null',
+        isNewSignup
+      });
 
       if (isNewSignup) {
         // New signup - send Lead event and ensure meta_event_name is set to 'Lead'
@@ -94,37 +116,50 @@ export class AuthService {
           externalId: metadata?.externalId ?? (existingUser?.id ?? email),
         };
 
-        logger.info(`Sending Lead event for ${email} (new signup)`);
+        logger.info(`📤 [sendAuthCode] Sending Lead event for ${email} (new signup)`, {
+          externalId: conversionPayload.externalId,
+          hasMetadata: !!metadata
+        });
         
         // Send Lead event to webhook (fire and forget to not block user flow)
         conversionEventService.sendConversionEvent('Lead', conversionPayload).catch((error) => {
-          logger.error('Failed to send Lead event:', error);
+          logger.error(`❌ [sendAuthCode] Failed to send Lead event for ${email}:`, error);
         });
 
         // Update or set meta_event_name to 'Lead' in user_profiles
         if (existingUser) {
           // Update existing profile
-          const { error: updateError } = await supabase
+          logger.info(`🔄 [sendAuthCode] Updating meta_event_name to 'Lead' for ${email}`, {
+            userId: existingUser.id,
+            current_meta_event_name: existingUser.meta_event_name
+          });
+          
+          const { error: updateError, data: updateData } = await supabase
             .from('user_profiles')
             .update({ 
               meta_event_name: 'Lead',
               updated_at: new Date().toISOString()
             })
-            .eq('email', email);
+            .eq('email', email)
+            .select();
 
           if (updateError) {
-            logger.error(`Failed to update meta_event_name for ${email}`, {
+            logger.error(`❌ [sendAuthCode] Failed to update meta_event_name for ${email}`, {
               error: updateError.message || String(updateError),
-              code: updateError.code
+              code: updateError.code,
+              details: updateError
             });
           } else {
-            logger.info(`✅ Set meta_event_name='Lead' for ${email}`);
+            logger.info(`✅ [sendAuthCode] Successfully set meta_event_name='Lead' for ${email}`, {
+              userId: existingUser.id,
+              updatedRows: updateData?.length ?? 0
+            });
           }
         } else {
           // Profile doesn't exist yet - try to find Supabase Auth user and create profile
           // Note: This requires the Supabase Auth user to exist first
-          logger.warn(`Profile not found for ${email} after ${maxRetries} retries. Lead event sent but profile not created yet.`);
-          logger.info(`Profile will be created by Supabase Auth trigger, then meta_event_name should be set to 'Lead'`);
+          logger.warn(`⚠️ [sendAuthCode] Profile not found for ${email} after ${maxRetries} retries. Lead event sent but profile not created yet.`);
+          logger.info(`ℹ️ [sendAuthCode] Profile will be created by Supabase Auth trigger, then meta_event_name should be set to 'Lead'`);
         }
 
         return {
@@ -134,7 +169,10 @@ export class AuthService {
         };
       } else {
         // Existing user - no Lead event needed
-        logger.info(`Skipping Lead event for ${email} (existing user, meta_event_name: ${existingUser.meta_event_name})`);
+        logger.info(`⏭️ [sendAuthCode] Skipping Lead event for ${email} (existing user)`, {
+          meta_event_name: existingUser.meta_event_name,
+          userId: existingUser.id
+        });
         return {
           success: true,
           message: 'Login code sent to your email',
@@ -142,7 +180,7 @@ export class AuthService {
         };
       }
     } catch (error) {
-      logger.error('Error sending auth code:', error as Error);
+      logger.error(`❌ [sendAuthCode] Error sending auth code for ${email}:`, error as Error);
       return {
         success: false,
         message: 'Failed to send authentication code'
@@ -404,22 +442,32 @@ export class AuthService {
     metadata?: Partial<ConversionEventPayload>
   ): Promise<{ sent: boolean; isFirstSignIn: boolean }> {
     try {
+      logger.info(`📧 [checkAndSendCompleteRegistration] START - Email: ${email}, UserId: ${userId}`);
+      
       const user = await this.getUserProfile(userId);
       
       if (!user) {
-        logger.warn(`User profile not found for userId: ${userId}, email: ${email}`);
+        logger.warn(`❌ [checkAndSendCompleteRegistration] User profile not found for userId: ${userId}, email: ${email}`);
         return { sent: false, isFirstSignIn: false };
       }
 
+      logger.info(`🔍 [checkAndSendCompleteRegistration] User profile found`, {
+        userId: user.id,
+        email: user.email,
+        meta_event_name: user.meta_event_name ?? 'null',
+        created_at: user.created_at,
+        updated_at: user.updated_at
+      });
+
       // Simple: If already CompleteRegistration, skip
       if (user.meta_event_name === 'CompleteRegistration') {
-        logger.info(`CompleteRegistration already sent for ${email}`);
+        logger.info(`⏭️ [checkAndSendCompleteRegistration] CompleteRegistration already sent for ${email} - skipping`);
         return { sent: false, isFirstSignIn: false };
       }
 
       // If meta_event_name is NULL, send Lead event first (profile was created but Lead wasn't set)
       if (user.meta_event_name === null || user.meta_event_name === '') {
-        logger.info(`meta_event_name is NULL for ${email}, sending Lead event first, then CompleteRegistration`);
+        logger.warn(`⚠️ [checkAndSendCompleteRegistration] meta_event_name is NULL for ${email} - sending Lead event first, then CompleteRegistration`);
         
         // Send Lead event first
         const leadPayload: ConversionEventPayload = {
@@ -429,27 +477,36 @@ export class AuthService {
           externalId: metadata?.externalId ?? user.id,
         };
 
-        logger.info(`Sending Lead event for ${email} (was missed earlier)`);
+        logger.info(`📤 [checkAndSendCompleteRegistration] Sending Lead event for ${email} (was missed earlier)`, {
+          externalId: leadPayload.externalId,
+          hasMetadata: !!metadata
+        });
+        
         await conversionEventService.sendConversionEvent('Lead', leadPayload).catch((error) => {
-          logger.error('Failed to send Lead event:', error);
+          logger.error(`❌ [checkAndSendCompleteRegistration] Failed to send Lead event for ${email}:`, error);
         });
 
         // Update meta_event_name to 'Lead'
-        const { error: leadUpdateError } = await supabase
+        logger.info(`🔄 [checkAndSendCompleteRegistration] Updating meta_event_name to 'Lead' for ${email}`);
+        const { error: leadUpdateError, data: leadUpdateData } = await supabase
           .from('user_profiles')
           .update({ 
             meta_event_name: 'Lead',
             updated_at: new Date().toISOString()
           })
-          .eq('id', userId);
+          .eq('id', userId)
+          .select();
 
         if (leadUpdateError) {
-          logger.error(`Failed to set meta_event_name to 'Lead' for ${email}`, {
+          logger.error(`❌ [checkAndSendCompleteRegistration] Failed to set meta_event_name to 'Lead' for ${email}`, {
             error: leadUpdateError.message || String(leadUpdateError),
-            code: leadUpdateError.code
+            code: leadUpdateError.code,
+            details: leadUpdateError
           });
         } else {
-          logger.info(`✅ Set meta_event_name='Lead' for ${email} (was null)`);
+          logger.info(`✅ [checkAndSendCompleteRegistration] Successfully set meta_event_name='Lead' for ${email}`, {
+            updatedRows: leadUpdateData?.length ?? 0
+          });
         }
       }
 
@@ -461,32 +518,45 @@ export class AuthService {
         externalId: metadata?.externalId ?? user.id,
       };
 
-      logger.info(`Sending CompleteRegistration event for ${email}`);
+      logger.info(`📤 [checkAndSendCompleteRegistration] Sending CompleteRegistration event for ${email}`, {
+        externalId: conversionPayload.externalId,
+        hasMetadata: !!metadata,
+        current_meta_event_name: user.meta_event_name
+      });
+      
       await conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload).catch((error) => {
-        logger.error('Failed to send CompleteRegistration event:', error);
+        logger.error(`❌ [checkAndSendCompleteRegistration] Failed to send CompleteRegistration event for ${email}:`, error);
       });
 
       // Update meta_event_name to 'CompleteRegistration'
-      const { error: updateError } = await supabase
+      logger.info(`🔄 [checkAndSendCompleteRegistration] Updating meta_event_name to 'CompleteRegistration' for ${email}`);
+      const { error: updateError, data: updateData } = await supabase
         .from('user_profiles')
         .update({ 
           meta_event_name: 'CompleteRegistration',
           updated_at: new Date().toISOString()
         })
-        .eq('id', userId);
+        .eq('id', userId)
+        .select();
 
       if (updateError) {
-        logger.error(`Failed to update meta_event_name for ${email}`, {
+        logger.error(`❌ [checkAndSendCompleteRegistration] Failed to update meta_event_name for ${email}`, {
           error: updateError.message || String(updateError),
-          code: updateError.code
+          code: updateError.code,
+          details: updateError
         });
       } else {
-        logger.info(`Set meta_event_name='CompleteRegistration' for ${email}`);
+        logger.info(`✅ [checkAndSendCompleteRegistration] Successfully set meta_event_name='CompleteRegistration' for ${email}`, {
+          userId: userId,
+          updatedRows: updateData?.length ?? 0,
+          updated_at: updateData?.[0]?.updated_at
+        });
       }
 
+      logger.info(`✅ [checkAndSendCompleteRegistration] COMPLETE - Email: ${email}, Events sent: Lead + CompleteRegistration`);
       return { sent: true, isFirstSignIn: true };
     } catch (error) {
-      logger.error('Error sending CompleteRegistration:', error as Error);
+      logger.error(`❌ [checkAndSendCompleteRegistration] Error sending CompleteRegistration for ${email}:`, error as Error);
       return { sent: false, isFirstSignIn: false };
     }
   }

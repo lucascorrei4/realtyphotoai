@@ -134,15 +134,34 @@ router.post('/send-code', async (req, res) => {
   try {
     const { email } = req.body;
     
+    logger.info(`📨 [POST /send-code] Request received`, {
+      email: email,
+      hasEmail: !!email,
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
     if (!email) {
+      logger.warn(`❌ [POST /send-code] Email is required`);
       return res.status(400).json({ error: 'Email is required' });
     }
 
     const conversionMetadata = buildConversionMetadata(req);
+    logger.info(`📨 [POST /send-code] Calling sendAuthCode for ${email}`, {
+      hasMetadata: !!conversionMetadata,
+      metadataKeys: Object.keys(conversionMetadata || {})
+    });
+    
     const result = await authService.sendAuthCode(email, conversionMetadata);
+    
+    logger.info(`📨 [POST /send-code] Response for ${email}`, {
+      success: result.success,
+      message: result.message
+    });
+    
     return res.json(result);
   } catch (error) {
-    logger.error('Error sending auth code:', error as Error);
+    logger.error('❌ [POST /send-code] Error sending auth code:', error as Error);
     return res.status(500).json({ error: 'Failed to send authentication code' });
   }
 });
@@ -270,20 +289,52 @@ router.post('/complete-registration', async (req, res) => {
   try {
     const { email, userId, ...metadata } = req.body;
     
+    logger.info(`📨 [POST /complete-registration] Request received`, {
+      email: email,
+      userId: userId,
+      hasEmail: !!email,
+      hasUserId: !!userId,
+      bodyKeys: Object.keys(req.body),
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
     // Email can be in body or in metadata (from buildConversionMetadata)
     const userEmail = email || metadata.email;
     
-    logger.info(`CompleteRegistration endpoint called: email=${userEmail}, userId=${userId}, body keys=${Object.keys(req.body).join(',')}`);
+    logger.info(`📨 [POST /complete-registration] Processing`, {
+      email: userEmail,
+      userId: userId,
+      emailSource: email ? 'body' : (metadata.email ? 'metadata' : 'missing'),
+      bodyKeys: Object.keys(req.body).join(',')
+    });
     
     if (!userEmail || !userId) {
-      logger.warn(`CompleteRegistration endpoint missing required fields: email=${userEmail}, userId=${userId}`);
+      logger.warn(`❌ [POST /complete-registration] Missing required fields`, {
+        email: userEmail,
+        userId: userId,
+        hasEmail: !!userEmail,
+        hasUserId: !!userId
+      });
       return res.status(400).json({ error: 'Email and userId are required' });
     }
 
     const conversionMetadata = buildConversionMetadata(req);
+    logger.info(`📨 [POST /complete-registration] Calling checkAndSendCompleteRegistration`, {
+      email: userEmail,
+      userId: userId,
+      hasMetadata: !!conversionMetadata,
+      metadataKeys: Object.keys(conversionMetadata || {})
+    });
+    
     const result = await authService.checkAndSendCompleteRegistration(userEmail, userId, conversionMetadata);
     
-    logger.info(`CompleteRegistration result: sent=${result.sent}, isFirstSignIn=${result.isFirstSignIn}`);
+    logger.info(`📨 [POST /complete-registration] Response`, {
+      email: userEmail,
+      userId: userId,
+      sent: result.sent,
+      isFirstSignIn: result.isFirstSignIn
+    });
     
     return res.json({
       success: true,
@@ -291,7 +342,7 @@ router.post('/complete-registration', async (req, res) => {
       isFirstSignIn: result.isFirstSignIn
     });
   } catch (error) {
-    logger.error('Error sending CompleteRegistration:', error as Error);
+    logger.error('❌ [POST /complete-registration] Error sending CompleteRegistration:', error as Error);
     return res.status(500).json({ error: 'Failed to send CompleteRegistration event' });
   }
 });
