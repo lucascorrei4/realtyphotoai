@@ -1,5 +1,5 @@
 {
-  "name": "realestate-photo-ai",
+  "name": "Real Vision AI Backend",
   "version": "1.0.0",
   "description": "Professional Node.js backend for AI-powered real estate photo enhancement using Replicate API and Stable Diffusion",
   "main": "dist/app.js",

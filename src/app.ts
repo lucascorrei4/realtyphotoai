@@ -11,7 +11,31 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
 import webhookRoutes from './routes/webhooks';
 import stripeRoutes from './routes/stripe';
-const { version: frontendVersion } = require('../frontend/package.json');
+
+// Get frontend version - supports both development (local file) and production (env var)
+function getFrontendVersion(): string {
+  // Try environment variable first (for production Docker containers)
+  if (process.env.FRONTEND_VERSION) {
+    return process.env.FRONTEND_VERSION;
+  }
+
+  // Try to read from local file (for development)
+  try {
+    const frontendPackage = require('../frontend/package.json');
+    return frontendPackage.version || 'unknown';
+  } catch (error) {
+    // File doesn't exist (production Docker container) - fallback to backend version
+    try {
+      const backendPackage = require('../package.json');
+      return backendPackage.version || 'unknown';
+    } catch {
+      // Last resort fallback
+      return 'unknown';
+    }
+  }
+}
+
+const frontendVersion = getFrontendVersion();
 
 class App {
   public app: express.Application;
