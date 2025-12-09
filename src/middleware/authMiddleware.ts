@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { supabase } from '../config/supabase';
 import planRulesService from '../services/planRulesService';
 import { getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
+import type { ConversionEventPayload } from '../services/conversionEventService';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -66,7 +67,7 @@ export const authenticateToken = async (
                 successful_generations: 0,
                 failed_generations: 0,
                 is_active: true,
-                meta_event_name: null // Will be set to 'Lead' when email is entered via sendAuthCode
+                meta_event_name: 'Lead' // Set to 'Lead' by default when profile is created
               })
               .select()
               .single();
@@ -111,6 +112,89 @@ export const authenticateToken = async (
       role: decoded.role,
       subscription_plan: decoded.subscription_plan
     };
+
+    // Check and update meta_event_name to 'CompleteRegistration' if user is accessing the platform
+    // This happens when user successfully logs in and accesses any protected route
+    // Flow: User enters email → SQL trigger sets meta_event_name = 'Lead' → User accesses platform → Upgrade to 'CompleteRegistration'
+    // Fire and forget - don't block the request if this fails
+    (async () => {
+      try {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('meta_event_name, created_at')
+          .eq('id', decoded.id)
+          .single();
+
+        // If meta_event_name is 'Lead' or null, user just logged in and is accessing the platform
+        // Update to 'CompleteRegistration' and send event to n8n
+        if (profile && (profile.meta_event_name === 'Lead' || profile.meta_event_name === null)) {
+          logger.info(`🔄 [authenticateToken] User ${decoded.email} accessing platform - upgrading to CompleteRegistration`, {
+            current_meta_event_name: profile.meta_event_name ?? 'null',
+            userId: decoded.id
+          });
+          
+          // If meta_event_name is null, set it to 'Lead' first (in case trigger didn't set it)
+          if (profile.meta_event_name === null) {
+            logger.info(`⚠️ [authenticateToken] meta_event_name is null for ${decoded.email}, setting to 'Lead' first`);
+            await supabase
+              .from('user_profiles')
+              .update({ 
+                meta_event_name: 'Lead',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', decoded.id);
+          }
+          
+          // Import here to avoid circular dependency
+          const conversionEventService = (await import('../services/conversionEventService')).default;
+          
+          // Send CompleteRegistration event to n8n
+          const referer = req.headers.referer || req.headers.referrer;
+          const eventSourceUrl = Array.isArray(referer) ? referer[0] : referer;
+          const userAgent = req.headers['user-agent'];
+          const userAgentStr = Array.isArray(userAgent) ? userAgent[0] : userAgent;
+          
+          const conversionPayload: ConversionEventPayload = {
+            email: decoded.email,
+            externalId: decoded.id,
+            createdAt: profile.created_at,
+            ...(req.ip && { ip: req.ip }),
+            ...(userAgentStr && { userAgent: userAgentStr }),
+            ...(eventSourceUrl && { eventSourceUrl }),
+          };
+
+          logger.info(`📤 [authenticateToken] Sending CompleteRegistration event for ${decoded.email}`);
+          conversionEventService.sendConversionEvent('CompleteRegistration', conversionPayload).catch((error) => {
+            logger.error(`❌ [authenticateToken] Failed to send CompleteRegistration event for ${decoded.email}:`, error);
+          });
+
+          // Update meta_event_name to 'CompleteRegistration'
+          const { error: updateError } = await supabase
+            .from('user_profiles')
+            .update({ 
+              meta_event_name: 'CompleteRegistration',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', decoded.id);
+
+          if (updateError) {
+            logger.error(`❌ [authenticateToken] Failed to update meta_event_name for ${decoded.email}:`, {
+              error: updateError.message || String(updateError),
+              code: updateError.code
+            });
+          } else {
+            logger.info(`✅ [authenticateToken] Successfully updated meta_event_name to 'CompleteRegistration' for ${decoded.email}`);
+          }
+        } else if (profile && profile.meta_event_name === 'CompleteRegistration') {
+          logger.debug(`ℹ️ [authenticateToken] User ${decoded.email} already has CompleteRegistration status`);
+        }
+      } catch (error) {
+        // Silently log - don't block the request
+        logger.debug(`[authenticateToken] Error checking meta_event_name for ${decoded.email}:`, {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    })();
 
     next();
   } catch (error) {

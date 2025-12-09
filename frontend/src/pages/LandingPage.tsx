@@ -35,7 +35,8 @@ import {
   Move,
   RotateCw,
   ArrowLeft,
-  Mail
+  Mail,
+  Coins
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageJson from '../../package.json';
@@ -568,6 +569,11 @@ const trustSignals: TrustSignal[] = [
     description: 'Parallel render pipeline delivers staged and enhanced photos before your coffee cools.'
   },
   {
+    icon: BadgeCheck,
+    label: 'Quality guarantee',
+    description: 'We guarantee all generations match the video and image styles shown. If something is not generated as expected, we\'ll make it right.'
+  },
+  {
     icon: TrendingUp,
     label: '+72% more qualified leads',
     description: 'Listings featuring RealVision AI visuals outperform traditional photos across leading real estate marketplaces.'
@@ -657,6 +663,11 @@ const faqs: FAQItem[] = [
       'Not at all. RealVision AI was built alongside top photographers and stagers. You choose a goal, preview the before/after slider, and we handle the complex editing under the hood.'
   },
   {
+    question: 'What if my generation doesn\'t match the expected quality?',
+    answer:
+      'We guarantee all generations match the video and image styles shown on our platform. If something is not generated as expected or doesn\'t meet the quality standards demonstrated in our examples, contact our support team and we\'ll regenerate it at no additional cost or provide a credit refund.'
+  },
+  {
     question: 'Can my team collaborate on the same project?',
     answer:
       'Yes. Invite unlimited teammates, set approvals, leave timestamped comments, and lock versions. Every action is tracked so you stay audit-ready for enterprise clients.'
@@ -721,7 +732,7 @@ const successMetrics = [
 ];
 
 const ctaHighlights = [
-  'Kick off with 300 free credits across every AI transformation',
+  'Choose from flexible pricing plans that fit your needs',
   'Unlimited before/after previews to showcase client-ready proofs',
   'Dedicated success architect onboarding your team in 48 hours'
 ];
@@ -793,7 +804,7 @@ const LandingPage: React.FC = () => {
       'RealVision AI enhances property photos, stages interiors, replaces elements, adds furnitures, and refreshes exteriors with production-ready AI. Transform raw shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.';
     const keywords = 'AI real estate photo enhancement, virtual staging, property photo editing, real estate AI, interior design AI, exterior design AI, photo enhancement software, real estate marketing, property photography, AI staging, real estate photo retouching, virtual furniture staging, property listing photos';
     const canonicalUrl = typeof window !== 'undefined' ? window.location.href : 'https://realvisionaire.com';
-    const ogImage = 'https://realvisionaire.com/seo-image.png';
+    const ogImage = 'https://realvisionaire.com/logo_black.png';
 
     // Update title
     document.title = pageTitle;
@@ -1126,6 +1137,27 @@ const LandingPage: React.FC = () => {
     accent: 'Main highlight'
   };
 
+  const GetStartedCTA = () => (<div className="text-center">
+    <div className="inline-flex flex-col sm:flex-row items-center gap-4 bg-white dark:bg-slate-900 rounded-2xl border-2 border-purple-200 dark:border-purple-800 p-6 shadow-lg">
+      <div className="flex items-center space-x-3">
+        <div className="w-12 h-12 bg-gradient-to-br from-purple-500 via-indigo-500 to-pink-500 rounded-full flex items-center justify-center">
+          <Rocket className="h-6 w-6 text-white" />
+        </div>
+        <div className="text-left">
+          <div className="font-bold text-slate-900 dark:text-white">Get Started Today</div>
+          <div className="text-sm text-slate-600 dark:text-slate-300">Choose a plan that works for you</div>
+        </div>
+      </div>
+      <button
+        onClick={scrollToAuth}
+        className="flex items-center space-x-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-6 py-3 text-white font-semibold shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+      >
+        <span>Get Started Now</span>
+        <ArrowRight className="h-5 w-5" />
+      </button>
+    </div>
+  </div>);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <header>
@@ -1192,184 +1224,6 @@ const LandingPage: React.FC = () => {
 
 
       <main role="main">
-        <section
-          className="px-4 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32"
-          aria-labelledby="hero-heading"
-        >
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-4">
-              <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
-                <Sparkles className="h-4 w-4" />
-                <span>AI-Powered Imagery for Real Estate & Design</span>
-              </div>
-              <h1
-                id="hero-heading"
-                className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
-              >
-                Your AI Videos and Images Platform
-                <span className="bg-gradient-to-r from-emerald-500 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  {' '}That Creates Listings That Captivate Buyers
-                </span>
-              </h1>
-              
-              {/* Video and Before/After Slider */}
-              <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-start">
-                {/* Video Player */}
-                <div className="order-1 lg:order-1">
-                  <div className="rounded-2xl overflow-hidden border border-slate-200/70 bg-white/80 shadow-xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
-                    <video
-                      ref={videoRef}
-                      className="w-full h-auto"
-                      controls
-                      loop
-                      muted
-                      playsInline
-                      preload="metadata"
-                      poster={posterUrl}
-                    >
-                      <source
-                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/WhatsApp%20Video%202025-12-02%20at%207.07.47%20PM.mp4"
-                        type="video/mp4"
-                      />
-                      Your browser does not support the video tag.
-                    </video>
-                  </div>
-                </div>
-                
-                {/* Before/After Slider */}
-                <div className="relative order-2 lg:order-2">
-                  <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-blue-500/30 via-indigo-500/20 to-purple-500/30 blur-3xl"></div>
-                  <div className="rounded-3xl border border-white/40 bg-white/80 p-4 shadow-2xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
-                    <BeforeAfterSlider
-                      beforeSrc={heroService.beforeSrc}
-                      afterSrc={heroService.afterSrc}
-                      altBefore={heroService.altBefore}
-                      altAfter={heroService.altAfter}
-                      beforeLabel="Before"
-                      afterLabel="After"
-                      className="h-64 sm:h-72 md:h-80"
-                    />
-                    <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
-                      <div className="flex flex-col">
-                        <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Stunning results in 12 seconds</span>
-                        <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleAnchorNavigation('showcase-section')}
-                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-400 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800 sm:text-base"
-                    >
-                      <ImageIcon className="h-5 w-5" />
-                      <span>View All Transformations</span>
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div>
-                <p className="mt-6 max-w-3xl text-base text-slate-600 dark:text-slate-300 sm:text-lg md:text-xl">
-                  Tired of raw videos or photos that don't impress clients or close deals? <strong>RealVision AI</strong> enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
-                </p>
-                <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
-                  <button
-                    onClick={scrollToAuth}
-                    className="flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/35 transition-all hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 sm:w-auto"
-                  >
-                    <span>Start Free Trial</span>
-                    <ArrowRight className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={() => handleAnchorNavigation('showcase-section')}
-                    className="flex w-full items-center justify-center gap-2 text-sm font-medium text-slate-600 underline-offset-4 transition-colors hover:text-blue-600 hover:underline dark:text-slate-300 dark:hover:text-blue-400 sm:w-auto"
-                  >
-                    <Play className="h-4 w-4" />
-                    <span>See Live Demos</span>
-                  </button>
-                </div>
-                <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                  {heroCheckmarks.map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/70 dark:bg-slate-900/60 dark:text-slate-200"
-                    >
-                      <BadgeCheck className="h-5 w-5 text-blue-500 dark:text-blue-400" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-8 rounded-3xl border border-blue-200/70 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-blue-500/30 dark:bg-slate-900/70">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                    Why teams choose RealVision AI
-                  </h3>
-                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                    {whyChooseBullets.map(({ icon: Icon, title, description }) => (
-                      <li key={title} className="flex items-start gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300">
-                          <Icon className="h-5 w-5" />
-                        </span>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
-                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{description}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-                  <div className="flex items-center space-x-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
-                      <Star className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">FHD quality and ultra realistic results</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Validated real estate & design pros</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                      <Zap className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Only 12 seconds for full transformation</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">98% AI realism accuracy</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-          </div>
-        </section>
-
-        {/* Direct Offers Section */}
-        <OffersSection />
-
-        {/* Login Form Section - Redirect to /auth page */}
-        <section
-          id="auth-section"
-          className={`px-4 py-12 sm:px-6 lg:px-8 pt-28 sm:pt-32 ${showAuth ? 'scroll-mt-32' : ''}`}
-        >
-          <div className="mx-auto max-w-md">
-            <div className="text-center space-y-6 rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-xl ring-offset-2 ring-offset-white dark:ring-offset-slate-950">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600">
-                <Mail className="h-8 w-8 text-white" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-                Get Started Today
-              </h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
-                Sign in or create an account to start enhancing your property photos with AI.
-              </p>
-              <button
-                onClick={() => navigate('/auth')}
-                className="flex w-full items-center justify-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 font-medium text-white transition-all hover:from-blue-700 hover:to-indigo-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              >
-                <span>Go to Login</span>
-                <ArrowRight className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        </section>
 
         {/* Priority Section: Smart Effects & Video Features */}
         <section
@@ -1382,100 +1236,452 @@ const LandingPage: React.FC = () => {
           </div>
 
           <div className="relative mx-auto max-w-7xl">
-            {/* Header */}
-            <div className="text-center mb-16">
-              <div className="inline-flex items-center space-x-2 rounded-full border border-purple-200/70 bg-white/70 px-4 py-2 text-sm font-semibold uppercase tracking-wider text-purple-700 shadow-sm backdrop-blur dark:border-purple-500/40 dark:bg-purple-500/15 dark:text-purple-200 mb-6">
+            {/* Main H1 Headline */}
+            <div className="text-center mb-20">
+              <div className="inline-flex items-center space-x-2 rounded-full border border-purple-200/70 bg-white/70 px-4 py-2 text-sm font-semibold uppercase tracking-wider text-purple-700 shadow-sm backdrop-blur dark:border-purple-500/40 dark:bg-purple-500/15 dark:text-purple-200 mb-8">
                 <Sparkles className="h-4 w-4" />
                 <span>New & Exclusive</span>
               </div>
-              <h2 className="text-4xl font-bold text-slate-900 dark:text-white sm:text-5xl mb-4">
-                Bring Your Listings to Life with
-                <span className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 bg-clip-text text-transparent">
-                  {' '}AI Magic & Motion
+              <h1 className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl">
+                You Found{' '}
+                <span className="bg-gradient-to-r from-purple-600 via-pink-600 to-orange-500 bg-clip-text text-transparent drop-shadow-lg">
+                  The Platform
                 </span>
-              </h2>
-              <p className="text-xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto">
-                Transform static photos into captivating experiences with smart effects, cinematic camera movements, and animated scenes that make properties unforgettable.
+                <br />
+                That Generates{' '}
+                <span className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 bg-clip-text text-transparent drop-shadow-lg">
+                  The Best Videos
+                </span>
+                {' '}for Real Estate Professionals
+              </h1>
+              <p className="text-xl sm:text-2xl text-slate-700 dark:text-slate-300 max-w-4xl mx-auto font-medium">
+                Transform your property listings with{' '}
+                <span className="text-purple-600 dark:text-purple-400 font-semibold">AI-powered video generation</span>
+                {' '}that creates{' '}
+                <span className="text-orange-600 dark:text-orange-400 font-semibold">captivating, professional content</span>
+                {' '}in seconds
               </p>
+            </div>
+
+            {/* Smart Effects - Two Side-by-Side Video Players */}
+            <div className="mb-16">
+              <div className="grid gap-8 lg:grid-cols-2">
+                {/* Smart Effects Player 1 - Helicopter */}
+                <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-blue-200 dark:border-blue-800 p-6 lg:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden">
+                  {/* Gradient overlay badge */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center shadow-lg">
+                      <Sparkles className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Header */}
+                  <div className="mb-6 relative z-10">
+                    <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-gradient-to-r from-orange-100 to-pink-100 dark:from-orange-900/30 dark:to-pink-900/30 mb-3">
+                      <span className="text-2xl">🎆🎈🎊</span>
+                      <span className="text-sm font-semibold text-orange-700 dark:text-pink-300">
+                        Fireworks, Balloons &amp; Confetti
+                      </span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                      Spectacular Celebration Combo
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm lg:text-base">
+                      Dazzle your listings with a stunning showcase of fireworks, festive balloons, and bursts of confetti—all in one magical effect to truly celebrate your property.
+                    </p>
+                  </div>
+
+                  {/* Video Player */}
+                  <div className="mb-6 rounded-xl overflow-hidden border-2 border-blue-200 dark:border-blue-800 shadow-lg bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-950/50 dark:to-cyan-950/50 relative">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-0 pointer-events-none"></div>
+                    <video
+                      className="w-full h-auto relative z-10"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster=""
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/combined-effects.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+
+                  {/* Features */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Quick Generation</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">HD Quality</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">No Watermarks</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Instant Download</span>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <button
+                    onClick={() => navigate('/smart-effects')}
+                    className="w-full group/btn relative overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] hover:from-blue-700 hover:via-cyan-700 hover:to-blue-700"
+                  >
+                    <span className="relative z-10 flex items-center justify-center space-x-2">
+                      <Sparkles className="h-5 w-5" />
+                      <span>Experience the Helicopter Flyover</span>
+                      <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
+                    </span>
+                  </button>
+                </div>
+
+                {/* Smart Effects Player 2 - Snow */}
+                <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-cyan-200 dark:border-cyan-800 p-6 lg:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden">
+                  {/* Gradient overlay badge */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-200 rounded-full flex items-center justify-center shadow-lg">
+                      <Sparkles className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Header */}
+                  <div className="mb-6 relative z-10">
+                    <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-gradient-to-r from-cyan-100 to-blue-100 dark:from-cyan-900/30 dark:to-blue-900/30 mb-3">
+                      <span className="text-2xl">❄️</span>
+                      <span className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Snowfall Wonder</span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                      Snowfall Wonder Effect
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm lg:text-base">
+                      Transform your scene with soft, mesmerizing snow for a cozy, winter atmosphere that truly delights.
+                    </p>
+                  </div>
+
+                  {/* Video Player */}
+                  <div className="mb-6 rounded-xl overflow-hidden border-2 border-cyan-200 dark:border-cyan-800 shadow-lg bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-950/50 dark:to-blue-950/50 relative">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-0 pointer-events-none"></div>
+                    <video
+                      className="w-full h-auto relative z-10"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster=""
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/snow.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+
+                  {/* Features */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Quick Generation</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">HD Quality</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">No Watermarks</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-cyan-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Instant Download</span>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <button
+                    onClick={() => navigate('/smart-effects')}
+                    className="w-full group/btn relative overflow-hidden rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] hover:from-cyan-700 hover:via-blue-700 hover:to-cyan-700"
+                  >
+                    <span className="relative z-10 flex items-center justify-center space-x-2">
+                      <Sparkles className="h-5 w-5" />
+                      <span>Add Magical Snowfall Now</span>
+                      <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-8 lg:grid-cols-2 mt-10">
+                {/* Smart Effects Player 3 - Balloons */}
+                <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-purple-200 dark:border-purple-800 p-6 lg:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden">
+                  {/* Gradient overlay badge */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
+                      <Sparkles className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Header */}
+                  <div className="mb-6 relative z-10">
+                    <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 mb-3">
+                      <span className="text-2xl">🎈</span>
+                      <span className="text-sm font-semibold text-purple-700 dark:text-purple-300">Balloons Celebration</span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                      Balloons Celebration Effect
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm lg:text-base">
+                      Watch as thousands of colorful balloons transform your property into an unforgettable moment.
+                    </p>
+                  </div>
+
+                  {/* Video Player */}
+                  <div className="mb-6 rounded-xl overflow-hidden border-2 border-purple-200 dark:border-purple-800 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/50 dark:to-pink-950/50 relative">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-0 pointer-events-none"></div>
+                    <video
+                      className="w-full h-auto relative z-10"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster=""
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1763237393203_effect_balloons_processed_1763422131221_fyrpv1_video_processed_1763435904340_jl6co1.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+
+                  {/* Features */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Quick Generation</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">HD Quality</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">No Watermarks</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Instant Download</span>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <button
+                    onClick={() => navigate('/smart-effects')}
+                    className="w-full group/btn relative overflow-hidden rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] hover:from-purple-700 hover:via-pink-700 hover:to-purple-700"
+                  >
+                    <span className="relative z-10 flex items-center justify-center space-x-2">
+                      <Sparkles className="h-5 w-5" />
+                      <span>Create Amazing Balloons Effect Now</span>
+                      <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
+                    </span>
+                  </button>
+                </div>
+
+                {/* Smart Effects Player 4 - Sunrise */}
+                <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-orange-200 dark:border-orange-800 p-6 lg:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 overflow-hidden">
+                  {/* Gradient overlay badge */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
+                      <Sparkles className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Header */}
+                  <div className="mb-6 relative z-10">
+                    <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-gradient-to-r from-orange-100 to-amber-100 dark:from-orange-900/30 dark:to-amber-900/30 mb-3">
+                      <span className="text-2xl">🌅</span>
+                      <span className="text-sm font-semibold text-orange-700 dark:text-orange-300">Sunrise Magic</span>
+                    </div>
+                    <h3 className="text-xl lg:text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                      Sunrise Magic Effect
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm lg:text-base">
+                      Experience the breathtaking beauty of a golden sunrise that highlights every feature and creates an emotional connection.
+                    </p>
+                  </div>
+
+                  {/* Video Player */}
+                  <div className="mb-6 rounded-xl overflow-hidden border-2 border-orange-200 dark:border-orange-800 shadow-lg bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/50 dark:to-amber-950/50 relative">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent z-0 pointer-events-none"></div>
+                    <video
+                      className="w-full h-auto relative z-10"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster=""
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1763237393203_effect_sunrise_processed_1763422286611_y37pmz_video_processed_1763514922759_0t0bee.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+
+                  {/* Features */}
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Quick Generation</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">HD Quality</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">No Watermarks</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                      <span className="text-slate-700 dark:text-slate-300">Instant Download</span>
+                    </div>
+                  </div>
+
+                  {/* Call to Action */}
+                  <button
+                    onClick={() => navigate('/smart-effects')}
+                    className="w-full group/btn relative overflow-hidden rounded-xl bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 px-6 py-4 font-semibold text-white shadow-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] hover:from-orange-700 hover:via-amber-700 hover:to-orange-700"
+                  >
+                    <span className="relative z-10 flex items-center justify-center space-x-2">
+                      <Sparkles className="h-5 w-5" />
+                      <span>Transform with Sunrise Magic</span>
+                      <ArrowRight className="h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="my-10">
+
+                <GetStartedCTA />
+
+              </div>
+              
+              {/* Quality Guarantee Section */}
+              <section
+                className="relative px-4 py-16 sm:px-6 lg:px-8 overflow-hidden"
+              >
+                {/* Background decoration */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-full bg-gradient-to-r from-emerald-500/10 via-blue-500/10 to-purple-500/10 blur-3xl"></div>
+                </div>
+
+                <div className="relative mx-auto max-w-5xl">
+                  <div className="rounded-3xl border-2 border-emerald-200/70 dark:border-emerald-500/40 bg-gradient-to-br from-emerald-50/90 via-white to-blue-50/90 dark:from-emerald-950/30 dark:via-slate-900 dark:to-blue-950/30 p-8 sm:p-12 shadow-2xl backdrop-blur">
+                    {/* Badge */}
+                    <div className="flex justify-center mb-6">
+                      <div className="inline-flex items-center space-x-2 rounded-full border-2 border-emerald-500/50 bg-emerald-500/10 dark:bg-emerald-500/20 px-5 py-2 text-sm font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 shadow-lg">
+                        <Shield className="h-5 w-5" />
+                        <span>100% Quality Guarantee</span>
+                      </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="text-center">
+                      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white mb-6">
+                        <span className="bg-gradient-to-r from-emerald-600 via-blue-600 to-purple-600 bg-clip-text text-transparent">
+                          We Guarantee All Generations Match our video and image styles
+                        </span>
+                      </h2>
+                      <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 mb-8 max-w-2xl mx-auto">
+                        Not as expected? <span className="font-bold text-emerald-600 dark:text-emerald-400 underline decoration-2 decoration-emerald-500">We'll make it right.</span>
+                      </p>
+
+                      {/* Features Grid */}
+                      <div className="grid sm:grid-cols-3 gap-4 mt-10">
+                        <div className="flex flex-col items-center p-4 rounded-xl bg-white/60 dark:bg-slate-800/60 border border-emerald-200/50 dark:border-emerald-500/30">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 flex items-center justify-center mb-3">
+                            <BadgeCheck className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                          </div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">Style Match</h3>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 text-center">All outputs match our demonstrated quality</p>
+                        </div>
+                        <div className="flex flex-col items-center p-4 rounded-xl bg-white/60 dark:bg-slate-800/60 border border-blue-200/50 dark:border-blue-500/30">
+                          <div className="w-12 h-12 rounded-full bg-blue-500/10 dark:bg-blue-500/20 flex items-center justify-center mb-3">
+                            <Shield className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                          </div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">We Fix It</h3>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 text-center">Not satisfied? We'll regenerate or refund</p>
+                        </div>
+                        <div className="flex flex-col items-center p-4 rounded-xl bg-white/60 dark:bg-slate-800/60 border border-purple-200/50 dark:border-purple-500/30">
+                          <div className="w-12 h-12 rounded-full bg-purple-500/10 dark:bg-purple-500/20 flex items-center justify-center mb-3">
+                            <CheckCircle className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                          </div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white text-sm mb-1">No Risk</h3>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 text-center">100% satisfaction guaranteed on every generation</p>
+                        </div>
+                      </div>
+
+                      {/* CTA */}
+                      <div className="mt-10">
+                        <button
+                          onClick={scrollToAuth}
+                          className="inline-flex items-center space-x-2 rounded-xl bg-gradient-to-r from-emerald-600 via-blue-600 to-purple-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-emerald-500/40"
+                        >
+                          <Shield className="h-5 w-5" />
+                          <span>Get Started with Confidence</span>
+                          <ArrowRight className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Middle Section with Previous Headline */}
+              <div className="text-center my-16 py-12 border-t-2 border-b-2 border-purple-200 dark:border-purple-800">
+                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white mb-6">
+                  Bring Your Listings to Life with
+                  <span className="bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 bg-clip-text text-transparent">
+                    {' '}AI Magic & Motion
+                  </span>
+                </h2>
+                <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto">
+                  Transform static photos into captivating experiences with smart effects, cinematic camera movements, and animated scenes that make properties unforgettable.
+                </p>
+              </div>
+
+              {/* Additional Info Below Players */}
+              <div className="mt-8 text-center">
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                  <span className="font-semibold text-purple-600 dark:text-purple-400">Amazing Effects Available:</span>
+                  {' '}Dusk • Balloons • Helicopter • Gift Bow • Fireworks • Confetti • Holiday Lights • Snow • Sunrise
+                </p>
+                <button
+                  onClick={() => navigate('/smart-effects')}
+                  className="inline-flex items-center space-x-2 px-6 py-3 rounded-lg border-2 border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 font-medium hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all duration-200"
+                >
+                  <span>Explore All Smart Effects</span>
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* Three Feature Cards */}
             <div className="grid gap-8 lg:grid-cols-3 mb-12">
-              {/* Smart Effects Card */}
-              <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-purple-200 dark:border-purple-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
-                <div className="absolute top-4 right-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
-                    <Sparkles className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-                <div className="mb-6">
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
-                    ✨ Smart Effects
-                  </h3>
-                  <p className="text-slate-600 dark:text-slate-300">
-                    Add magical transformations to property photos with AI-powered effects that create emotional connections.
-                  </p>
-                </div>
-                {/* Video Player */}
-                <div className="mb-6 rounded-xl overflow-hidden border border-purple-200 dark:border-purple-800 shadow-lg">
-                  <video
-                    className="w-full h-auto"
-                    controls
-                    loop
-                    muted
-                    playsInline
-                    preload="metadata"
-                    poster=""
-                  >
-                    <source
-                      src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/image-1763237393203_effect_balloons_processed_1763422131221_fyrpv1_video_processed_1763435904340_jl6co1.mp4"
-                      type="video/mp4"
-                    />
-                    Your browser does not support the video tag.
-                  </video>
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                  {[
-                    { emoji: '🌆', name: 'Dusk' },
-                    { emoji: '🎈', name: 'Balloons' },
-                    { emoji: '🚁', name: 'Helicopter' },
-                    { emoji: '🎀', name: 'Gift Bow' },
-                    { emoji: '🎆', name: 'Fireworks' },
-                    { emoji: '🎊', name: 'Confetti' },
-                    { emoji: '✨', name: 'Holiday Lights' },
-                    { emoji: '❄️', name: 'Snow' },
-                    { emoji: '🌅', name: 'Sunrise' }
-                  ].map((effect) => (
-                    <div
-                      key={effect.name}
-                      className="flex flex-col items-center p-3 rounded-xl bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-800"
-                    >
-                      <span className="text-2xl mb-1">{effect.emoji}</span>
-                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300 text-center leading-tight">{effect.name}</span>
-                    </div>
-                  ))}
-                </div>
-                <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-6">
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
-                    <span>9 stunning effect presets</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
-                    <span>Customizable instructions</span>
-                  </li>
-                  <li className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-purple-500 flex-shrink-0" />
-                    <span>Perfect for celebrations & holidays</span>
-                  </li>
-                </ul>
-                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-purple-600 dark:text-purple-400">Instant Results</span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">12 seconds</span>
-                  </div>
-                </div>
-              </div>
 
               {/* Camera Movement (Drone Effect) Card */}
               <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-indigo-200 dark:border-indigo-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
@@ -1556,6 +1762,65 @@ const LandingPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Smart Effects Card */}
+              <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-orange-200 dark:border-orange-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                <div className="absolute top-4 right-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-yellow-400 rounded-full flex items-center justify-center shadow-lg">
+                    <Sparkles className="h-6 w-6 text-white" />
+                  </div>
+                </div>
+                <div className="mb-6">
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">
+                    ✨ Smart Effects
+                  </h3>
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Instantly apply different professional effects, from Dusk and Sunrise to Fireworks, Holiday Lights, and more. Highlight your property and wow your clients.
+                  </p>
+                </div>
+                {/* Effect Images Gallery */}
+                <div className="mb-6 space-y-6">
+                  {[
+                    { src: "https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/confetti.jpg", alt: "Confetti Effect" },
+                    { src: "https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/fireworks.jpg", alt: "Fireworks Effect" },
+                    { src: "https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/helicopter.jpg", alt: "Helicopter Effect" },
+                    { src: "https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/sample_effects/holiday-lights.jpg", alt: "Holiday Lights Effect" },
+                  ].map((effect, i) => (
+                    <div key={effect.alt} className="relative group overflow-hidden rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/10 shadow-lg hover:shadow-2xl transition-all duration-300">
+                      <img
+                        src={effect.src}
+                        alt={effect.alt}
+                        className="w-full h-auto object-cover rounded-xl"
+                        loading={i === 0 ? "eager" : "lazy"}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl"></div>
+                      <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+                        <p className="text-white text-base font-semibold text-center drop-shadow-lg">{effect.alt}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300 mb-6">
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <span>Unique effects including Dusk, Balloons, Fireworks & more</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <span>1-click enhancement & download</span>
+                  </li>
+                  <li className="flex items-center space-x-2">
+                    <CheckCircle className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                    <span>Works on any property photo</span>
+                  </li>
+                </ul>
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-orange-600 dark:text-orange-300">Instant Results</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">~12 sec</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Animate Scene Card */}
               <div className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-pink-200 dark:border-pink-800 p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
                 <div className="absolute top-4 right-4">
@@ -1622,28 +1887,351 @@ const LandingPage: React.FC = () => {
             </div>
 
             {/* CTA Section */}
-            <div className="text-center">
-              <div className="inline-flex flex-col sm:flex-row items-center gap-4 bg-white dark:bg-slate-900 rounded-2xl border-2 border-purple-200 dark:border-purple-800 p-6 shadow-lg">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 via-indigo-500 to-pink-500 rounded-full flex items-center justify-center">
-                    <Rocket className="h-6 w-6 text-white" />
+            <GetStartedCTA />
+          </div>
+        </section>
+
+        {/* How It Works - Vertical Timeline */}
+        <section
+          className="relative px-4 py-20 sm:px-6 lg:px-8 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-950/30 dark:via-indigo-950/30 dark:to-purple-950/30"
+        >
+          {/* Background decoration */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-20 left-10 w-64 h-64 bg-blue-300/10 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-20 right-10 w-64 h-64 bg-purple-300/10 rounded-full blur-3xl"></div>
+          </div>
+
+          <div className="relative mx-auto max-w-4xl">
+            {/* Section Header */}
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-4 py-2 text-sm font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 mb-6">
+                <Sparkles className="h-4 w-4" />
+                <span>Simple Process</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 dark:text-white mb-4">
+                How It Works
+              </h2>
+              <p className="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+                Get started in just a few simple steps and transform your property photos with AI-powered magic
+              </p>
+            </div>
+
+            {/* Vertical Timeline */}
+            <div className="relative">
+              {/* Timeline Line */}
+              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-blue-400 via-indigo-400 to-purple-400 dark:from-blue-500 dark:via-indigo-500 dark:to-purple-500 hidden md:block"></div>
+
+              {/* Step 1: Add Credits */}
+              <div className="relative flex items-start gap-6 mb-12">
+                <div className="flex-shrink-0 relative z-10">
+                  <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-slate-900">
+                    <Coins className="h-8 w-8 text-white" />
                   </div>
-                  <div className="text-left">
-                    <div className="font-bold text-slate-900 dark:text-white">Try These Features Free</div>
-                    <div className="text-sm text-slate-600 dark:text-slate-300">300 free credits to get started</div>
+                  <div className="absolute inset-0 w-16 h-16 bg-blue-400 rounded-full animate-ping opacity-20"></div>
+                </div>
+                <div className="flex-1 pt-2">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-blue-200 dark:border-blue-800 p-6 shadow-lg hover:shadow-xl transition-all">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="flex items-center justify-center w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400 font-bold text-sm">1</span>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Add Credits</h3>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300">
+                      Purchase credits to get started. Choose from flexible pricing plans that fit your needs. Credits are used for all AI transformations and effects.
+                    </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Step 2: Choose Service */}
+              <div className="relative flex items-start gap-6 mb-12">
+                <div className="flex-shrink-0 relative z-10">
+                  <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-slate-900">
+                    <Sparkles className="h-8 w-8 text-white" />
+                  </div>
+                  <div className="absolute inset-0 w-16 h-16 bg-indigo-400 rounded-full animate-ping opacity-20"></div>
+                </div>
+                <div className="flex-1 pt-2">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800 p-6 shadow-lg hover:shadow-xl transition-all">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="flex items-center justify-center w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 font-bold text-sm">2</span>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Choose Smart Effect or Other Service</h3>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 mb-3">
+                      Select from our range of AI-powered services: Smart Effects (fireworks, balloons, holiday lights), Interior Design, Exterior Design, Image Enhancement, or Add Furniture.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {['Smart Effects', 'Interior Design', 'Exterior Design', 'Image Enhancement'].map((service) => (
+                        <span key={service} className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded-full text-xs font-medium">
+                          {service}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3: Upload Photo */}
+              <div className="relative flex items-start gap-6 mb-12">
+                <div className="flex-shrink-0 relative z-10">
+                  <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-slate-900">
+                    <Upload className="h-8 w-8 text-white" />
+                  </div>
+                  <div className="absolute inset-0 w-16 h-16 bg-purple-400 rounded-full animate-ping opacity-20"></div>
+                </div>
+                <div className="flex-1 pt-2">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-purple-200 dark:border-purple-800 p-6 shadow-lg hover:shadow-xl transition-all">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="flex items-center justify-center w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-full text-purple-600 dark:text-purple-400 font-bold text-sm">3</span>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Upload Your Photo and DONE</h3>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300">
+                      Simply upload your property photo. Our AI will process it and generate your enhanced image in just 12 seconds. Download your professional-quality result instantly.
+                    </p>
+                    <div className="mt-4 flex items-center gap-2 text-sm text-green-600 dark:text-green-400 font-medium">
+                      <CheckCircle className="h-5 w-5" />
+                      <span>Processing takes just 12 seconds</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 4: Choose Animation */}
+              <div className="relative flex items-start gap-6">
+                <div className="flex-shrink-0 relative z-10">
+                  <div className="w-16 h-16 bg-gradient-to-br from-pink-500 to-rose-600 rounded-full flex items-center justify-center shadow-lg ring-4 ring-white dark:ring-slate-900">
+                    <Video className="h-8 w-8 text-white" />
+                  </div>
+                  <div className="absolute inset-0 w-16 h-16 bg-pink-400 rounded-full animate-ping opacity-20"></div>
+                </div>
+                <div className="flex-1 pt-2">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-pink-200 dark:border-pink-800 p-6 shadow-lg hover:shadow-xl transition-all">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="flex items-center justify-center w-8 h-8 bg-pink-100 dark:bg-pink-900/30 rounded-full text-pink-600 dark:text-pink-400 font-bold text-sm">4</span>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Choose Animate or Drone Effect</h3>
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 mb-4">
+                      Once your image is ready, bring it to life! Choose between two powerful animation options:
+                    </p>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-4 border border-green-200 dark:border-green-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Zap className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          <h4 className="font-semibold text-slate-900 dark:text-white">Animate Scene</h4>
+                        </div>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                          Add natural motion to your scene with dynamic elements that engage viewers.
+                        </p>
+                      </div>
+                      <div className="bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl p-4 border border-cyan-200 dark:border-cyan-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Camera className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
+                          <h4 className="font-semibold text-slate-900 dark:text-white">Drone Effect</h4>
+                        </div>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                          Apply cinematic camera movements - pan, zoom, and orbit for professional drone-like footage.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA Button */}
+            <div className="mt-12 text-center">
+              <button
+                onClick={scrollToAuth}
+                className="inline-flex items-center gap-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-8 py-4 text-lg font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-500/40"
+              >
+                <Rocket className="h-5 w-5" />
+                <span>Get Started Now</span>
+                <ArrowRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+
+
+        <section
+          className="px-4 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pt-32"
+          aria-labelledby="hero-heading"
+        >
+          <div className="mx-auto max-w-7xl">
+            <div className="mb-4">
+              <div className="inline-flex items-center space-x-2 rounded-full border border-blue-200/70 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-blue-700 shadow-sm backdrop-blur dark:border-blue-500/40 dark:bg-blue-500/15 dark:text-blue-200 sm:text-sm">
+                <Sparkles className="h-4 w-4" />
+                <span>AI-Powered Imagery for Real Estate & Design</span>
+              </div>
+              <h2
+                id="hero-heading"
+                className="mt-6 text-3xl font-bold leading-tight text-slate-900 dark:text-white sm:text-5xl sm:leading-[1.05] lg:text-6xl"
+              >
+                AI Videos and Images
+                <span className="bg-gradient-to-r from-emerald-500 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  {' '}That Creates Listings That Captivate Buyers
+                </span>
+              </h2>
+
+              {/* Video and Before/After Slider */}
+              <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:items-start">
+                {/* Video Player */}
+                <div className="order-1 lg:order-1">
+                  <div className="rounded-2xl overflow-hidden border border-slate-200/70 bg-white/80 shadow-xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <video
+                      ref={videoRef}
+                      className="w-full h-auto"
+                      controls
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      poster={posterUrl}
+                    >
+                      <source
+                        src="https://pub-b2fab8efcfed441092b0dc6d69b534a9.r2.dev/processed/WhatsApp%20Video%202025-12-02%20at%207.07.47%20PM.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
+                </div>
+
+                {/* Before/After Slider */}
+                <div className="relative order-2 lg:order-2">
+                  <div className="absolute -inset-6 -z-10 rounded-3xl bg-gradient-to-tr from-blue-500/30 via-indigo-500/20 to-purple-500/30 blur-3xl"></div>
+                  <div className="rounded-3xl border border-white/40 bg-white/80 p-4 shadow-2xl backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70">
+                    <BeforeAfterSlider
+                      beforeSrc={heroService.beforeSrc}
+                      afterSrc={heroService.afterSrc}
+                      altBefore={heroService.altBefore}
+                      altAfter={heroService.altAfter}
+                      beforeLabel="Before"
+                      afterLabel="After"
+                      className="h-64 sm:h-72 md:h-80"
+                    />
+                    <div className="mt-5 grid  rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-slate-700 shadow dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-100">
+                      <div className="flex flex-col">
+                        <span className="text-xs uppercase tracking-wide text-blue-500 dark:text-blue-300">Stunning results in 12 seconds</span>
+                        <span className="text-xl font-semibold text-slate-900 dark:text-white">Balanced lighting, preserved room and calibrated colors without manual masking.</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleAnchorNavigation('showcase-section')}
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white px-6 py-3 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md dark:border-blue-400 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-slate-800 sm:text-base"
+                    >
+                      <ImageIcon className="h-5 w-5" />
+                      <span>View All Transformations</span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="mt-6 max-w-3xl text-base text-slate-600 dark:text-slate-300 sm:text-lg md:text-xl">
+                Tired of raw videos or photos that don't impress clients or close deals? <strong>RealVision AI</strong> enhances images, stages interiors, replaces elements, adds furnitures, and refreshes exteriors — all while preserving the original structure for authentic results. Transform your shots into professional visuals in 12 seconds, driving 85% more viewings and 62% more engagement.
+              </p>
+              <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row">
                 <button
                   onClick={scrollToAuth}
-                  className="flex items-center space-x-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 px-6 py-3 text-white font-semibold shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+                  className="flex w-full items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-blue-500/35 transition-all hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 sm:w-auto"
                 >
-                  <span>Get Started Now</span>
+                  <span>Get Started</span>
                   <ArrowRight className="h-5 w-5" />
                 </button>
+                <button
+                  onClick={() => handleAnchorNavigation('showcase-section')}
+                  className="flex w-full items-center justify-center gap-2 text-sm font-medium text-slate-600 underline-offset-4 transition-colors hover:text-blue-600 hover:underline dark:text-slate-300 dark:hover:text-blue-400 sm:w-auto"
+                >
+                  <Play className="h-4 w-4" />
+                  <span>See Live Demos</span>
+                </button>
+              </div>
+
+              <div className="mt-8 rounded-3xl border border-blue-200/70 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-blue-500/30 dark:bg-slate-900/70">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  Why teams choose RealVision AI
+                </h3>
+                <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {whyChooseBullets.map(({ icon: Icon, title, description }) => (
+                    <li key={title} className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{title}</p>
+                        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{description}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="my-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+                <div className="flex items-center space-x-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600/10 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300">
+                    <Star className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">FHD quality and ultra realistic results</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Validated real estate & design pros</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    <Zap className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Only 12 seconds for full transformation</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">98% AI realism accuracy</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    <BadgeCheck className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Quality guarantee</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Generations match our styles or we'll make it right</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </section>
+
+        {/* Direct Offers Section */}
+        <OffersSection />
+
+        {/* Login Form Section - Redirect to /auth page */}
+        <section
+          id="auth-section"
+          className={`px-4 py-12 sm:px-6 lg:px-8 pt-28 sm:pt-32 ${showAuth ? 'scroll-mt-32' : ''}`}
+        >
+          <div className="mx-auto max-w-md">
+            <div className="text-center space-y-6 rounded-2xl bg-white dark:bg-slate-800 p-8 shadow-xl ring-offset-2 ring-offset-white dark:ring-offset-slate-950">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600">
+                <Mail className="h-8 w-8 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
+                Get Started Today
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Sign in or create an account to start enhancing your property photos with AI.
+              </p>
+              <button
+                onClick={() => navigate('/auth')}
+                className="flex w-full items-center justify-center space-x-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 font-medium text-white transition-all hover:from-blue-700 hover:to-indigo-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                <span>Go to Login</span>
+                <ArrowRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+
 
         <section
           id="features-section"
@@ -1683,13 +2271,16 @@ const LandingPage: React.FC = () => {
                 </article>
               ))}
             </div>
-            <div className="mt-12 grid gap-6 sm:grid-cols-3">
+            <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {trustSignals.map(({ icon: Icon, label, description }) => (
                 <div
                   key={label}
                   className="rounded-3xl border border-slate-200 bg-white/80 p-6 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/70"
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${label === 'Quality guarantee'
+                    ? 'bg-emerald-500/10 text-emerald-500 dark:bg-emerald-500/20 dark:text-emerald-300'
+                    : 'bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 dark:text-blue-300'
+                    }`}>
                     <Icon className="h-6 w-6" />
                   </div>
                   <h4 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">{label}</h4>
@@ -1794,6 +2385,11 @@ const LandingPage: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <Shield className="h-4 w-4 text-emerald-500 dark:text-emerald-300" />
                           <span>Reality anchored, and validated by human QA specialists</span>
+                        </div>
+                        <div className="flex items-center space-x-2 sm:col-span-2">
+                          <BadgeCheck className="h-4 w-4 text-emerald-500 dark:text-emerald-300 flex-shrink-0" />
+                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">Quality Guarantee:</span>
+                          <span>We guarantee all generations match our video and image styles. Not as expected? We'll make it right.</span>
                         </div>
                       </div>
                     </div>
@@ -2090,7 +2686,7 @@ const LandingPage: React.FC = () => {
                 <ArrowRight className="h-5 w-5" />
               </button>
               <span className="text-xs uppercase tracking-wide text-blue-100/80">
-                Sign up now and get 300 credits free
+                Start transforming your property photos today
               </span>
             </div>
           </div>

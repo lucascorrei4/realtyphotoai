@@ -24,6 +24,7 @@ import { getBackendUrl } from '../config/environment';
 import { SUBSCRIPTION_PLANS, getCreditUsageSummary, getImageCredits, getVideoCredits } from '../config/subscriptionPlans';
 import { getUserPlanFromDatabase, PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import StripeCheckout from '../components/StripeCheckout';
+import OffersSection from '../components/OffersSection';
 import { getAuthHeaders } from '../utils/apiUtils';
 
 interface UserStats {
@@ -126,12 +127,50 @@ const Settings: React.FC = () => {
         }
       }
 
+      // Get prepaid credits from credit_transactions table (one-time purchases)
+      let prepaidCredits = 0;
+      try {
+        // Try using RPC function first
+        const { data: prepaidBalance, error: prepaidError } = await supabase.rpc('get_user_prepaid_credit_balance', {
+          p_user_id: user.id
+        });
+
+        if (!prepaidError && prepaidBalance !== null && prepaidBalance !== undefined) {
+          prepaidCredits = prepaidBalance;
+        } else if (prepaidError) {
+          // Fallback: calculate manually if RPC function fails
+          console.warn('RPC function failed, calculating prepaid credits manually:', prepaidError);
+          const now = new Date().toISOString();
+          const { data: transactions } = await supabase
+            .from('credit_transactions')
+            .select('credits, expires_at')
+            .eq('user_id', user.id)
+            .or(`expires_at.is.null,expires_at.gt.${now}`);
+          
+          if (transactions) {
+            prepaidCredits = transactions.reduce((sum, t) => {
+              // Only count non-expired credits
+              if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+                return sum + (t.credits || 0);
+              }
+              return sum;
+            }, 0);
+          }
+        }
+      } catch (prepaidErr) {
+        console.error('Error fetching prepaid credits:', prepaidErr);
+        // Continue with 0 prepaid credits
+      }
+
       // Calculate credit summary using display credits directly
-      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      // For one-time purchase plans (explorer, a_la_carte), only use prepaid credits, ignore plan credits
+      const isOneTimePlan = planName === 'explorer' || planName === 'a_la_carte';
+      const planDisplayCreditsTotal = isOneTimePlan ? 0 : (userPlan.features.displayCredits || userPlan.features.monthlyCredits);
+      const displayCreditsTotal = planDisplayCreditsTotal + prepaidCredits; // Include prepaid credits
       const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
       const actualCreditsTotal = userPlan.features.monthlyCredits;
-      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
-        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+      const actualCreditsUsed = actualCreditsTotal > 0 && planDisplayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / planDisplayCreditsTotal))
         : displayCreditsUsed;
 
       const creditSummary = {
@@ -140,7 +179,8 @@ const Settings: React.FC = () => {
         displayCreditsRemaining,
         actualCreditsTotal,
         actualCreditsUsed,
-        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed),
+        prepaidCredits // Include for debugging
       };
 
       setStats({
@@ -376,8 +416,18 @@ const Settings: React.FC = () => {
 
   const handlePlanChangeSuccess = useCallback(async () => {
     setShowPlanModal(false);
-    await handleSyncSubscription();
-  }, [handleSyncSubscription]);
+    // For subscriptions, sync from Stripe
+    if (subscription) {
+      await handleSyncSubscription();
+    }
+    // Refresh user data to update subscription_plan (for one-time purchases)
+    if (refreshUser) {
+      await refreshUser();
+    }
+  }, [handleSyncSubscription, refreshUser, subscription]);
+
+  // Determine if user has a one-time payment plan (explorer/a_la_carte) without a subscription
+  const isOneTimePlanUser = user ? (user.subscription_plan === 'explorer' || user.subscription_plan === 'a_la_carte') && !subscription : false;
 
   // Auto sync once on initial page load to ensure state is fresh
   useEffect(() => {
@@ -449,7 +499,9 @@ const Settings: React.FC = () => {
     free: 'bg-gray-100 text-gray-800 dark:bg-gray-100 dark:text-gray-800',
     basic: 'bg-blue-100 text-blue-800 dark:bg-blue-100 dark:text-blue-800',
     premium: 'bg-purple-100 text-purple-800 dark:bg-purple-100 dark:text-purple-800',
-    enterprise: 'bg-green-100 text-green-800 dark:bg-green-100 dark:text-green-800'
+    enterprise: 'bg-green-100 text-green-800 dark:bg-green-100 dark:text-green-800',
+    explorer: 'bg-blue-100 text-blue-800 dark:bg-blue-100 dark:text-blue-800',
+    a_la_carte: 'bg-purple-100 text-purple-800 dark:bg-purple-100 dark:text-purple-800'
   };
 
   const modelColors = {
@@ -577,7 +629,7 @@ const Settings: React.FC = () => {
 
               <div className="flex items-center space-x-3">
                 <Crown className="h-5 w-5 text-gray-400" />
-                <span className={`px-2 py-1 rounded-full text-sm font-medium ${planColors[user.subscription_plan]}`}>
+                <span className={`px-2 py-1 rounded-full text-sm font-medium ${planColors[user.subscription_plan as keyof typeof planColors] || planColors.free}`}>
                   {PLAN_DISPLAY_NAMES[user.subscription_plan] || user.subscription_plan.charAt(0).toUpperCase() + user.subscription_plan.slice(1)} Plan
                 </span>
               </div>
@@ -655,40 +707,10 @@ const Settings: React.FC = () => {
                     </>
                   )}
 
-                  {!subscription && user.subscription_plan && user.subscription_plan !== 'free' && (
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                      <p className="text-sm text-blue-600 dark:text-blue-400 mb-2">
-                        You have a {user.subscription_plan} plan. Use "Manage Subscription" to cancel or modify your plan.
-                      </p>
-                      <button
-                        onClick={() => handleSyncSubscription()}
-                        disabled={syncLoading}
-                        className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {syncLoading ? 'Syncing...' : 'Sync from Stripe'}
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
                   {/* Sync button for users who paid but subscription not recognized */}
-                  {!subscription && (
-                    <button
-                      onClick={() => handleSyncSubscription()}
-                      disabled={syncLoading}
-                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {syncLoading ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
-                      ) : (
-                        <>
-                          <CheckCircle className="h-4 w-4" />
-                          <span className="font-medium">Sync Subscription from Stripe</span>
-                        </>
-                      )}
-                    </button>
-                  )}
                   <button
                     onClick={() => {
                       setShowPlanModal(true);
@@ -697,46 +719,44 @@ const Settings: React.FC = () => {
                     className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 active:scale-95"
                   >
                     <Crown className="h-4 w-4" />
-                    <span className="font-medium">Change Plan</span>
+                    <span className="font-medium">
+                      {isOneTimePlanUser ? 'Add More Credits' : 'Change Plan'}
+                    </span>
                   </button>
 
-                  <button
-                    onClick={handleOpenCustomerPortal}
-                    disabled={portalLoading}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {portalLoading ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                    ) : (
-                      <>
-                        <ExternalLink className="h-4 w-4" />
-                        <span className="font-medium">Manage Subscription</span>
-                      </>
-                    )}
-                  </button>
+                  {/* Only show "Manage Subscription" for users with subscriptions, not one-time plans */}
+                  {subscription && (
+                    <button
+                      onClick={handleOpenCustomerPortal}
+                      disabled={portalLoading}
+                      className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {portalLoading ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                      ) : (
+                        <>
+                          <ExternalLink className="h-4 w-4" />
+                          <span className="font-medium">Manage Subscription</span>
+                        </>
+                      )}
+                    </button>
+                  )}
 
-                  {/* Show cancel button if user has active subscription OR has a paid plan (even without Stripe record) */}
-                  {(subscription?.status === 'active' || (user.subscription_plan && user.subscription_plan !== 'free')) && (
+                  {/* Show cancel button if user has active subscription (not for one-time plans) */}
+                  {subscription?.status === 'active' && (
                     <button
                       onClick={() => {
-                        if (subscription?.status === 'active') {
-                          setShowCancelConfirm(true);
-                        } else {
-                          // If no Stripe subscription but has paid plan, direct to customer portal
-                          handleOpenCustomerPortal();
-                        }
+                        setShowCancelConfirm(true);
                         setSaveError(null);
                       }}
-                      disabled={cancelLoading || portalLoading}
+                      disabled={cancelLoading}
                       className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <X className="h-4 w-4" />
                       <span className="font-medium">
                         {subscription?.cancel_at_period_end
                           ? 'Subscription Cancelling'
-                          : subscription?.status === 'active'
-                            ? 'Cancel Subscription'
-                            : 'Cancel Plan'}
+                          : 'Cancel Subscription'}
                       </span>
                     </button>
                   )}
@@ -891,9 +911,11 @@ const Settings: React.FC = () => {
             setShowPlanModal(false);
           }
         }}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl ${isOneTimePlanUser ? 'max-w-6xl' : 'max-w-4xl'} w-full max-h-[90vh] overflow-y-auto`}>
             <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Manage Subscription</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                {isOneTimePlanUser ? 'Add Credits And Go' : 'Manage Subscription'}
+              </h2>
               <button
                 onClick={() => {
                   setShowPlanModal(false);
@@ -904,14 +926,22 @@ const Settings: React.FC = () => {
                 <X className="h-6 w-6" />
               </button>
             </div>
-            <div className="p-6">
-              <StripeCheckout
-                onClose={() => {
-                  setShowPlanModal(false);
-                  setSaveError(null);
-                }}
-                onSuccess={handlePlanChangeSuccess}
-              />
+            <div className={isOneTimePlanUser ? 'p-0' : 'p-6'}>
+              {isOneTimePlanUser ? (
+                <OffersSection
+                  embedded={true}
+                  title="Add Credits And Go"
+                  subtitle="Choose a one-time payment option to add credits to your account"
+                />
+              ) : (
+                <StripeCheckout
+                  onClose={() => {
+                    setShowPlanModal(false);
+                    setSaveError(null);
+                  }}
+                  onSuccess={handlePlanChangeSuccess}
+                />
+              )}
             </div>
           </div>
         </div>

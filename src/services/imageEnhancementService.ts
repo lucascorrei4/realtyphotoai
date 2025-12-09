@@ -105,12 +105,6 @@ export class ImageEnhancementService {
       // Run the bria/increase-resolution model
       const output = await this.replicate.run(this.modelId, { input });
 
-      logger.info('📥 Replicate API response received', { 
-        requestId,
-        outputType: typeof output,
-        output: output
-      });
-
       // Handle the output - it might be a URL or a file object
       let outputUrl: string;
       if (typeof output === 'string') {
@@ -124,11 +118,11 @@ export class ImageEnhancementService {
           outputUrl = output.url;
           logger.info('✅ Output URL from object', { requestId, outputUrl });
         } else {
-          logger.error('❌ Unexpected URL format', { requestId, outputUrlType: typeof output.url, output });
+          logger.error('❌ Unexpected URL format', { requestId, outputUrlType: typeof output.url });
           throw new Error('Unexpected output format from bria/increase-resolution model');
         }
       } else {
-        logger.error('❌ Unexpected output format', { requestId, outputType: typeof output, output });
+        logger.error('❌ Unexpected output format', { requestId, outputType: typeof output, isArray: Array.isArray(output), isObject: output && typeof output === 'object' });
         throw new Error('Unexpected output format from bria/increase-resolution model');
       }
 

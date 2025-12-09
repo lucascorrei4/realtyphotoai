@@ -3,11 +3,12 @@ import Stripe from 'stripe';
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
 import stripeCheckoutService from '../services/stripeCheckoutService';
+import { getStripeSecretKey } from '../utils/stripeConfig';
 
 const router = express.Router();
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// Initialize Stripe - uses test key in development if STRIPE_SECRET_KEY_TEST is set
+const stripe = new Stripe(getStripeSecretKey(), {
   apiVersion: '2023-10-16',
 });
 
@@ -449,13 +450,66 @@ async function handleOneTimePaymentCompleted(
         .is('stripe_customer_id', null);
     }
 
+    // Determine subscription plan based on offer type
+    // DIY 800 ($27, 800 credits) -> 'explorer'
+    // A la carte ($47, 2500 credits) -> 'a_la_carte'
+    let planName: string | null = null;
+    let creditsToAdd = credits; // Default to credits from metadata
+    
+    if (offerType === 'credits' && amount === 27 && credits === 800) {
+      planName = 'explorer';
+    } else if (offerType === 'videos' && amount === 47) {
+      planName = 'a_la_carte';
+      // A la carte purchase always includes 2500 credits
+      creditsToAdd = 2500;
+    }
+
+    // Update subscription_plan if we identified a plan
+    if (planName && finalUserId && !finalUserId.startsWith('guest_')) {
+      try {
+        const { error: planUpdateError } = await supabase.rpc('update_user_subscription_plan', {
+          user_uuid: finalUserId,
+          new_plan: planName
+        });
+
+        if (planUpdateError) {
+          logger.warn(`Failed to update subscription_plan to ${planName}, trying direct update:`, {
+            error: planUpdateError.message,
+            code: planUpdateError.code,
+            details: planUpdateError.details,
+            hint: planUpdateError.hint
+          });
+          // Fallback: direct update
+          const { error: directUpdateError } = await supabase
+            .from('user_profiles')
+            .update({
+              subscription_plan: planName as any,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', finalUserId);
+
+          if (directUpdateError) {
+            logger.error(`Error updating subscription_plan to ${planName}:`, directUpdateError);
+          } else {
+            logger.info(`Successfully updated subscription_plan to ${planName} for user ${finalUserId}`);
+          }
+        } else {
+          logger.info(`Successfully updated subscription_plan to ${planName} for user ${finalUserId}`);
+        }
+      } catch (planError) {
+        logger.error('Error updating subscription_plan:', planError as Error);
+        // Don't fail the webhook - continue processing credits
+      }
+    }
+
     // Add credits to user using the RPC function
-    if (credits > 0 && finalUserId && !finalUserId.startsWith('guest_')) {
+    // Use creditsToAdd (which may be overridden for A la carte)
+    if (creditsToAdd > 0 && finalUserId && !finalUserId.startsWith('guest_')) {
       try {
         // Try using RPC function first
         const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
           p_user_id: finalUserId,
-          p_credits: credits,
+          p_credits: creditsToAdd,
           p_description: `One-time payment: ${description}`,
           p_stripe_session_id: session.id,
           p_stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
@@ -463,24 +517,35 @@ async function handleOneTimePaymentCompleted(
         });
 
         if (rpcError) {
-          logger.warn('RPC function not available, trying direct insert:', { error: rpcError });
+          logger.warn('RPC function not available, trying direct insert:', {
+            error: rpcError.message,
+            code: rpcError.code,
+            details: rpcError.details,
+            hint: rpcError.hint
+          });
           
           // Fallback: direct insert into credit_transactions table
-          // Get current balance first
+          // Get current balance first (only non-expired credits)
           const { data: currentBalanceData } = await supabase
             .from('credit_transactions')
-            .select('credits')
+            .select('credits, expires_at')
             .eq('user_id', finalUserId);
           
-          const currentBalance = currentBalanceData?.reduce((sum, t) => sum + (t.credits || 0), 0) || 0;
-          const newBalance = currentBalance + credits;
+          const currentBalance = (currentBalanceData || []).reduce((sum, t) => {
+            // Only count non-expired credits
+            if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+              return sum + (t.credits || 0);
+            }
+            return sum;
+          }, 0);
+          const newBalance = currentBalance + creditsToAdd;
 
           const { error: insertError } = await supabase
             .from('credit_transactions')
             .insert({
               user_id: finalUserId,
               transaction_type: 'purchase',
-              credits: credits,
+              credits: creditsToAdd,
               balance_after: newBalance,
               description: `One-time payment: ${description}`,
               stripe_session_id: session.id,
@@ -491,20 +556,20 @@ async function handleOneTimePaymentCompleted(
           if (insertError) {
             logger.error('Error adding credits via direct insert:', insertError);
             // Store in webhook event data for manual processing if needed
-            logger.warn(`Credits (${credits}) need to be manually added to user ${finalUserId}`);
+            logger.warn(`Credits (${creditsToAdd}) need to be manually added to user ${finalUserId}`);
           } else {
-            logger.info(`Successfully added ${credits} credits to user ${finalUserId} via direct insert`);
+            logger.info(`Successfully added ${creditsToAdd} credits to user ${finalUserId} via direct insert`);
           }
         } else {
-          logger.info(`Successfully added ${credits} credits to user ${finalUserId} via RPC function`);
+          logger.info(`Successfully added ${creditsToAdd} credits to user ${finalUserId} via RPC function`);
         }
       } catch (creditError) {
         logger.error('Error adding credits to user:', creditError as Error);
         // Don't fail the webhook - log for manual processing
       }
-    } else if (credits > 0 && (!finalUserId || finalUserId.startsWith('guest_'))) {
+    } else if (creditsToAdd > 0 && (!finalUserId || finalUserId.startsWith('guest_'))) {
       // For guest users, store credit info in webhook event for processing after account creation
-      logger.info(`Credits (${credits}) will be added after user account creation for email ${userEmail}`);
+      logger.info(`Credits (${creditsToAdd}) will be added after user account creation for email ${userEmail}`);
     }
 
     // Store payment record for reference
@@ -515,7 +580,8 @@ async function handleOneTimePaymentCompleted(
         event_type: 'checkout.session.completed.one_time',
         event_data: {
           ...session,
-          credits,
+          credits: creditsToAdd, // Use the actual credits that will be/were added
+          originalCredits: credits, // Keep original for reference
           offerType,
           amount,
           userEmail,

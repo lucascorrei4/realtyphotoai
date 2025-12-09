@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { CreditProvider } from './contexts/CreditContext';
 import { supabase } from './config/supabase';
 import Layout from './components/Layout';
 import ToastProvider from './components/ToastProvider';
@@ -58,6 +59,67 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
   
   return <>{children}</>;
+};
+
+// Auth Route Wrapper - allows authenticated users to stay on /auth if showing plan selection
+const AuthRouteWrapper: React.FC = () => {
+  const { user } = useAuth();
+  const [showPlanSelection, setShowPlanSelection] = React.useState<string | null>(
+    typeof window !== 'undefined' ? sessionStorage.getItem('show_plan_selection') : null
+  );
+
+  React.useEffect(() => {
+    // Check sessionStorage when user state changes
+    const checkFlag = () => {
+      const flag = typeof window !== 'undefined' ? sessionStorage.getItem('show_plan_selection') : null;
+      if (flag !== showPlanSelection) {
+        console.log('[AuthRouteWrapper] Flag changed:', { old: showPlanSelection, new: flag, userId: user?.id });
+        setShowPlanSelection(flag);
+      }
+    };
+
+    checkFlag();
+
+    // Listen for storage events (when flag changes in other tabs/components)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'show_plan_selection') {
+        console.log('[AuthRouteWrapper] Storage event:', { newValue: e.newValue, userId: user?.id });
+        setShowPlanSelection(e.newValue);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also check more frequently in case flag changes in same tab (sessionStorage events don't fire in same tab)
+    const interval = setInterval(checkFlag, 100);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, [user, showPlanSelection]);
+
+  // Log decision for debugging
+  React.useEffect(() => {
+    if (user) {
+      const flag = typeof window !== 'undefined' ? sessionStorage.getItem('show_plan_selection') : null;
+      console.log('[AuthRouteWrapper] Route decision:', {
+        userId: user.id,
+        hasUser: !!user,
+        showPlanSelection: flag,
+        willRedirect: flag !== 'true' && flag !== 'checking'
+      });
+    }
+  }, [user, showPlanSelection]);
+
+  // If user is authenticated and not showing plan selection (or checking), redirect to dashboard
+  // Allow 'checking' state to stay on /auth while we determine if plan selection is needed
+  if (user && showPlanSelection !== 'true' && showPlanSelection !== 'checking') {
+    console.log('[AuthRouteWrapper] Redirecting to dashboard - no plan selection needed');
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Auth />;
 };
 
 // Auth Callback Handler Component
@@ -143,7 +205,7 @@ function AppRoutes() {
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/payment-success" element={<PaymentSuccess />} />
-      <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <Auth />} />
+      <Route path="/auth" element={<AuthRouteWrapper />} />
       <Route path="/auth/callback" element={<AuthCallbackHandler />} />
       
       {/* Protected Routes */}
@@ -245,10 +307,12 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router>
-          <AppRoutes />
-          <ToastProvider />
-        </Router>
+        <CreditProvider>
+          <Router>
+            <AppRoutes />
+            <ToastProvider />
+          </Router>
+        </CreditProvider>
       </AuthProvider>
     </ThemeProvider>
   );

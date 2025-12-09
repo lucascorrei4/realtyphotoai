@@ -29,6 +29,7 @@ interface OffersSectionProps {
   title?: string;
   subtitle?: string;
   className?: string;
+  embedded?: boolean; // If true, remove background and adjust padding for embedded use
 }
 
 const defaultOffers: Offer[] = [
@@ -55,6 +56,7 @@ const defaultOffers: Offer[] = [
     description: 'Real Vision AI - 3 Intro 6s Viral Videos - We do for you!',
     features: [
       '3 intro 6-second viral videos',
+      '2500 credits included',
       'Professional video creation',
       'Done-for-you service',
       'One-time payment'
@@ -88,7 +90,8 @@ const OffersSection: React.FC<OffersSectionProps> = ({
   offers: customOffers,
   title = 'Choose Your Perfect Plan',
   subtitle = 'Pick the option that works best for your needs. All plans include full access to our AI-powered platform.',
-  className = ''
+  className = '',
+  embedded = false
 }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -213,7 +216,7 @@ const OffersSection: React.FC<OffersSectionProps> = ({
           offerType = 'credits';
         } else if (offer.title.includes('A la carte')) {
           amount = 47;
-          credits = 0; // Videos are done-for-you service
+          credits = 2500; // A la carte includes 2500 credits
           description = offer.description || 'Real Vision AI - 3 Intro 6s Viral Videos - We do for you';
           offerType = 'videos';
         }
@@ -252,7 +255,7 @@ const OffersSection: React.FC<OffersSectionProps> = ({
 
   return (
     <section
-      className={`px-4 py-20 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 ${className}`}
+      className={`rounded-3xl px-4 py-20 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 ${embedded ? '!bg-transparent dark:!bg-transparent !py-12' : ''} ${className}`}
     >
       <div className="mx-auto max-w-7xl">
         {/* Header */}

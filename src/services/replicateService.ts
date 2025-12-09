@@ -320,11 +320,35 @@ export class ReplicateService {
         input: replicateInput,
       }) as string[];
 
+      // Safely extract output info for logging (avoid logging binary data)
+      let outputInfo: Record<string, unknown>;
+      if (Array.isArray(output)) {
+        const firstItem = output[0];
+        const firstItemStr = typeof firstItem === 'string' ? firstItem : String(firstItem);
+        outputInfo = {
+          isArray: true,
+          length: output.length,
+          firstItemType: typeof firstItem,
+          firstItemPreview: firstItemStr.length > 100 
+            ? `${firstItemStr.substring(0, 100)}...` 
+            : firstItemStr
+        };
+      } else {
+        const outputStr = typeof output === 'string' ? output : String(output);
+        outputInfo = {
+          isArray: false,
+          type: typeof output,
+          preview: outputStr.length > 100 
+            ? `${outputStr.substring(0, 100)}...` 
+            : outputStr
+        };
+      }
+      
       logger.info('📥 Replicate API response received', { 
         requestId,
         outputType: typeof output,
         outputLength: Array.isArray(output) ? output.length : 'not array',
-        output: Array.isArray(output) ? output[0] : output
+        ...outputInfo
       });
 
       if (!output || output.length === 0) {

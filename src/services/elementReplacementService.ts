@@ -113,12 +113,12 @@ export class ElementReplacementService {
           outputUrl = output.url;
           logger.info('✅ Output URL from object', { requestId, outputUrl });
         } else {
-          logger.error('❌ Unexpected URL format', { requestId, outputUrlType: typeof output.url, output });
+          logger.error('❌ Unexpected URL format', { requestId, outputUrlType: typeof output.url });
           throw new Error('Unexpected output format from flux-kontext-pro model');
         }
       } else {
-        logger.error('❌ Unexpected output format', { requestId, outputType: typeof output, output });
-        throw new Error(`Unexpected output format from flux-kontext-pro model: ${JSON.stringify(output)}`);
+        logger.error('❌ Unexpected output format', { requestId, outputType: typeof output, isArray: Array.isArray(output), isObject: output && typeof output === 'object' });
+        throw new Error(`Unexpected output format from flux-kontext-pro model`);
       }
 
       logger.info('📥 Output URL extracted', {

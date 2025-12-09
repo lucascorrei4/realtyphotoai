@@ -75,6 +75,10 @@ const Dashboard: React.FC = () => {
   const syncInFlightRef = useRef(false);
   const lastValidPlanRef = useRef<SubscriptionPlan | null>(null);
 
+  // Determine if user has a one-time payment plan (explorer/a_la_carte)
+  // Note: Dashboard doesn't fetch subscription info, so we assume one-time plan users don't have subscriptions
+  const isOneTimePlanUser = user ? (user.subscription_plan === 'explorer' || user.subscription_plan === 'a_la_carte') : false;
+
   const fetchUserStats = useCallback(async () => {
     if (!user?.id) {
       return;
@@ -258,12 +262,50 @@ const Dashboard: React.FC = () => {
         console.warn('[Dashboard] ⚠️ User has no subscription_plan set');
       }
 
+      // Get prepaid credits from credit_transactions table (one-time purchases)
+      let prepaidCredits = 0;
+      try {
+        // Try using RPC function first
+        const { data: prepaidBalance, error: prepaidError } = await supabase.rpc('get_user_prepaid_credit_balance', {
+          p_user_id: user.id
+        });
+
+        if (!prepaidError && prepaidBalance !== null && prepaidBalance !== undefined) {
+          prepaidCredits = prepaidBalance;
+        } else if (prepaidError) {
+          // Fallback: calculate manually if RPC function fails
+          console.warn('RPC function failed, calculating prepaid credits manually:', prepaidError);
+          const now = new Date().toISOString();
+          const { data: transactions } = await supabase
+            .from('credit_transactions')
+            .select('credits, expires_at')
+            .eq('user_id', user.id)
+            .or(`expires_at.is.null,expires_at.gt.${now}`);
+          
+          if (transactions) {
+            prepaidCredits = transactions.reduce((sum, t) => {
+              // Only count non-expired credits
+              if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+                return sum + (t.credits || 0);
+              }
+              return sum;
+            }, 0);
+          }
+        }
+      } catch (prepaidErr) {
+        console.error('Error fetching prepaid credits:', prepaidErr);
+        // Continue with 0 prepaid credits
+      }
+
       // Calculate credit summary using display credits directly (CREDIT_COSTS are display credits)
-      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      // For one-time purchase plans (explorer, a_la_carte), only use prepaid credits, ignore plan credits
+      const isOneTimePlan = user.subscription_plan === 'explorer' || user.subscription_plan === 'a_la_carte';
+      const planDisplayCreditsTotal = isOneTimePlan ? 0 : (userPlan.features.displayCredits || userPlan.features.monthlyCredits);
+      const displayCreditsTotal = planDisplayCreditsTotal + prepaidCredits; // Include prepaid credits
       const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
       const actualCreditsTotal = userPlan.features.monthlyCredits;
-      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
-        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+      const actualCreditsUsed = actualCreditsTotal > 0 && planDisplayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / planDisplayCreditsTotal))
         : displayCreditsUsed;
 
       const creditUsageSummary = {
@@ -272,7 +314,8 @@ const Dashboard: React.FC = () => {
         displayCreditsRemaining,
         actualCreditsTotal,
         actualCreditsUsed,
-        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed),
+        prepaidCredits // Include for debugging
       };
 
       // Count by model type
@@ -634,7 +677,7 @@ const Dashboard: React.FC = () => {
                 onClick={() => setShowPricing(true)}
                 className="bg-white text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
               >
-                Manage Subscription
+                {isOneTimePlanUser ? 'Add More Credits' : 'Manage Subscription'}
               </button>
             </div>
             <Crown className="h-16 w-16 text-green-200" />
@@ -1004,9 +1047,12 @@ const Dashboard: React.FC = () => {
               ×
             </button>
             <OffersSection
-              title="Choose Your Plan"
-              subtitle="Pick the option that works best for your needs. All plans include full access to our AI-powered platform."
+              title={isOneTimePlanUser ? 'Add Credits And Go' : 'Choose Your Plan'}
+              subtitle={isOneTimePlanUser 
+                ? 'Choose a one-time payment option to add credits to your account'
+                : 'Pick the option that works best for your needs. All plans include full access to our AI-powered platform.'}
               className="pt-8"
+              embedded={isOneTimePlanUser}
             />
           </div>
         </div>

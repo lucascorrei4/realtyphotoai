@@ -6,10 +6,12 @@ import { SubscriptionPlan } from '../config/subscriptionPlans';
  * This is kept for backward compatibility, but database is now the source of truth
  */
 export const PLAN_DISPLAY_NAMES: Record<string, string> = {
-  free: 'Explorer',
+  free: 'Free',
   basic: 'Creator',
   premium: 'Studio',
-  enterprise: 'Business'
+  enterprise: 'Business',
+  explorer: 'Explorer',
+  a_la_carte: 'A la carte'
 };
 
 /**

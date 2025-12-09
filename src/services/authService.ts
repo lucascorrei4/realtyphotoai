@@ -34,6 +34,11 @@ export class AuthService {
 
   /**
    * Send login/signup code to user's email
+   * 
+   * Flow:
+   * 1. User enters email → Supabase Auth trigger creates profile with meta_event_name = 'Lead'
+   * 2. Backend sends Lead event to n8n webhook
+   * 3. When user verifies code and accesses platform → authenticateToken middleware upgrades to 'CompleteRegistration'
    */
   async sendAuthCode(email: string, metadata?: Partial<ConversionEventPayload>): Promise<AuthResponse> {
     try {
@@ -52,64 +57,32 @@ export class AuthService {
       logger.info(`🔐 [sendAuthCode] AUTH CODE GENERATED for ${email}: ${code} (expires: ${codeExpiry.toISOString()})`);
       logger.info(`📧 [sendAuthCode] TESTING MODE: Code ${code} returned in response for ${email}`);
 
-      // Wait for user profile to be created (handles race condition with Supabase Auth trigger)
-      // Retry up to 5 times with 500ms delay between attempts
-      let existingUser = null;
-      let retries = 0;
-      const maxRetries = 5;
-      
-      logger.info(`🔍 [sendAuthCode] Starting user profile lookup for ${email} (max retries: ${maxRetries})`);
-      
-      while (retries < maxRetries) {
-        const { data: user, error: fetchError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('email', email)
-          .single();
+      // Check if user exists (simple check, no retries needed)
+      // The Supabase Auth trigger will create the profile with meta_event_name = 'Lead' by default
+      const { data: existingUser } = await supabase
+        .from('user_profiles')
+        .select('id, email, meta_event_name')
+        .eq('email', email)
+        .single();
 
-        if (user) {
-          existingUser = user;
-          logger.info(`✅ [sendAuthCode] User profile found for ${email} on attempt ${retries + 1}`, {
-            userId: user.id,
-            meta_event_name: user.meta_event_name,
-            created_at: user.created_at,
-            updated_at: user.updated_at
-          });
-          break;
-        }
-
-        // If error is not "not found", log it
-        if (fetchError && fetchError.code !== 'PGRST116') {
-          logger.warn(`⚠️ [sendAuthCode] Error fetching user profile for ${email} (attempt ${retries + 1}):`, {
-            error: fetchError.message || String(fetchError),
-            code: fetchError.code
-          });
-        } else if (fetchError?.code === 'PGRST116') {
-          logger.info(`⏳ [sendAuthCode] User profile not found for ${email} (attempt ${retries + 1}/${maxRetries}) - waiting for Supabase trigger...`);
-        }
-
-        retries++;
-        if (retries < maxRetries) {
-          // Wait 500ms before retrying (gives Supabase trigger time to complete)
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      if (!existingUser) {
-        logger.warn(`❌ [sendAuthCode] User profile NOT found for ${email} after ${maxRetries} retries`);
-      }
-
-      // Check if this is a new signup (meta_event_name is null or not set)
-      const isNewSignup = !existingUser || !existingUser.meta_event_name || existingUser.meta_event_name === null;
+      // Check if this is a new signup (meta_event_name is null, empty, or not 'CompleteRegistration')
+      // If user doesn't exist, it's a new signup (trigger will create with 'Lead')
+      // If user exists with 'Lead', it's still a new signup (hasn't accessed platform yet)
+      const isNewSignup = !existingUser || 
+                         !existingUser.meta_event_name || 
+                         existingUser.meta_event_name === null ||
+                         existingUser.meta_event_name === 'Lead';
 
       logger.info(`🔍 [sendAuthCode] Checking signup status for ${email}`, {
         userExists: !!existingUser,
-        meta_event_name: existingUser?.meta_event_name ?? 'null',
+        meta_event_name: existingUser?.meta_event_name ?? 'null (will be set to Lead by trigger)',
         isNewSignup
       });
 
       if (isNewSignup) {
-        // New signup - send Lead event and ensure meta_event_name is set to 'Lead'
+        // New signup - send Lead event to n8n
+        // Note: The Supabase Auth trigger will create the profile with meta_event_name = 'Lead'
+        // So we don't need to update it here - just send the event
         const conversionPayload: ConversionEventPayload = {
           email,
           ...metadata,
@@ -118,7 +91,8 @@ export class AuthService {
 
         logger.info(`📤 [sendAuthCode] Sending Lead event for ${email} (new signup)`, {
           externalId: conversionPayload.externalId,
-          hasMetadata: !!metadata
+          hasMetadata: !!metadata,
+          note: 'Profile will be created by Supabase trigger with meta_event_name = Lead'
         });
         
         // Send Lead event to webhook (fire and forget to not block user flow)
@@ -126,40 +100,26 @@ export class AuthService {
           logger.error(`❌ [sendAuthCode] Failed to send Lead event for ${email}:`, error);
         });
 
-        // Update or set meta_event_name to 'Lead' in user_profiles
-        if (existingUser) {
-          // Update existing profile
-          logger.info(`🔄 [sendAuthCode] Updating meta_event_name to 'Lead' for ${email}`, {
-            userId: existingUser.id,
-            current_meta_event_name: existingUser.meta_event_name
-          });
-          
-          const { error: updateError, data: updateData } = await supabase
+        // If user profile already exists but meta_event_name is null, update it to 'Lead'
+        // (This handles edge cases where trigger didn't set it)
+        if (existingUser && (!existingUser.meta_event_name || existingUser.meta_event_name === null)) {
+          logger.info(`🔄 [sendAuthCode] Updating meta_event_name to 'Lead' for existing profile ${email}`);
+          const { error: updateError } = await supabase
             .from('user_profiles')
             .update({ 
               meta_event_name: 'Lead',
               updated_at: new Date().toISOString()
             })
-            .eq('email', email)
-            .select();
+            .eq('email', email);
 
           if (updateError) {
-            logger.error(`❌ [sendAuthCode] Failed to update meta_event_name for ${email}`, {
+            logger.error(`❌ [sendAuthCode] Failed to update meta_event_name for ${email}:`, {
               error: updateError.message || String(updateError),
-              code: updateError.code,
-              details: updateError
+              code: updateError.code
             });
           } else {
-            logger.info(`✅ [sendAuthCode] Successfully set meta_event_name='Lead' for ${email}`, {
-              userId: existingUser.id,
-              updatedRows: updateData?.length ?? 0
-            });
+            logger.info(`✅ [sendAuthCode] Successfully set meta_event_name='Lead' for ${email}`);
           }
-        } else {
-          // Profile doesn't exist yet - try to find Supabase Auth user and create profile
-          // Note: This requires the Supabase Auth user to exist first
-          logger.warn(`⚠️ [sendAuthCode] Profile not found for ${email} after ${maxRetries} retries. Lead event sent but profile not created yet.`);
-          logger.info(`ℹ️ [sendAuthCode] Profile will be created by Supabase Auth trigger, then meta_event_name should be set to 'Lead'`);
         }
 
         return {
@@ -168,8 +128,8 @@ export class AuthService {
           code: code // Remove this in production
         };
       } else {
-        // Existing user - no Lead event needed
-        logger.info(`⏭️ [sendAuthCode] Skipping Lead event for ${email} (existing user)`, {
+        // Existing user who has already completed registration - no Lead event needed
+        logger.info(`⏭️ [sendAuthCode] Skipping Lead event for ${email} (existing user, already completed registration)`, {
           meta_event_name: existingUser.meta_event_name,
           userId: existingUser.id
         });

@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, CheckCircle, AlertCircle, MailCheck, Clock, Copy, Bell } from 'lucide-react';
+import OffersSection from './OffersSection';
+import { getBackendUrl } from '../config/api';
+import { buildConversionMetadata } from '../utils/conversionTracking';
+import { supabase } from '../config/supabase';
 
 export interface LoginFormProps {
   variant?: 'landing' | 'auth-page';
@@ -20,7 +24,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
 }) => {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [step, setStep] = useState<'email' | 'code' | 'plan'>('email');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
@@ -29,12 +33,13 @@ const LoginForm: React.FC<LoginFormProps> = ({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [codeSentTime, setCodeSentTime] = useState<number | null>(null);
   const [hasAutoSubmitError, setHasAutoSubmitError] = useState(false);
+  const [isFirstSignIn, setIsFirstSignIn] = useState(false);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
   const autoSubmitTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { sendCode, signIn } = useAuth();
+  const { sendCode, signIn, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const STORAGE_KEY = 'login_form_state';
@@ -121,6 +126,109 @@ const LoginForm: React.FC<LoginFormProps> = ({
     }
   }, [step]);
 
+  // Check if user should see plan selection step
+  // Show plan selection if:
+  // 1. First-time sign in (meta_event_name is 'Lead' or null), OR
+  // 2. User is on free plan and doesn't have an active paid subscription
+  const checkIsFirstSignIn = useCallback(async (userId: string): Promise<boolean> => {
+    try {
+      // Check user profile directly from Supabase before it gets updated
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('meta_event_name, subscription_plan')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error checking user profile:', error);
+        return false;
+      }
+
+      if (!profile) {
+        // Profile doesn't exist yet - this is a first sign in
+        console.log('[LoginForm] Profile not found - treating as first sign in');
+        return true;
+      }
+
+      // If meta_event_name is 'Lead' or null, this is first sign in
+      const isFirstTimeSignIn = profile.meta_event_name === 'Lead' || profile.meta_event_name === null;
+      
+      // If user is on free plan (or plan is null/undefined), check if they have an active paid subscription
+      const subscriptionPlan = profile.subscription_plan || 'free'; // Default to 'free' if null/undefined
+      if (subscriptionPlan === 'free') {
+        try {
+          // Check for active subscriptions in stripe_subscriptions table
+          const { data: subscriptions, error: subError } = await supabase
+            .from('stripe_subscriptions')
+            .select('id, status, plan_name')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .limit(1);
+
+          if (subError) {
+            console.error('[LoginForm] Error checking subscriptions:', subError);
+            // If we can't check subscriptions, default to showing plan selection for free users
+            // This is safer - we'd rather show plan selection than miss it
+            const shouldShowPlan = isFirstTimeSignIn || true;
+            console.log('[LoginForm] Profile check result (subscription check failed - defaulting to show plan):', {
+              userId,
+              meta_event_name: profile.meta_event_name,
+              subscription_plan: subscriptionPlan,
+              isFirstTimeSignIn,
+              subError: subError.message,
+              shouldShowPlan
+            });
+            return shouldShowPlan;
+          }
+
+          // If user is on free plan and has no active subscription, show plan selection
+          const hasActiveSubscription = subscriptions && subscriptions.length > 0;
+          const shouldShowPlan = isFirstTimeSignIn || !hasActiveSubscription;
+          
+          console.log('[LoginForm] Profile check result (free user):', {
+            userId,
+            meta_event_name: profile.meta_event_name,
+            subscription_plan: subscriptionPlan,
+            isFirstTimeSignIn,
+            hasActiveSubscription,
+            activeSubscriptions: subscriptions?.length || 0,
+            shouldShowPlan
+          });
+          
+          return shouldShowPlan;
+        } catch (subCheckError) {
+          console.error('[LoginForm] Exception checking subscriptions:', subCheckError);
+          // If subscription check fails, default to showing plan selection for free users
+          // This is safer - we'd rather show plan selection than miss it
+          const shouldShowPlan = isFirstTimeSignIn || true;
+          console.log('[LoginForm] Profile check result (subscription check exception - defaulting to show plan):', {
+            userId,
+            meta_event_name: profile.meta_event_name,
+            subscription_plan: subscriptionPlan,
+            isFirstTimeSignIn,
+            error: subCheckError instanceof Error ? subCheckError.message : String(subCheckError),
+            shouldShowPlan
+          });
+          return shouldShowPlan;
+        }
+      }
+
+      // If user is not on free plan, only show plan selection if it's their first sign in
+      const shouldShowPlan = isFirstTimeSignIn;
+      console.log('[LoginForm] Profile check result (non-free user):', {
+        userId,
+        meta_event_name: profile.meta_event_name,
+        subscription_plan: subscriptionPlan,
+        isFirstTimeSignIn,
+        shouldShowPlan
+      });
+      return shouldShowPlan;
+    } catch (error) {
+      console.error('Error checking first sign in:', error);
+      return false;
+    }
+  }, []);
+
   // Memoize the verify function to prevent unnecessary re-renders
   const handleAutoVerify = useCallback(async () => {
     if (!isMountedRef.current || !code || code.length !== 6 || loading || autoSubmitAttempted || hasAutoSubmitError) {
@@ -132,33 +240,119 @@ const LoginForm: React.FC<LoginFormProps> = ({
       setLoading(true);
       setMessage('');
       
-      const result = await signIn(email, code);
+      // Set flag IMMEDIATELY before verifyOtp to prevent App.tsx from redirecting
+      // This is critical because verifyOtp creates a session, which triggers AuthContext
+      // to set the user state, which would cause an immediate redirect
+      // Use a more aggressive approach - set to 'true' by default, then remove if not needed
+      sessionStorage.setItem('show_plan_selection', 'checking');
       
-      if (!isMountedRef.current) return; // Component unmounted during async operation
+      // Verify OTP directly to get user before signIn triggers complete-registration
+      const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email'
+      });
+
+      if (verifyError) {
+        sessionStorage.removeItem('show_plan_selection');
+        setMessage(verifyError.message);
+        setMessageType('error');
+        setAutoSubmitAttempted(true);
+        setHasAutoSubmitError(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!verifyData?.user) {
+        sessionStorage.removeItem('show_plan_selection');
+        setMessage('Verification failed');
+        setMessageType('error');
+        setAutoSubmitAttempted(true);
+        setHasAutoSubmitError(true);
+        setLoading(false);
+        return;
+      }
+
+      // Check profile IMMEDIATELY after verifyOtp, before any async complete-registration calls
+      const firstSignIn = await checkIsFirstSignIn(verifyData.user.id);
+      setIsFirstSignIn(firstSignIn);
+
+      // Update flag based on check result - set IMMEDIATELY before any other async operations
+      if (firstSignIn) {
+        sessionStorage.setItem('show_plan_selection', 'true');
+        console.log('[LoginForm] First sign in detected - showing plan selection step', {
+          userId: verifyData.user.id,
+          firstSignIn
+        });
+      } else {
+        sessionStorage.removeItem('show_plan_selection');
+        console.log('[LoginForm] Returning user - will redirect to dashboard', {
+          userId: verifyData.user.id,
+          firstSignIn
+        });
+      }
       
-      if (result.success) {
-        setMessage(result.message);
-        setMessageType('success');
-        setHasAutoSubmitError(false); // Reset error flag on success
-        
-        // Clear persisted state on successful login
-        sessionStorage.removeItem(STORAGE_KEY);
-        
-        if (onSuccess) {
-          onSuccess();
-        }
-        
+      // Force a small delay to ensure sessionStorage is written before any navigation attempts
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Trigger complete-registration manually (since we already verified OTP)
+      // This ensures the backend knows about the registration
+      const backendUrl = getBackendUrl();
+      const conversionMetadata = buildConversionMetadata(email, verifyData.user.id);
+      
+      fetch(`${backendUrl}/api/v1/auth/complete-registration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: verifyData.user.id,
+          ...conversionMetadata,
+        }),
+      }).catch(err => {
+        console.error('Error calling complete-registration:', err);
+        // Non-blocking - proceed anyway
+      });
+
+      // Refresh user data from AuthContext now that session is established
+      if (refreshUser) {
+        await refreshUser().catch(err => {
+          console.error('Error refreshing user:', err);
+          // Non-blocking
+        });
+      }
+
+      setMessage('Successfully signed in!');
+      setMessageType('success');
+      setHasAutoSubmitError(false); // Reset error flag on success
+      
+      // Clear persisted state on successful login
+      sessionStorage.removeItem(STORAGE_KEY);
+      
+      if (firstSignIn) {
+        // Show plan selection step for new users
+        console.log('[LoginForm] First sign in detected - showing plan selection step');
         setTimeout(() => {
           if (isMountedRef.current) {
-            navigate(redirectTo);
+            setStep('plan');
+            setLoading(false); // Stop loading so user can interact
           }
         }, 500);
+        return; // Exit early - don't navigate to dashboard
       } else {
-        setMessage(result.message);
-        setMessageType('error');
-        setAutoSubmitAttempted(true); // Keep as true to prevent retry
-        setHasAutoSubmitError(true); // Mark that we had an error, don't auto-retry
+        // Clear the flag for returning users
+        sessionStorage.removeItem('show_plan_selection');
       }
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          navigate(redirectTo);
+        }
+      }, 500);
     } catch (error) {
       if (!isMountedRef.current) return;
       console.error('Auto-verify error:', error);
@@ -171,7 +365,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
         setLoading(false);
       }
     }
-  }, [code, email, loading, autoSubmitAttempted, hasAutoSubmitError, signIn, navigate, redirectTo, onSuccess]);
+  }, [code, email, loading, autoSubmitAttempted, hasAutoSubmitError, navigate, redirectTo, onSuccess, checkIsFirstSignIn, refreshUser]);
 
   // Auto-submit when 6 digits are entered
   useEffect(() => {
@@ -345,35 +539,122 @@ const LoginForm: React.FC<LoginFormProps> = ({
       setMessage('');
       setHasAutoSubmitError(false); // Reset error flag on manual verify
 
-      const result = await signIn(email, code);
+      // Set flag IMMEDIATELY before verifyOtp to prevent App.tsx from redirecting
+      // This is critical because verifyOtp creates a session, which triggers AuthContext
+      // to set the user state, which would cause an immediate redirect
+      sessionStorage.setItem('show_plan_selection', 'checking');
+
+      // Verify OTP directly to get user before signIn triggers complete-registration
+      const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email'
+      });
+
+      if (verifyError) {
+        sessionStorage.removeItem('show_plan_selection');
+        setMessage(verifyError.message);
+        setMessageType('error');
+        setAutoSubmitAttempted(true);
+        setHasAutoSubmitError(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!verifyData?.user) {
+        sessionStorage.removeItem('show_plan_selection');
+        setMessage('Verification failed');
+        setMessageType('error');
+        setAutoSubmitAttempted(true);
+        setHasAutoSubmitError(true);
+        setLoading(false);
+        return;
+      }
+
+      // Check profile IMMEDIATELY after verifyOtp, before any async complete-registration calls
+      const firstSignIn = await checkIsFirstSignIn(verifyData.user.id);
+      setIsFirstSignIn(firstSignIn);
+
+      // Set flag to prevent App.tsx from redirecting if this is first sign in
+      // Update flag IMMEDIATELY before any other async operations
+      if (firstSignIn) {
+        sessionStorage.setItem('show_plan_selection', 'true');
+        console.log('[LoginForm] First sign in detected - showing plan selection step', {
+          userId: verifyData.user.id,
+          firstSignIn
+        });
+      } else {
+        sessionStorage.removeItem('show_plan_selection');
+        console.log('[LoginForm] Returning user - will redirect to dashboard', {
+          userId: verifyData.user.id,
+          firstSignIn
+        });
+      }
       
-      if (!isMountedRef.current) return; // Component unmounted during async operation
+      // Force a small delay to ensure sessionStorage is written before any navigation attempts
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Trigger complete-registration manually (since we already verified OTP)
+      // This ensures the backend knows about the registration
+      const backendUrl = getBackendUrl();
+      const conversionMetadata = buildConversionMetadata(email, verifyData.user.id);
       
-      if (result.success) {
-        setMessage(result.message);
-        setMessageType('success');
-        setHasAutoSubmitError(false);
-        
-        // Clear persisted state on successful login
-        sessionStorage.removeItem(STORAGE_KEY);
-        
-        // Call onSuccess callback if provided
-        if (onSuccess) {
-          onSuccess();
-        }
-        
-        // Small delay to show success message before redirect
+      fetch(`${backendUrl}/api/v1/auth/complete-registration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: verifyData.user.id,
+          ...conversionMetadata,
+        }),
+      }).catch(err => {
+        console.error('Error calling complete-registration:', err);
+        // Non-blocking - proceed anyway
+      });
+
+      // Refresh user data from AuthContext now that session is established
+      if (refreshUser) {
+        await refreshUser().catch(err => {
+          console.error('Error refreshing user:', err);
+          // Non-blocking
+        });
+      }
+
+      setMessage('Successfully signed in!');
+      setMessageType('success');
+      setHasAutoSubmitError(false);
+      
+      // Clear persisted state on successful login
+      sessionStorage.removeItem(STORAGE_KEY);
+      
+      if (firstSignIn) {
+        // Show plan selection step for new users
+        // Don't navigate away - stay on the form to show plan selection
+        console.log('[LoginForm] First sign in detected - showing plan selection step');
         setTimeout(() => {
           if (isMountedRef.current) {
-            navigate(redirectTo);
+            setStep('plan');
+            setLoading(false); // Stop loading so user can interact
           }
         }, 500);
+        return; // Exit early - don't navigate to dashboard
       } else {
-        setMessage(result.message);
-        setMessageType('error');
-        setAutoSubmitAttempted(true); // Prevent auto-retry
-        setHasAutoSubmitError(true);
+        // Clear the flag for returning users
+        sessionStorage.removeItem('show_plan_selection');
       }
+      
+      // Not a first-time user, proceed with normal flow
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      // Small delay to show success message before redirect
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          navigate(redirectTo);
+        }
+      }, 500);
     } catch (error) {
       if (!isMountedRef.current) return;
       console.error('Verify code error:', error);
@@ -448,8 +729,23 @@ const LoginForm: React.FC<LoginFormProps> = ({
   const isCountdownActive = countdown !== null && countdown > 0;
   const isCountdownLow = countdown !== null && countdown < 60000; // Less than 1 minute
 
+  // Handler for when user selects a plan (skip plan selection and go to dashboard)
+  const handlePlanSelected = () => {
+    // Clear the flag so App.tsx can redirect normally
+    sessionStorage.removeItem('show_plan_selection');
+    
+    if (onSuccess) {
+      onSuccess();
+    }
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        navigate(redirectTo);
+      }
+    }, 300);
+  };
+
   // Safety check: ensure step is valid
-  if (step !== 'email' && step !== 'code') {
+  if (step !== 'email' && step !== 'code' && step !== 'plan') {
     console.error('Invalid step value:', step);
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -466,9 +762,11 @@ const LoginForm: React.FC<LoginFormProps> = ({
       <div className={`min-h-screen flex items-center justify-center p-4 transition-all duration-500 ${
         step === 'code' 
           ? 'bg-gradient-to-br from-blue-950 via-indigo-950 to-purple-950' 
+          : step === 'plan'
+          ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950'
           : 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900'
       } ${className}`}>
-        <div className="max-w-md w-full space-y-8">
+        <div className={`w-full space-y-8 ${step === 'plan' ? 'max-w-6xl' : 'max-w-md'}`}>
           {/* Logo */}
           {showLogo && (
             <div className="text-center mb-4">
@@ -483,33 +781,33 @@ const LoginForm: React.FC<LoginFormProps> = ({
           )}
 
           {/* Step Indicator */}
-          <div className="flex items-center justify-center space-x-4 mb-6">
+          <div className="flex items-center justify-center space-x-2 mb-6 flex-wrap">
             <div className={`flex items-center space-x-2 transition-all duration-300 ${
               step === 'email' ? 'scale-105' : ''
             }`}>
               <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
                 step === 'email'
                   ? 'bg-blue-500 text-white ring-4 ring-blue-500/30'
-                  : step === 'code'
+                  : (step === 'code' || step === 'plan')
                     ? 'bg-green-500 text-white'
                     : 'bg-slate-600 text-gray-300'
               }`}>
-                {step === 'code' ? (
+                {(step === 'code' || step === 'plan') ? (
                   <CheckCircle className="h-5 w-5" />
                 ) : (
                   '1'
                 )}
               </div>
-              <span className={`text-sm font-medium transition-colors ${
-                step === 'email' ? 'text-white' : step === 'code' ? 'text-green-400' : 'text-gray-400'
+              <span className={`text-sm font-medium transition-colors hidden sm:inline ${
+                step === 'email' ? 'text-white' : (step === 'code' || step === 'plan') ? 'text-green-400' : 'text-gray-400'
               }`}>
-                Add your email
+                Email
               </span>
             </div>
             
             {/* Connector Line */}
-            <div className={`h-0.5 w-12 transition-all duration-300 ${
-              step === 'code' ? 'bg-blue-500' : 'bg-slate-600'
+            <div className={`h-0.5 w-8 transition-all duration-300 ${
+              (step === 'code' || step === 'plan') ? 'bg-blue-500' : 'bg-slate-600'
             }`}></div>
             
             <div className={`flex items-center space-x-2 transition-all duration-300 ${
@@ -518,26 +816,50 @@ const LoginForm: React.FC<LoginFormProps> = ({
               <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
                 step === 'code'
                   ? 'bg-blue-500 text-white ring-4 ring-blue-500/30 animate-pulse'
+                  : step === 'plan'
+                    ? 'bg-green-500 text-white'
+                    : 'bg-slate-600 text-gray-300'
+              }`}>
+                {step === 'plan' ? (
+                  <CheckCircle className="h-5 w-5" />
+                ) : (
+                  '2'
+                )}
+              </div>
+              <span className={`text-sm font-medium transition-colors hidden sm:inline ${
+                step === 'code' ? 'text-white' : step === 'plan' ? 'text-green-400' : 'text-gray-400'
+              }`}>
+                Code
+              </span>
+            </div>
+            
+            {/* Connector Line */}
+            <div className={`h-0.5 w-8 transition-all duration-300 ${
+              step === 'plan' ? 'bg-blue-500' : 'bg-slate-600'
+            }`}></div>
+            
+            <div className={`flex items-center space-x-2 transition-all duration-300 ${
+              step === 'plan' ? 'scale-105' : ''
+            }`}>
+              <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
+                step === 'plan'
+                  ? 'bg-blue-500 text-white ring-4 ring-blue-500/30 animate-pulse'
                   : 'bg-slate-600 text-gray-300'
               }`}>
-                2
+                3
               </div>
-              <span className={`text-sm font-medium transition-colors ${
-                step === 'code' ? 'text-white' : 'text-gray-400'
+              <span className={`text-sm font-medium transition-colors hidden sm:inline ${
+                step === 'plan' ? 'text-white' : 'text-gray-400'
               }`}>
-                Confirm the code
+                Plan
               </span>
             </div>
           </div>
 
           {/* Header */}
           <div className="text-center">
-            <h2 className={`text-3xl font-bold ${
-              step === 'email' 
-                ? 'text-white' 
-                : 'text-white'
-            }`}>
-              {step === 'email' ? 'Welcome Back' : 'Enter Your Code'}
+            <h2 className={`text-3xl font-bold text-white`}>
+              {step === 'email' ? 'Welcome' : step === 'code' ? 'Enter Your Code' : 'Choose Your Plan'}
             </h2>
             {step === 'code' && (
               <div className="mt-3 mb-6">
@@ -578,6 +900,17 @@ const LoginForm: React.FC<LoginFormProps> = ({
           </div>
 
           {/* Form */}
+          {step === 'plan' ? (
+            <div className="w-full flex flex-col items-center">
+              <div className="w-full max-w-6xl">
+                <OffersSection 
+                  title="Add Credits And Go"
+                  subtitle="Select a plan to get started with RealVision AI"
+                  embedded={true}
+                />
+              </div>
+            </div>
+          ) : (
           <div className="bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 p-8 space-y-6">
             {step === 'email' ? (
               <div className="space-y-4">
@@ -715,6 +1048,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
               </div>
             )}
           </div>
+          )}
 
           {/* Footer */}
           <div className="text-center text-sm text-gray-400">
@@ -745,37 +1079,37 @@ const LoginForm: React.FC<LoginFormProps> = ({
     <div className={className}>
 
       {/* Step Indicator */}
-      <div className="flex items-center justify-center space-x-4 mb-6">
+      <div className="flex items-center justify-center space-x-2 mb-6 flex-wrap">
         <div className={`flex items-center space-x-2 transition-all duration-300 ${
           step === 'email' ? 'scale-105' : ''
         }`}>
           <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
             step === 'email'
               ? 'bg-blue-600 text-white ring-4 ring-blue-600/30 dark:bg-blue-500'
-              : step === 'code'
+              : (step === 'code' || step === 'plan')
                 ? 'bg-green-500 text-white'
                 : 'bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
           }`}>
-            {step === 'code' ? (
+            {(step === 'code' || step === 'plan') ? (
               <CheckCircle className="h-5 w-5" />
             ) : (
               '1'
             )}
           </div>
-          <span className={`text-sm font-medium transition-colors ${
+          <span className={`text-sm font-medium transition-colors hidden sm:inline ${
             step === 'email' 
               ? 'text-blue-600 dark:text-blue-400 font-semibold' 
-              : step === 'code' 
+              : (step === 'code' || step === 'plan')
                 ? 'text-green-600 dark:text-green-400' 
                 : 'text-gray-500 dark:text-gray-400'
           }`}>
-            Add your email
+            Email
           </span>
         </div>
         
         {/* Connector Line */}
-        <div className={`h-0.5 w-12 transition-all duration-300 ${
-          step === 'code' 
+        <div className={`h-0.5 w-8 transition-all duration-300 ${
+          (step === 'code' || step === 'plan')
             ? 'bg-blue-600 dark:bg-blue-500' 
             : 'bg-gray-300 dark:bg-gray-600'
         }`}></div>
@@ -786,16 +1120,50 @@ const LoginForm: React.FC<LoginFormProps> = ({
           <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
             step === 'code'
               ? 'bg-blue-600 text-white ring-4 ring-blue-600/30 animate-pulse dark:bg-blue-500'
+              : step === 'plan'
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
+          }`}>
+            {step === 'plan' ? (
+              <CheckCircle className="h-5 w-5" />
+            ) : (
+              '2'
+            )}
+          </div>
+          <span className={`text-sm font-medium transition-colors hidden sm:inline ${
+            step === 'code' 
+              ? 'text-blue-600 dark:text-blue-400 font-semibold' 
+              : step === 'plan'
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-gray-500 dark:text-gray-400'
+          }`}>
+            Code
+          </span>
+        </div>
+        
+        {/* Connector Line */}
+        <div className={`h-0.5 w-8 transition-all duration-300 ${
+          step === 'plan'
+            ? 'bg-blue-600 dark:bg-blue-500' 
+            : 'bg-gray-300 dark:bg-gray-600'
+        }`}></div>
+        
+        <div className={`flex items-center space-x-2 transition-all duration-300 ${
+          step === 'plan' ? 'scale-105' : ''
+        }`}>
+          <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold text-sm transition-all duration-300 ${
+            step === 'plan'
+              ? 'bg-blue-600 text-white ring-4 ring-blue-600/30 animate-pulse dark:bg-blue-500'
               : 'bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-300'
           }`}>
-            2
+            3
           </div>
-          <span className={`text-sm font-medium transition-colors ${
-            step === 'code' 
+          <span className={`text-sm font-medium transition-colors hidden sm:inline ${
+            step === 'plan' 
               ? 'text-blue-600 dark:text-blue-400 font-semibold' 
               : 'text-gray-500 dark:text-gray-400'
           }`}>
-            Confirm the code
+            Plan
           </span>
         </div>
       </div>
@@ -813,7 +1181,7 @@ const LoginForm: React.FC<LoginFormProps> = ({
           )}
         </div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">
-          {step === 'email' ? 'Get Started Today' : 'Enter Your Code'}
+          {step === 'email' ? 'Get Started Today' : step === 'code' ? 'Enter Your Code' : 'Choose Your Plan'}
         </h2>
         {step === 'email' ? (
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
@@ -850,6 +1218,17 @@ const LoginForm: React.FC<LoginFormProps> = ({
         )}
       </div>
 
+      {step === 'plan' ? (
+        <div className="w-full flex flex-col items-center">
+          <div className="w-full max-w-6xl">
+            <OffersSection 
+              title="Add Credits And Go"
+              subtitle="Select a plan to get started with RealVision AI"
+              embedded={true}
+            />
+          </div>
+        </div>
+      ) : (
       <div className={`space-y-6 rounded-2xl p-6 shadow-xl ring-offset-2 transition-all duration-500 ${
         step === 'code'
           ? 'bg-white dark:bg-slate-800 ring-4 ring-blue-500/60 shadow-2xl shadow-blue-500/30'
@@ -989,26 +1368,30 @@ const LoginForm: React.FC<LoginFormProps> = ({
           </div>
         )}
       </div>
+      )}
 
-      <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
-        {step === 'email' ? (
-          <p>Don't have an account? Enter your email and we'll create one instantly.</p>
-        ) : (
-          <p className="text-xs">
-            Didn't receive it? Check spam or{' '}
-            <button
-              onClick={handleResendCode}
-              disabled={loading}
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline disabled:opacity-50"
-            >
-              resend
-            </button>
-          </p>
-        )}
-      </div>
+      {step !== 'plan' && (
+        <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+          {step === 'email' ? (
+            <p>Don't have an account? Enter your email and we'll create one instantly.</p>
+          ) : (
+            <p className="text-xs">
+              Didn't receive it? Check spam or{' '}
+              <button
+                onClick={handleResendCode}
+                disabled={loading}
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline disabled:opacity-50"
+              >
+                resend
+              </button>
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
 export default LoginForm;
+
 

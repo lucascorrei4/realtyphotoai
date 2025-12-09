@@ -6,9 +6,10 @@ import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/errorHandler';
 import { SUBSCRIPTION_PLANS } from '../config/subscriptionPlans';
 import { supabase } from '../config/supabase';
+import { getStripeSecretKey } from '../utils/stripeConfig';
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+// Initialize Stripe - uses test key in development if STRIPE_SECRET_KEY_TEST is set
+const stripe = new Stripe(getStripeSecretKey(), {
   apiVersion: '2023-10-16',
 });
 
@@ -238,7 +239,11 @@ router.post('/checkout', asyncHandler(async (req: express.Request, res) => {
     customData.utm_term = finalUtmTerm;
   }
 
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  // Use localhost in development, production URL otherwise
+  const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+  const baseUrl = isDevelopment 
+    ? 'http://localhost:3000'
+    : (process.env.FRONTEND_URL || 'https://realvisionaire.com');
   
   // For guest checkout, redirect to auth page to create account after payment
   // For logged-in users, redirect to dashboard
@@ -343,7 +348,11 @@ router.post('/checkout-one-time', asyncHandler(async (req: express.Request, res)
     external_id: userId,
   };
 
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  // Use localhost in development, production URL otherwise
+  const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+  const baseUrl = isDevelopment 
+    ? 'http://localhost:3000'
+    : (process.env.FRONTEND_URL || 'https://realvisionaire.com');
   
   // Success URL with session ID for magic link authentication
   const successUrl = `${baseUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}&type=one_time`;
@@ -364,9 +373,13 @@ router.post('/checkout-one-time', asyncHandler(async (req: express.Request, res)
     customData,
   };
 
-  // Conditionally add optional properties only if they have valid values
-  if (credits !== undefined && credits !== null && credits > 0) {
+  // Always include credits if provided, even if 0 (for tracking purposes)
+  // For DIY 800, credits should be 800
+  if (credits !== undefined && credits !== null) {
     checkoutData.credits = credits;
+  } else if (offerType === 'credits' && amount === 27) {
+    // Default to 800 credits for $27 DIY 800 offer if not specified
+    checkoutData.credits = 800;
   }
   
   if (userEmail && userEmail.trim()) {
@@ -1265,8 +1278,24 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
     // Get credits from metadata
     const credits = parseInt(session.metadata?.credits || '0', 10);
     const description = session.metadata?.description || 'One-time payment';
+    const offerType = session.metadata?.offer_type || 'credits';
+    const amount = parseFloat(session.metadata?.amount || '0');
+    
+    // Determine subscription plan and credits to add
+    // DIY 800 ($27, 800 credits) -> 'explorer'
+    // A la carte ($47, 2500 credits) -> 'a_la_carte'
+    let planName: string | null = null;
+    let creditsToAdd = credits; // Default to credits from metadata
+    
+    if (offerType === 'credits' && amount === 27 && credits === 800) {
+      planName = 'explorer';
+    } else if (offerType === 'videos' && amount === 47) {
+      planName = 'a_la_carte';
+      // A la carte purchase always includes 2500 credits
+      creditsToAdd = 2500;
+    }
 
-    if (credits <= 0) {
+    if (creditsToAdd <= 0) {
       res.status(400).json({
         success: false,
         error: 'NO_CREDITS',
@@ -1287,17 +1316,61 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
       res.json({
         success: true,
         message: 'Credits already added for this session',
-        credits: credits
+        credits: creditsToAdd
       });
       return;
     }
 
+    // Update subscription_plan if we identified a plan
+    if (planName) {
+      try {
+        const { error: planUpdateError } = await supabase.rpc('update_user_subscription_plan', {
+          user_uuid: userId,
+          new_plan: planName
+        });
+
+        if (planUpdateError) {
+          logger.warn(`Failed to update subscription_plan to ${planName}, trying direct update:`, {
+            error: planUpdateError.message,
+            code: planUpdateError.code,
+            details: planUpdateError.details,
+            hint: planUpdateError.hint
+          });
+          // Fallback: direct update
+          const { error: directUpdateError } = await supabase
+            .from('user_profiles')
+            .update({
+              subscription_plan: planName as any,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+
+          if (directUpdateError) {
+            logger.error(`Error updating subscription_plan to ${planName}:`, {
+              error: directUpdateError.message,
+              code: directUpdateError.code,
+              details: directUpdateError.details,
+              hint: directUpdateError.hint
+            });
+          } else {
+            logger.info(`Successfully updated subscription_plan to ${planName} for user ${userId}`);
+          }
+        } else {
+          logger.info(`Successfully updated subscription_plan to ${planName} for user ${userId}`);
+        }
+      } catch (planError) {
+        logger.error('Error updating subscription_plan:', planError as Error);
+        // Don't fail - continue processing credits
+      }
+    }
+
     // Add credits using RPC function or direct insert
+    // Use creditsToAdd (which may be overridden for A la carte)
     try {
       // Try RPC function first
       const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
         p_user_id: userId,
-        p_credits: credits,
+        p_credits: creditsToAdd,
         p_description: `One-time payment: ${description}`,
         p_stripe_session_id: sessionId,
         p_stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
@@ -1305,23 +1378,34 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
       });
 
       if (rpcError) {
-        logger.warn('RPC function not available, trying direct insert:', { error: rpcError });
+        logger.warn('RPC function not available, trying direct insert:', {
+          error: rpcError.message,
+          code: rpcError.code,
+          details: rpcError.details,
+          hint: rpcError.hint
+        });
         
         // Fallback: direct insert
         const { data: currentBalanceData } = await supabase
           .from('credit_transactions')
-          .select('credits')
+          .select('credits, expires_at')
           .eq('user_id', userId);
         
-        const currentBalance = currentBalanceData?.reduce((sum, t) => sum + (t.credits || 0), 0) || 0;
-        const newBalance = currentBalance + credits;
+        const currentBalance = (currentBalanceData || []).reduce((sum, t) => {
+          // Only count non-expired credits
+          if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+            return sum + (t.credits || 0);
+          }
+          return sum;
+        }, 0);
+        const newBalance = currentBalance + creditsToAdd;
 
         const { error: insertError } = await supabase
           .from('credit_transactions')
           .insert({
             user_id: userId,
             transaction_type: 'purchase',
-            credits: credits,
+            credits: creditsToAdd,
             balance_after: newBalance,
             description: `One-time payment: ${description}`,
             stripe_session_id: sessionId,
@@ -1334,12 +1418,12 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
         }
       }
 
-      logger.info(`Successfully added ${credits} credits to user ${userId} from session ${sessionId}`);
+      logger.info(`Successfully added ${creditsToAdd} credits to user ${userId} from session ${sessionId}`);
 
       res.json({
         success: true,
         message: 'Credits added successfully',
-        credits: credits
+        credits: creditsToAdd
       });
     } catch (creditError) {
       logger.error('Error adding credits:', creditError as Error);
@@ -1356,6 +1440,83 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
       success: false,
       error: 'VERIFICATION_FAILED',
       message: error instanceof Error ? error.message : 'Failed to process credit addition'
+    });
+  }
+}));
+
+/**
+ * Get user's credit balance including prepaid credits
+ * GET /stripe/credit-balance
+ */
+router.get('/credit-balance', authenticateToken, asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    res.status(401).json({
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'User authentication required'
+    });
+    return;
+  }
+
+  try {
+    // Get prepaid credits from credit_transactions
+    let prepaidCredits = 0;
+    try {
+      const { data: prepaidBalance, error: prepaidError } = await supabase.rpc('get_user_prepaid_credit_balance', {
+        p_user_id: userId
+      });
+
+      if (!prepaidError && prepaidBalance !== null && prepaidBalance !== undefined) {
+        prepaidCredits = prepaidBalance;
+      } else if (prepaidError) {
+        // Fallback: calculate manually
+        const now = new Date().toISOString();
+        const { data: transactions } = await supabase
+          .from('credit_transactions')
+          .select('credits, expires_at')
+          .eq('user_id', userId)
+          .or(`expires_at.is.null,expires_at.gt.${now}`);
+        
+        if (transactions) {
+          prepaidCredits = transactions.reduce((sum, t) => {
+            if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+              return sum + (t.credits || 0);
+            }
+            return sum;
+          }, 0);
+        }
+      }
+    } catch (err) {
+      logger.warn('Error fetching prepaid credits:', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+
+    // Get user profile for plan info
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('subscription_plan, monthly_generations_limit')
+      .eq('id', userId)
+      .single();
+
+    const planName = userProfile?.subscription_plan || 'free';
+    const monthlyLimit = userProfile?.monthly_generations_limit || 0;
+
+    res.json({
+      success: true,
+      prepaidCredits,
+      monthlyLimit,
+      subscriptionPlan: planName,
+      totalAvailableCredits: monthlyLimit + prepaidCredits
+    });
+  } catch (error) {
+    logger.error('Error fetching credit balance:', error as Error);
+    res.status(500).json({
+      success: false,
+      error: 'FETCH_FAILED',
+      message: 'Failed to fetch credit balance'
     });
   }
 }));

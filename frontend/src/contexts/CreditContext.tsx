@@ -120,15 +120,53 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           credits: getVideoCredits(g.metadata?.duration || g.metadata?.duration_seconds || 6)
         }));
       
+      // Get prepaid credits from credit_transactions table (one-time purchases)
+      let prepaidCredits = 0;
+      try {
+        // Try using RPC function first
+        const { data: prepaidBalance, error: prepaidError } = await supabase.rpc('get_user_prepaid_credit_balance', {
+          p_user_id: user.id
+        });
+
+        if (!prepaidError && prepaidBalance !== null && prepaidBalance !== undefined) {
+          prepaidCredits = prepaidBalance;
+        } else if (prepaidError) {
+          // Fallback: calculate manually if RPC function fails
+          console.warn('RPC function failed, calculating prepaid credits manually:', prepaidError);
+          const now = new Date().toISOString();
+          const { data: transactions } = await supabase
+            .from('credit_transactions')
+            .select('credits, expires_at')
+            .eq('user_id', user.id)
+            .or(`expires_at.is.null,expires_at.gt.${now}`);
+          
+          if (transactions) {
+            prepaidCredits = transactions.reduce((sum, t) => {
+              // Only count non-expired credits
+              if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+                return sum + (t.credits || 0);
+              }
+              return sum;
+            }, 0);
+          }
+        }
+      } catch (prepaidErr) {
+        console.error('Error fetching prepaid credits:', prepaidErr);
+        // Continue with 0 prepaid credits
+      }
+
       // Get display credits total from plan (which comes from database plan_rules.monthly_generations_limit)
       // Database is the single source of truth for credit limits
-      const displayCreditsTotal = userPlan.features.displayCredits || userPlan.features.monthlyCredits;
+      // For one-time purchase plans (explorer, a_la_carte), only use prepaid credits, ignore plan credits
+      const isOneTimePlan = user.subscription_plan === 'explorer' || user.subscription_plan === 'a_la_carte';
+      const planDisplayCreditsTotal = isOneTimePlan ? 0 : (userPlan.features.displayCredits || userPlan.features.monthlyCredits);
+      const displayCreditsTotal = planDisplayCreditsTotal + prepaidCredits; // Include prepaid credits
       const displayCreditsRemaining = Math.max(0, displayCreditsTotal - displayCreditsUsed);
       
       // Calculate actual credits for comparison (convert back from display)
       const actualCreditsTotal = userPlan.features.monthlyCredits;
-      const actualCreditsUsed = actualCreditsTotal > 0 && displayCreditsTotal > 0 
-        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / displayCreditsTotal))
+      const actualCreditsUsed = actualCreditsTotal > 0 && planDisplayCreditsTotal > 0 
+        ? Math.floor(displayCreditsUsed * (actualCreditsTotal / planDisplayCreditsTotal))
         : displayCreditsUsed;
 
       const summary = {
@@ -137,8 +175,18 @@ export const CreditProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         displayCreditsRemaining,
         actualCreditsTotal,
         actualCreditsUsed,
-        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed)
+        actualCreditsRemaining: Math.max(0, actualCreditsTotal - actualCreditsUsed),
+        prepaidCredits // Include for debugging
       };
+
+      console.log('[CreditContext] Credit balance calculated:', {
+        userId: user.id,
+        planDisplayCreditsTotal,
+        prepaidCredits,
+        displayCreditsTotal,
+        displayCreditsUsed,
+        displayCreditsRemaining
+      });
 
       setCreditBalance({
         displayCreditsRemaining: summary.displayCreditsRemaining,

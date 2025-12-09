@@ -23,8 +23,9 @@ import {
 import { PLAN_DISPLAY_NAMES } from '../utils/planUtils';
 import { Crown } from 'lucide-react';
 import packageJson from '../../package.json';
-import { CreditProvider, useCredits } from '../contexts/CreditContext';
+import { useCredits } from '../contexts/CreditContext';
 import VideoGenerationNotification from './VideoGenerationNotification';
+import OffersSection from './OffersSection';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -37,6 +38,7 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showPricingModal, setShowPricingModal] = useState(false);
   
   // Refresh credits when subscription plan changes
   useEffect(() => {
@@ -76,6 +78,9 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
   const usedCredits = creditBalance?.displayCreditsUsed ?? 0;
   const usageRatio = totalCredits > 0 ? Math.min(usedCredits / totalCredits, 1) : 0;
   const usagePercent = totalCredits > 0 ? Math.min(100, Math.round(usageRatio * 100)) : 0;
+
+  // Determine if user has a one-time payment plan (explorer/a_la_carte)
+  const isOneTimePlanUser = user ? (user.subscription_plan === 'explorer' || user.subscription_plan === 'a_la_carte') : false;
 
   // Don't render theme-dependent content until mounted
   if (!mounted) {
@@ -186,6 +191,22 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
                     </div>
                   )}
                 </div>
+
+                {/* Add More Credits Button Card */}
+                <button
+                  onClick={() => {
+                    setShowPricingModal(true);
+                    setSidebarOpen(false);
+                  }}
+                  className="w-full mt-3 px-3 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-md transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] shadow-md hover:shadow-lg"
+                >
+                  <div className="flex items-center justify-center space-x-2">
+                    <Coins className="h-4 w-4" />
+                    <span className="text-sm font-semibold">
+                      {isOneTimePlanUser ? 'Add More Credits' : 'Upgrade Plan'}
+                    </span>
+                  </div>
+                </button>
                 <div className="h-px w-full bg-gray-200 dark:bg-gray-700 my-4" />
               </>
             )}
@@ -334,14 +355,41 @@ const LayoutContent: React.FC<LayoutProps> = ({ children }) => {
         {/* Global Video Generation Notification */}
         <VideoGenerationNotification />
       </div>
+
+      {/* Pricing/Offers Modal */}
+      {showPricingModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" 
+          onClick={() => setShowPricingModal(false)}
+        >
+          <div 
+            className={`bg-transparent rounded-lg ${isOneTimePlanUser ? 'max-w-6xl' : 'max-w-7xl'} w-full max-h-[90vh] overflow-y-auto relative`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowPricingModal(false)}
+              className="absolute top-6 right-6 text-gray-700 dark:text-white hover:text-gray-900 dark:hover:text-gray-300 text-3xl font-bold z-10 bg-white/90 dark:bg-black/50 rounded-full w-10 h-10 flex items-center justify-center transition-colors backdrop-blur-sm shadow-lg"
+              aria-label="Close pricing modal"
+            >
+              ×
+            </button>
+            <OffersSection
+              title={isOneTimePlanUser ? 'Add Credits And Go' : 'Choose Your Plan'}
+              subtitle={isOneTimePlanUser 
+                ? 'Choose a one-time payment option to add credits to your account'
+                : 'Pick the option that works best for your needs. All plans include full access to our AI-powered platform.'}
+              className="pt-8"
+              embedded={isOneTimePlanUser}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 const Layout: React.FC<LayoutProps> = ({ children }) => (
-  <CreditProvider>
-    <LayoutContent>{children}</LayoutContent>
-  </CreditProvider>
+  <LayoutContent>{children}</LayoutContent>
 );
 
 export default Layout;

@@ -133,13 +133,6 @@ export class AddFurnitureService {
         const output = await this.replicate.run(this.modelId, { input });
 
         const processingTime = Date.now() - startTime;
-        logger.info('✅ Furniture addition model completed', {
-          requestId,
-          processingTime,
-          model: this.modelId,
-          outputType: typeof output,
-          output: output
-        });
 
         // Handle the output - it might be a URL or a file object
         let outputUrl: string;

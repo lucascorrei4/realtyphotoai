@@ -110,13 +110,6 @@ export class InteriorDesignService {
         const output = await this.replicate.run(this.modelId, { input });
 
         const processingTime = Date.now() - startTime;
-        logger.info('✅ Interior design generation completed', {
-          requestId,
-          processingTime,
-          model: this.modelId,
-          outputType: typeof output,
-          output: output
-        });
 
         // Handle the output - it might be a URL or a file object
         let outputUrl: string;

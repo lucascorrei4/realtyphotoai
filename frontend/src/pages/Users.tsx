@@ -22,7 +22,7 @@ interface UserProfile {
   name?: string;
   phone?: string;
   role: 'user' | 'admin' | 'super_admin';
-  subscription_plan: 'free' | 'basic' | 'premium' | 'enterprise';
+  subscription_plan: 'free' | 'basic' | 'premium' | 'enterprise' | 'explorer' | 'a_la_carte';
   monthly_generations_limit: number;
   total_generations: number;
   successful_generations: number;
@@ -233,7 +233,9 @@ const Users: React.FC = () => {
       free: 'bg-gray-100 text-gray-800',
       basic: 'bg-green-100 text-green-800',
       premium: 'bg-blue-100 text-blue-800',
-      enterprise: 'bg-purple-100 text-purple-800'
+      enterprise: 'bg-purple-100 text-purple-800',
+      explorer: 'bg-blue-100 text-blue-800',
+      a_la_carte: 'bg-purple-100 text-purple-800'
     };
 
     return (

@@ -45,10 +45,10 @@ export class StripeService {
   private stripe: Stripe;
 
   constructor() {
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeSecretKey) {
-      throw new Error('STRIPE_SECRET_KEY environment variable is required');
-    }
+    // Import getStripeSecretKey dynamically to avoid circular dependencies
+    const { getStripeSecretKey } = require('../utils/stripeConfig');
+    const stripeSecretKey = getStripeSecretKey();
+    
     this.stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2023-10-16',
     });

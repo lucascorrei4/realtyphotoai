@@ -476,7 +476,9 @@ const AdminDashboard: React.FC = () => {
     free: '#6B7280',
     basic: '#3B82F6',
     premium: '#8B5CF6',
-    enterprise: '#10B981'
+    enterprise: '#10B981',
+    explorer: '#3B82F6',
+    a_la_carte: '#8B5CF6'
   };
 
   const planDistributionData = systemStats?.planDistribution ? 

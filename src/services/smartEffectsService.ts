@@ -108,17 +108,10 @@ export class SmartEffectsService {
         });
 
         // Call Replicate API
-        const output = await this.replicate.run(this.modelId, { input });
+        const output: unknown = await this.replicate.run(this.modelId, { input });
 
         const processingTime = Date.now() - startTime;
-        logger.info('✅ Smart effect generation completed', {
-          requestId,
-          processingTime,
-          model: this.modelId,
-          outputType: typeof output,
-          output: output
-        });
-
+        
         // Handle the output - it might be a URL or a file object
         let outputUrl: string;
         if (typeof output === 'string') {

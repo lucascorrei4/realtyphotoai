@@ -36,12 +36,12 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
       yearly: 0
     },
     features: {
-      monthlyCredits: 10, // Actual limit for billing
-      displayCredits: 300, // Displayed to users (300 free credits - allows 1 image + 1 video: 40 + 240 = 280)
+      monthlyCredits: 0, // No free credits for new users
+      displayCredits: 0, // No free credits for new users
     },
     limits: {
-      monthlyCredits: 10,
-      monthlyGenerations: 10, // Equals monthlyCredits for backward compatibility
+      monthlyCredits: 0,
+      monthlyGenerations: 0, // Equals monthlyCredits for backward compatibility
     },
     stripe: {
       metadata: {
@@ -185,6 +185,60 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
         plan_type: 'ultra',
         model_type: 'flux_hd',
         quality_level: 'ultra',
+        commercial_use: 'true'
+      }
+    },
+    billingCycle: 'monthly'
+  },
+  explorer: {
+    id: 'explorer',
+    name: 'explorer',
+    displayName: 'Explorer',
+    description: 'DIY 800 credits - Recharge and go. Perfect for users who want prepaid credits.',
+    price: {
+      monthly: 27,
+      yearly: 27
+    },
+    features: {
+      monthlyCredits: 0, // No monthly credits, only prepaid credits from purchase
+      displayCredits: 0, // Credits come from credit_transactions, not monthly limit
+    },
+    limits: {
+      monthlyCredits: 0,
+      monthlyGenerations: 0,
+    },
+    stripe: {
+      metadata: {
+        plan_type: 'explorer',
+        model_type: 'flux_basic',
+        quality_level: 'low',
+        commercial_use: 'false'
+      }
+    },
+    billingCycle: 'monthly'
+  },
+  a_la_carte: {
+    id: 'a_la_carte',
+    name: 'a_la_carte',
+    displayName: 'A la carte',
+    description: 'Done-for-you service - 3 Intro 6s Viral Videos. We do for you!',
+    price: {
+      monthly: 47,
+      yearly: 47
+    },
+    features: {
+      monthlyCredits: 0, // Done-for-you service, no monthly credits
+      displayCredits: 0,
+    },
+    limits: {
+      monthlyCredits: 0,
+      monthlyGenerations: 0,
+    },
+    stripe: {
+      metadata: {
+        plan_type: 'a_la_carte',
+        model_type: 'video',
+        quality_level: 'high',
         commercial_use: 'true'
       }
     },

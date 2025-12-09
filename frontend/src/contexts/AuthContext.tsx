@@ -9,7 +9,7 @@ export interface User {
   name?: string;
   phone?: string;
   role: 'user' | 'admin' | 'super_admin';
-  subscription_plan: 'free' | 'basic' | 'premium' | 'enterprise';
+  subscription_plan: 'free' | 'basic' | 'premium' | 'enterprise' | 'explorer' | 'a_la_carte';
   monthly_generations_limit: number;
   total_generations: number;
   successful_generations: number;

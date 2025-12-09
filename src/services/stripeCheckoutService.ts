@@ -77,10 +77,8 @@ export class StripeCheckoutService {
   private splitConfig: SplitPaymentConfig;
 
   constructor() {
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-    if (!stripeSecretKey) {
-      throw new Error('STRIPE_SECRET_KEY environment variable is required');
-    }
+    const { getStripeSecretKey } = require('../utils/stripeConfig');
+    const stripeSecretKey = getStripeSecretKey();
     
     this.stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2023-10-16',
@@ -267,7 +265,7 @@ export class StripeCheckoutService {
         },
         // Enable customer portal for subscription management
         allow_promotion_codes: true,
-        billing_address_collection: 'required',
+        // Address collection disabled - not required for digital products
         ...(customer ? {
           customer_update: {
             address: 'auto',
@@ -369,7 +367,7 @@ export class StripeCheckoutService {
         cancel_url: data.cancelUrl,
         metadata: sessionMetadata,
         allow_promotion_codes: true,
-        billing_address_collection: 'required',
+        // Address collection disabled - not required for digital products
       };
 
       const session = await this.stripe.checkout.sessions.create(sessionConfig);

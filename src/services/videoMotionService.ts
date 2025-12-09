@@ -554,13 +554,7 @@ export class VideoMotionService {
       const output = await this.replicate.run(this.veo3FastModelId, { input });
 
       const processingTime = Date.now() - startTime;
-      logger.info('✅ Veo-3.1-Fast video generation completed', {
-        requestId,
-        processingTime,
-        model: this.veo3FastModelId,
-        outputType: typeof output,
-        output: output
-      });
+      
 
       // Handle the output - it might be a URL or an array of URLs
       let outputUrl: string;

@@ -18,9 +18,8 @@ BEGIN
     RAISE EXCEPTION 'Invalid plan name: %. Must be one of: free, basic, premium, enterprise', user_plan;
   END;
 
-  -- Insert user profile with meta_event_name set to null
-  -- It will be set to 'Lead' by the backend API when email is entered via sendAuthCode
-  -- This ensures the backend is the source of truth for event tracking
+  -- Insert user profile with meta_event_name set to 'Lead' by default
+  -- When user successfully logs in and accesses the platform, it will be updated to 'CompleteRegistration'
   INSERT INTO user_profiles (
     id,
     email,
@@ -51,7 +50,7 @@ BEGIN
     0,
     0,
     true,
-    NULL, -- Set to NULL initially, backend will set to 'Lead' when email is entered
+    'Lead', -- Set to 'Lead' by default when profile is created (email was entered)
     NOW(),
     NOW()
   )
