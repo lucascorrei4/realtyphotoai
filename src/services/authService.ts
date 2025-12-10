@@ -57,16 +57,98 @@ export class AuthService {
       logger.info(`🔐 [sendAuthCode] AUTH CODE GENERATED for ${email}: ${code} (expires: ${codeExpiry.toISOString()})`);
       logger.info(`📧 [sendAuthCode] TESTING MODE: Code ${code} returned in response for ${email}`);
 
-      // Check if user exists (simple check, no retries needed)
-      // The Supabase Auth trigger will create the profile with meta_event_name = 'Lead' by default
-      const { data: existingUser } = await supabase
-        .from('user_profiles')
-        .select('id, email, meta_event_name')
-        .eq('email', email)
-        .single();
+      // Check if user exists - wait for profile to be created by Supabase Auth trigger
+      // The trigger should create the profile, but we need to ensure it exists before sending Lead event
+      let existingUser: { id: string; email: string; meta_event_name: string | null } | null = null;
+      let profileCreated = false;
+      
+      // Try to get user profile with retry logic (wait for Supabase Auth trigger)
+      const maxRetries = 5;
+      const retryDelay = 500; // 500ms between retries
+      
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const { data: user, error } = await supabase
+          .from('user_profiles')
+          .select('id, email, meta_event_name')
+          .eq('email', email)
+          .single();
+
+        if (!error && user) {
+          existingUser = user;
+          profileCreated = true;
+          logger.info(`✅ [sendAuthCode] Found user profile for ${email} (attempt ${attempt + 1})`, {
+            userId: user.id,
+            meta_event_name: user.meta_event_name
+          });
+          break;
+        }
+
+        if (attempt < maxRetries - 1) {
+          logger.info(`⏳ [sendAuthCode] User profile not found for ${email}, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+
+      // If profile still doesn't exist after retries, try to get user ID via admin API and create profile
+      if (!existingUser) {
+        logger.warn(`⚠️ [sendAuthCode] User profile not found for ${email} after ${maxRetries} attempts. Attempting to fetch Auth user ID...`);
+        
+        try {
+          // Use generateLink to get the user object without sending an email
+          // This works even if the user already exists (which they should, from signInWithOtp)
+          const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+            type: 'magiclink',
+            email: email
+          });
+          
+          if (linkError) {
+             logger.warn(`⚠️ [sendAuthCode] Could not get user ID for ${email} (User may not exist yet): ${linkError.message}`);
+          } else if (linkData && linkData.user) {
+             const authUserId = linkData.user.id;
+             logger.info(`✅ [sendAuthCode] Found Auth ID for ${email}: ${authUserId}. Creating profile...`);
+             
+             // Create profile using INSERT
+             const { data: newProfile, error: createError } = await supabase
+                .from('user_profiles')
+                .insert({
+                  id: authUserId,
+                  email: email,
+                  role: 'user',
+                  subscription_plan: 'free',
+                  monthly_generations_limit: 0,
+                  total_generations: 0,
+                  successful_generations: 0,
+                  failed_generations: 0,
+                  is_active: true,
+                  meta_event_name: 'Lead', // Set to 'Lead' since email was entered
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .select('id, email, meta_event_name')
+                .single();
+
+             if (createError) {
+                if (createError.code === '23505' || createError.message?.includes('duplicate key')) {
+                   // Race condition: profile created by trigger while we were fetching
+                   const { data: retryUser } = await supabase
+                      .from('user_profiles')
+                      .select('id, email, meta_event_name')
+                      .eq('email', email)
+                      .single();
+                   existingUser = retryUser;
+                } else {
+                   logger.error('Failed to create profile in sendAuthCode', createError);
+                }
+             } else {
+                existingUser = newProfile;
+             }
+          }
+        } catch (e) {
+           logger.error('Error in fallback profile creation in sendAuthCode', e as Error);
+        }
+      }
 
       // Check if this is a new signup (meta_event_name is null, empty, or not 'CompleteRegistration')
-      // If user doesn't exist, it's a new signup (trigger will create with 'Lead')
       // If user exists with 'Lead', it's still a new signup (hasn't accessed platform yet)
       const isNewSignup = !existingUser || 
                          !existingUser.meta_event_name || 
@@ -75,24 +157,26 @@ export class AuthService {
 
       logger.info(`🔍 [sendAuthCode] Checking signup status for ${email}`, {
         userExists: !!existingUser,
-        meta_event_name: existingUser?.meta_event_name ?? 'null (will be set to Lead by trigger)',
+        profileCreated,
+        meta_event_name: existingUser?.meta_event_name ?? 'null',
         isNewSignup
       });
 
-      if (isNewSignup) {
+      if (isNewSignup && existingUser) {
         // New signup - send Lead event to n8n
-        // Note: The Supabase Auth trigger will create the profile with meta_event_name = 'Lead'
-        // So we don't need to update it here - just send the event
+        // Profile exists, so we can safely send the event
+        const userId = existingUser.id;
         const conversionPayload: ConversionEventPayload = {
           email,
           ...metadata,
-          externalId: metadata?.externalId ?? (existingUser?.id ?? email),
+          externalId: metadata?.externalId ?? userId,
         };
 
         logger.info(`📤 [sendAuthCode] Sending Lead event for ${email} (new signup)`, {
           externalId: conversionPayload.externalId,
+          userId: userId,
           hasMetadata: !!metadata,
-          note: 'Profile will be created by Supabase trigger with meta_event_name = Lead'
+          meta_event_name: existingUser.meta_event_name
         });
         
         // Send Lead event to webhook (fire and forget to not block user flow)
@@ -100,17 +184,17 @@ export class AuthService {
           logger.error(`❌ [sendAuthCode] Failed to send Lead event for ${email}:`, error);
         });
 
-        // If user profile already exists but meta_event_name is null, update it to 'Lead'
+        // If user profile exists but meta_event_name is null, update it to 'Lead'
         // (This handles edge cases where trigger didn't set it)
-        if (existingUser && (!existingUser.meta_event_name || existingUser.meta_event_name === null)) {
-          logger.info(`🔄 [sendAuthCode] Updating meta_event_name to 'Lead' for existing profile ${email}`);
+        if (!existingUser.meta_event_name || existingUser.meta_event_name === null) {
+          logger.info(`🔄 [sendAuthCode] Updating meta_event_name to 'Lead' for profile ${email}`);
           const { error: updateError } = await supabase
             .from('user_profiles')
             .update({ 
               meta_event_name: 'Lead',
               updated_at: new Date().toISOString()
             })
-            .eq('email', email);
+            .eq('id', userId);
 
           if (updateError) {
             logger.error(`❌ [sendAuthCode] Failed to update meta_event_name for ${email}:`, {
@@ -127,7 +211,7 @@ export class AuthService {
           message: 'Signup code sent to your email',
           code: code // Remove this in production
         };
-      } else {
+      } else if (existingUser) {
         // Existing user who has already completed registration - no Lead event needed
         logger.info(`⏭️ [sendAuthCode] Skipping Lead event for ${email} (existing user, already completed registration)`, {
           meta_event_name: existingUser.meta_event_name,
@@ -136,6 +220,14 @@ export class AuthService {
         return {
           success: true,
           message: 'Login code sent to your email',
+          code: code // Remove this in production
+        };
+      } else {
+        // Profile doesn't exist and couldn't be created - return success but don't send Lead event
+        logger.warn(`⚠️ [sendAuthCode] User profile not found for ${email} and couldn't be created. Lead event NOT sent.`);
+        return {
+          success: true,
+          message: 'Signup code sent to your email',
           code: code // Remove this in production
         };
       }
@@ -404,10 +496,77 @@ export class AuthService {
     try {
       logger.info(`📧 [checkAndSendCompleteRegistration] START - Email: ${email}, UserId: ${userId}`);
       
-      const user = await this.getUserProfile(userId);
+      // Try to get user profile with retry logic (wait for Supabase Auth trigger)
+      let user: UserProfile | null = null;
+      const maxRetries = 5;
+      const retryDelay = 500; // 500ms between retries
+      
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        user = await this.getUserProfile(userId);
+        
+        if (user) {
+          logger.info(`✅ [checkAndSendCompleteRegistration] Found user profile for ${email} (attempt ${attempt + 1})`, {
+            userId: user.id,
+            meta_event_name: user.meta_event_name
+          });
+          break;
+        }
+
+        if (attempt < maxRetries - 1) {
+          logger.info(`⏳ [checkAndSendCompleteRegistration] User profile not found for ${email}, retrying in ${retryDelay}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+
+      // If profile still doesn't exist after retries, try to create it
+      if (!user) {
+        logger.warn(`⚠️ [checkAndSendCompleteRegistration] User profile not found for ${email} after ${maxRetries} attempts. Attempting to create profile...`);
+        
+        try {
+          // Create the profile directly using INSERT to avoid RPC function signature ambiguity
+          const { data: newProfile, error: createError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: userId,
+              email: email,
+              role: 'user',
+              subscription_plan: 'free',
+              monthly_generations_limit: 0,
+              total_generations: 0,
+              successful_generations: 0,
+              failed_generations: 0,
+              is_active: true,
+              meta_event_name: null, // Set to null so the subsequent logic triggers Lead event sending
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+          if (createError) {
+            // Check if it's a duplicate key error (profile already exists but query failed)
+            if (createError.code === '23505' || createError.message?.includes('duplicate key') || createError.message?.includes('already exists')) {
+              logger.info(`ℹ️ [checkAndSendCompleteRegistration] Profile already exists for ${email}, retrying fetch...`);
+              // Retry fetching one more time
+              user = await this.getUserProfile(userId);
+            } else {
+              logger.error(`❌ [checkAndSendCompleteRegistration] Failed to create user profile for ${email}:`, {
+                error: createError.message || String(createError),
+                code: createError.code
+              });
+            }
+          } else if (newProfile) {
+            // Profile was created successfully
+            logger.info(`✅ [checkAndSendCompleteRegistration] Successfully created user profile for ${email}`);
+            user = newProfile as UserProfile;
+          }
+        } catch (createProfileError) {
+          logger.error(`❌ [checkAndSendCompleteRegistration] Error creating user profile for ${email}:`, createProfileError as Error);
+        }
+      }
       
       if (!user) {
-        logger.warn(`❌ [checkAndSendCompleteRegistration] User profile not found for userId: ${userId}, email: ${email}`);
+        logger.error(`❌ [checkAndSendCompleteRegistration] User profile not found and could not be created for userId: ${userId}, email: ${email}`);
         return { sent: false, isFirstSignIn: false };
       }
 
