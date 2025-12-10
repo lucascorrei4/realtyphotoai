@@ -312,8 +312,6 @@ export class StripeCheckoutService {
           }
         }
       }
-
-      const isGuest = data.userId.startsWith('guest_') || !data.userEmail;
       
       // Build metadata
       const userData = data.userData || {};
