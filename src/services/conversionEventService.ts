@@ -2,7 +2,7 @@ import fetch, { Response } from 'node-fetch';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
-export type ConversionEventType = 'Lead' | 'CompleteRegistration';
+export type ConversionEventType = 'Lead' | 'CompleteRegistration' | 'Purchase';
 
 export interface UtmParameters {
   utm_source?: string;
@@ -22,12 +22,17 @@ export interface ConversionEventPayload {
   fbp?: string;
   fbc?: string;
   createdAt?: string;
+  eventTime?: number; // Unix timestamp (for Purchase events)
   amount?: number;
+  value?: number; // Alternative to amount (for Purchase events)
   currency?: string;
   eventIdOverride?: string;
   actionSource?: string;
   eventSourceUrl?: string;
   externalId?: string;
+  planId?: string; // For Purchase events
+  planName?: string; // For Purchase events
+  pixelId?: string; // For Purchase events
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -44,14 +49,19 @@ interface N8nWebhookPayload {
   user_agent: string;
   fbp: string;
   fbc: string;
-  created_at: string;
-  amount: number;
+  created_at?: string; // For Lead/CompleteRegistration events
+  event_time?: number; // Unix timestamp (for Purchase events)
+  amount?: number; // For Lead/CompleteRegistration events
+  value?: number; // For Purchase events
   currency: string;
   event_name: string;
   event_id?: string;
   action_source?: string;
   event_source_url?: string;
   external_id?: string;
+  plan_id?: string; // For Purchase events
+  plan_name?: string; // For Purchase events
+  pixel_id?: string; // For Purchase events
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
@@ -220,6 +230,26 @@ export class ConversionEventService {
       effectivePayload.utmTerm = payloadOverrides.utmTerm;
     }
 
+    if (payloadOverrides.eventTime !== undefined) {
+      effectivePayload.eventTime = payloadOverrides.eventTime;
+    }
+
+    if (payloadOverrides.value !== undefined) {
+      effectivePayload.value = payloadOverrides.value;
+    }
+
+    if (payloadOverrides.planId !== undefined) {
+      effectivePayload.planId = payloadOverrides.planId;
+    }
+
+    if (payloadOverrides.planName !== undefined) {
+      effectivePayload.planName = payloadOverrides.planName;
+    }
+
+    if (payloadOverrides.pixelId !== undefined) {
+      effectivePayload.pixelId = payloadOverrides.pixelId;
+    }
+
     const requestPayload = this.buildRequestPayload(event, effectivePayload);
     const timestamp = new Date().toISOString();
 
@@ -295,12 +325,17 @@ export class ConversionEventService {
       fbp,
       fbc,
       createdAt,
+      eventTime,
       amount,
+      value,
       currency,
       eventIdOverride,
       actionSource,
       eventSourceUrl,
       externalId,
+      planId,
+      planName,
+      pixelId,
       utmSource,
       utmMedium,
       utmCampaign,
@@ -309,6 +344,7 @@ export class ConversionEventService {
     } = payload;
 
     const now = new Date().toISOString();
+    const isPurchaseEvent = event === 'Purchase';
 
     // Extract UTM parameters from eventSourceUrl if not explicitly provided
     let finalUtm: UtmParameters = {};
@@ -334,10 +370,11 @@ export class ConversionEventService {
       finalUtm.utm_term = utmTerm;
     }
 
-    // event_name is the event type (Lead or CompleteRegistration)
+    // event_name is the event type (Lead, CompleteRegistration, or Purchase)
     // event_id can be used for custom event identifiers if needed
     const eventName = eventIdOverride ?? event;
 
+    // Build base payload
     const body: N8nWebhookPayload = {
       first_name: firstName ?? 'Unknown',
       last_name: lastName ?? 'User',
@@ -347,11 +384,29 @@ export class ConversionEventService {
       user_agent: userAgent ?? '',
       fbp: fbp ?? '',
       fbc: fbc ?? '',
-      created_at: createdAt ?? now,
-      amount: amount ?? 0,
       currency: currency ?? 'USD',
       event_name: eventName,
     };
+
+    // For Purchase events, use event_time and value (matching n8n parser format)
+    // For Lead/CompleteRegistration events, use created_at and amount
+    if (isPurchaseEvent) {
+      // Use eventTime if provided, otherwise convert createdAt to Unix timestamp, or use current time
+      if (eventTime !== undefined) {
+        body.event_time = eventTime;
+      } else if (createdAt) {
+        body.event_time = Math.floor(new Date(createdAt).getTime() / 1000);
+      } else {
+        body.event_time = Math.floor(Date.now() / 1000);
+      }
+      
+      // Use value if provided, otherwise use amount, or default to 0
+      body.value = value ?? amount ?? 0;
+    } else {
+      // Lead/CompleteRegistration events use created_at and amount
+      body.created_at = createdAt ?? now;
+      body.amount = amount ?? 0;
+    }
 
     // Include event_id if eventIdOverride is provided (for custom event tracking)
     if (eventIdOverride && eventIdOverride !== event) {
@@ -368,6 +423,19 @@ export class ConversionEventService {
 
     if (externalId) {
       body.external_id = externalId;
+    }
+
+    // Purchase events include plan_id, plan_name, and pixel_id
+    if (isPurchaseEvent) {
+      if (planId) {
+        body.plan_id = planId;
+      }
+      if (planName) {
+        body.plan_name = planName;
+      }
+      if (pixelId) {
+        body.pixel_id = pixelId;
+      }
     }
 
     // Add UTM parameters if any are present
