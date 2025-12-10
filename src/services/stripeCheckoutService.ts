@@ -344,10 +344,16 @@ export class StripeCheckoutService {
         ...data.metadata,
       };
 
+      // Determine email for receipt_email on payment intent
+      // Priority: customer email > userEmail from data > null (will use email from checkout)
+      const receiptEmail = customer?.email || data.userEmail || undefined;
+
       // Create checkout session for one-time payment
       const sessionConfig: Stripe.Checkout.SessionCreateParams = {
         ...(customer ? { customer: customer.id } : {}),
-        ...(!isGuest && data.userEmail && !customer ? { customer_email: data.userEmail } : {}),
+        // Set customer_email if we have an email (for both logged-in and guest checkout)
+        // This pre-fills the email field in Stripe Checkout
+        ...(data.userEmail && !customer ? { customer_email: data.userEmail } : {}),
         payment_method_types: ['card'],
         line_items: [
           {
@@ -366,6 +372,12 @@ export class StripeCheckoutService {
         success_url: data.successUrl,
         cancel_url: data.cancelUrl,
         metadata: sessionMetadata,
+        // Use payment_intent_data to set metadata and receipt_email on the Payment Intent
+        // This ensures the payment intent has all the important metadata and email
+        payment_intent_data: {
+          metadata: sessionMetadata,
+          ...(receiptEmail ? { receipt_email: receiptEmail } : {}),
+        },
         allow_promotion_codes: true,
         // Address collection disabled - not required for digital products
       };

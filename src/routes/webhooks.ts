@@ -410,6 +410,43 @@ async function handleOneTimePaymentCompleted(
 
     logger.info(`Processing one-time payment: userId=${userId}, credits=${credits}, email=${customerEmail}`);
 
+    // Update payment intent to ensure it has email and metadata
+    // This is important because metadata from checkout session doesn't always transfer to payment intent
+    const paymentIntentId = typeof session.payment_intent === 'string' 
+      ? session.payment_intent 
+      : (session.payment_intent as Stripe.PaymentIntent)?.id;
+    
+    if (paymentIntentId && customerEmail) {
+      try {
+        // Get the payment intent to check current state
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        
+        // Build metadata from session metadata
+        const paymentIntentMetadata = {
+          ...session.metadata,
+          ...(paymentIntent.metadata || {}), // Preserve any existing metadata
+        };
+        
+        // Update payment intent with email and metadata if needed
+        const needsUpdate = 
+          !paymentIntent.receipt_email || 
+          Object.keys(paymentIntentMetadata).length > Object.keys(paymentIntent.metadata || {}).length;
+        
+        if (needsUpdate) {
+          await stripe.paymentIntents.update(paymentIntentId, {
+            receipt_email: customerEmail,
+            metadata: paymentIntentMetadata,
+          });
+          logger.info(`Updated payment intent ${paymentIntentId} with email and metadata`);
+        }
+      } catch (updateError) {
+        // Log but don't fail - payment intent might already be finalized
+        logger.warn(`Could not update payment intent ${paymentIntentId}:`, {
+          error: updateError instanceof Error ? updateError.message : String(updateError)
+        });
+      }
+    }
+
     // Get or create user account
     let finalUserId = userId ?? undefined;
     let userEmail = customerEmail ?? undefined;
