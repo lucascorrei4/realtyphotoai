@@ -6,6 +6,7 @@ import { CreditProvider } from './contexts/CreditContext';
 import { supabase } from './config/supabase';
 import Layout from './components/Layout';
 import ToastProvider from './components/ToastProvider';
+import LolaBotIntegration from './components/LolaBotIntegration';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import ImageEnhancement from './pages/ImageEnhancement';
@@ -311,6 +312,7 @@ function App() {
           <Router>
             <AppRoutes />
             <ToastProvider />
+            <LolaBotIntegration />
           </Router>
         </CreditProvider>
       </AuthProvider>

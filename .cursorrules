@@ -1,7 +1,7 @@
-# RealtyPhotoAI - Cursor Rules & Guidelines
+# RealVisionAI - Cursor Rules & Guidelines
 
 ## Project Overview
-RealtyPhotoAI is a professional real estate photo enhancement platform using AI.
+RealVisionAI is a professional real estate photo enhancement platform using AI.
 - **Backend**: Node.js (v18+), Express, TypeScript
 - **Frontend**: React (Create React App), Tailwind CSS, TypeScript
 - **Database**: Supabase

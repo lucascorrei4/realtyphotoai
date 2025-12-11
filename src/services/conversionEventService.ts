@@ -158,7 +158,7 @@ export class ConversionEventService {
     payloadOverrides: Partial<ConversionEventPayload> = {},
   ): Promise<ConversionEventTestResult> {
     const effectivePayload: ConversionEventPayload = {
-      email: payloadOverrides.email ?? `test+${Date.now()}@realtyphotoai.com`,
+      email: payloadOverrides.email ?? `test+${Date.now()}@RealVisionAI.com`,
     };
 
     if (payloadOverrides.firstName !== undefined) {
@@ -174,7 +174,7 @@ export class ConversionEventService {
     }
 
     effectivePayload.ip = payloadOverrides.ip ?? '127.0.0.1';
-    effectivePayload.userAgent = payloadOverrides.userAgent ?? 'RealtyPhotoAI-Test/1.0';
+    effectivePayload.userAgent = payloadOverrides.userAgent ?? 'RealVisionAI-Test/1.0';
 
     if (payloadOverrides.fbp !== undefined) {
       effectivePayload.fbp = payloadOverrides.fbp;
