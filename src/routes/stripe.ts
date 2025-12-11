@@ -1282,13 +1282,17 @@ router.post('/add-credits-from-session', asyncHandler(async (req: express.Reques
     const amount = parseFloat(session.metadata?.amount || '0');
     
     // Determine subscription plan and credits to add
-    // DIY 800 ($27, 800 credits) -> 'explorer'
-    // A la carte ($47, 2500 credits) -> 'a_la_carte'
+    // DIY 800 ($27) -> 'explorer' (800 credits)
+    // A la carte ($47) -> 'a_la_carte' (2500 credits)
     let planName: string | null = null;
     let creditsToAdd = credits; // Default to credits from metadata
     
-    if (offerType === 'credits' && amount === 27 && credits === 800) {
+    if (offerType === 'credits' && amount === 27) {
       planName = 'explorer';
+      // Fallback to 800 if metadata credits are missing/zero
+      if (!creditsToAdd || creditsToAdd < 0) {
+        creditsToAdd = 800;
+      }
     } else if (offerType === 'videos' && amount === 47) {
       planName = 'a_la_carte';
       // A la carte purchase always includes 2500 credits

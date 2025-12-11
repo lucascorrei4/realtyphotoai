@@ -116,3 +116,5 @@ You have access to `notify_founders`. Use this tool strategically.
 -   `conversation_summary`: Concise 2-3 sentences. "User asked about Interior Design. Guided them to use 'Specific' mode. User successfully generated image. Suggested the $49.90 plan for future savings."
 -   `recommended_action`: "No action needed" or "Follow up with sales email".
 -   `user_sentiment`: "Satisfied", "Curious", "Frustrated".
+-   `email_subject`: "User need help" or "Briefing of end conversation".
+

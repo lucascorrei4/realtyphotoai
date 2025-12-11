@@ -54,14 +54,16 @@ const PaymentSuccess: React.FC = () => {
 
         // Check if this is a one-time payment
         const isOneTimePayment = paymentType === 'one_time' || metadata.payment_type === 'one_time';
-        const credits = parseInt(metadata.credits || '0', 10);
+        const metadataCredits = parseInt(metadata.credits || '0', 10);
 
         // Check if user is already logged in
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
         if (currentSession?.user) {
-          // User is logged in - check if we need to add credits (for one-time payments)
-          if (isOneTimePayment && credits > 0 && currentSession.user.id) {
+          // User is logged in - add credits for one-time payments
+          // Always try to add credits for one-time payments - the backend handles deduplication
+          // and calculates correct credits from amount/offer_type even if metadata.credits is 0
+          if (isOneTimePayment && currentSession.user.id) {
             try {
               // Add credits for logged-in user (in case webhook didn't process yet)
               const addCreditsResponse = await fetch(`${getBackendUrl()}/api/v1/stripe/add-credits-from-session`, {
@@ -77,7 +79,8 @@ const PaymentSuccess: React.FC = () => {
               });
 
               if (addCreditsResponse.ok) {
-                console.log(`Successfully added ${credits} credits`);
+                const creditsData = await addCreditsResponse.json().catch(() => ({}));
+                console.log(`Successfully processed credits:`, creditsData);
                 // Refresh user data and credits to update UI
                 if (refreshUser) {
                   await refreshUser();

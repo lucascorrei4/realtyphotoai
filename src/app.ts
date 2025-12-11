@@ -95,7 +95,7 @@ class App {
         'https://realvisionai-backend.qj2rlw.easypanel.host'
       ],
       credentials: false,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With'],
       exposedHeaders: ['Content-Length', 'Content-Type'],
     }));

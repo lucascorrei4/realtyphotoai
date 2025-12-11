@@ -5,6 +5,8 @@
   "main": "dist/app.js",
   "scripts": {
     "dev": "nodemon src/app.ts",
+    "dev:prod": "NODE_ENV=production nodemon src/app.ts",
+    "dev:prod:win": "set NODE_ENV=production&& nodemon src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "start:prod": "NODE_ENV=production node dist/app.js",

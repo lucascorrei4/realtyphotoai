@@ -162,13 +162,13 @@ router.delete('/users/:userId', requireAdmin, async (req: AuthenticatedRequest, 
 router.patch('/users/:userId/change-plan', requireAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { newPlan } = req.body;
+    const { newPlan, stripeSessionId, forceCredits } = req.body;
 
     if (!newPlan) {
       return res.status(400).json({ error: 'newPlan is required' });
     }
 
-    const success = await adminService.changeUserPlan(userId, newPlan);
+    const success = await adminService.changeUserPlan(userId, newPlan, stripeSessionId, forceCredits);
     
     if (success) {
       const updatedUser = await adminService.getUserById(userId);
@@ -178,11 +178,17 @@ router.patch('/users/:userId/change-plan', requireAdmin, async (req, res) => {
         user: updatedUser
       });
     } else {
+      logger.error('Admin change user plan failed', { userId, newPlan, stripeSessionId });
       return res.status(500).json({ error: 'Failed to change user plan' });
     }
   } catch (error) {
-    logger.error('Error in admin change user plan route:', error as Error);
-    return res.status(500).json({ error: 'Failed to change user plan' });
+    const err = error as Error;
+    logger.error('Error in admin change user plan route:', err);
+    // Return the actual error message for better debugging
+    return res.status(400).json({ 
+      error: err.message || 'Failed to change user plan',
+      details: 'For explorer/a_la_carte plans, a valid paid Stripe session is required, or use forceCredits=true to grant credits manually.'
+    });
   }
 });
 
@@ -475,6 +481,90 @@ router.post('/stripe/sync', requireSuperAdmin, async (_req, res) => {
   } catch (error) {
     logger.error('Error in admin Stripe sync route:', error as Error);
     return res.status(500).json({ error: 'Failed to sync Stripe plans' });
+  }
+});
+
+/**
+ * List recent Stripe customers (admin or super admin)
+ * GET /admin/stripe/customers
+ */
+router.get('/stripe/customers', requireAdmin, async (_req, res) => {
+  try {
+    const customers = await adminService.getStripeCustomers(20);
+    return res.json({ success: true, customers });
+  } catch (error) {
+    logger.error('Error in admin Stripe customers route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe customers' });
+  }
+});
+
+/**
+ * List recent Stripe checkout sessions (transactions) (admin or super admin)
+ * GET /admin/stripe/sessions
+ */
+router.get('/stripe/sessions', requireAdmin, async (_req, res) => {
+  try {
+    const sessions = await adminService.getStripeSessions(20);
+    return res.json({ success: true, sessions });
+  } catch (error) {
+    logger.error('Error in admin Stripe sessions route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe sessions' });
+  }
+});
+
+/**
+ * List recent Stripe subscriptions (admin or super admin)
+ * GET /admin/stripe/subscriptions
+ */
+router.get('/stripe/subscriptions', requireAdmin, async (_req, res) => {
+  try {
+    const subscriptions = await adminService.getStripeSubscriptions(20);
+    return res.json({ success: true, subscriptions });
+  } catch (error) {
+    logger.error('Error in admin Stripe subscriptions route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe subscriptions' });
+  }
+});
+
+/**
+ * List recent Stripe invoices (admin or super admin)
+ * GET /admin/stripe/invoices
+ */
+router.get('/stripe/invoices', requireAdmin, async (_req, res) => {
+  try {
+    const invoices = await adminService.getStripeInvoices(20);
+    return res.json({ success: true, invoices });
+  } catch (error) {
+    logger.error('Error in admin Stripe invoices route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe invoices' });
+  }
+});
+
+/**
+ * List recent Stripe payouts (admin or super admin)
+ * GET /admin/stripe/payouts
+ */
+router.get('/stripe/payouts', requireAdmin, async (_req, res) => {
+  try {
+    const payouts = await adminService.getStripePayouts(10);
+    return res.json({ success: true, payouts });
+  } catch (error) {
+    logger.error('Error in admin Stripe payouts route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe payouts' });
+  }
+});
+
+/**
+ * Get Stripe balance (admin or super admin)
+ * GET /admin/stripe/balance
+ */
+router.get('/stripe/balance', requireAdmin, async (_req, res) => {
+  try {
+    const balance = await adminService.getStripeBalance();
+    return res.json({ success: true, balance });
+  } catch (error) {
+    logger.error('Error in admin Stripe balance route:', error as Error);
+    return res.status(500).json({ error: 'Failed to fetch Stripe balance' });
   }
 });
 

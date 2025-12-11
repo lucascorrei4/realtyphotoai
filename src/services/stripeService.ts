@@ -326,6 +326,224 @@ export class StripeService {
       throw new Error('Failed to sync Stripe products');
     }
   }
+
+  /**
+   * List recent Stripe customers
+   */
+  async listCustomers(limit: number = 20): Promise<Array<{
+    id: string;
+    email: string | null;
+    name: string | null;
+    created: number | null;
+  }>> {
+    try {
+      // Fetch customers and also derive customer info from recent sessions as fallback
+      const customers = await this.stripe.customers.list({ limit });
+      const sessions = await this.stripe.checkout.sessions.list({ limit });
+
+      const map: Record<string, { id: string; email: string | null; name: string | null; created: number | null }> = {};
+
+      customers.data.forEach((c) => {
+        map[c.id] = {
+          id: c.id,
+          email: c.email ?? null,
+          name: (c as any).name ?? null,
+          created: c.created ?? null,
+        };
+      });
+
+      sessions.data.forEach((s) => {
+        const cid = typeof s.customer === 'string' ? s.customer : (s.customer as any)?.id;
+        const email = s.customer_details?.email ?? s.customer_email ?? null;
+        const created = s.created ?? null;
+        if (cid) {
+          if (!map[cid]) {
+            map[cid] = { id: cid, email, name: null, created };
+          } else if (!map[cid].email && email) {
+            map[cid].email = email;
+          }
+          if (!map[cid].created && created) {
+            map[cid].created = created;
+          }
+        } else if (email) {
+          const key = `email:${email}`;
+          if (!map[key]) {
+            map[key] = { id: key, email, name: null, created };
+          }
+        }
+      });
+
+      // Sort by created desc where available
+      return Object.values(map).sort((a, b) => (b.created || 0) - (a.created || 0)).slice(0, limit);
+    } catch (error) {
+      logger.error('Error listing Stripe customers:', error as Error);
+      throw new Error('Failed to list Stripe customers');
+    }
+  }
+
+  /**
+   * List recent Stripe checkout sessions (transactions)
+   */
+  async listCheckoutSessions(limit: number = 20): Promise<Array<{
+    id: string;
+    customer: string | null;
+    customer_email: string | null;
+    payment_intent: string | null;
+    amount_total: number | null;
+    currency: string | null;
+    payment_status: string | null;
+    created: number | null;
+    product_name: string | null;
+  }>> {
+    try {
+      const sessions = await this.stripe.checkout.sessions.list({
+        limit,
+        expand: ['data.line_items'],
+      } as Stripe.Checkout.SessionListParams);
+      // Sort by created desc in case Stripe returns ascending
+      const sorted = [...sessions.data].sort((a, b) => (b.created || 0) - (a.created || 0));
+      return sorted.map((s) => ({
+        id: s.id,
+        customer: typeof s.customer === 'string' ? s.customer : (s.customer as any)?.id ?? null,
+        customer_email: s.customer_details?.email ?? s.customer_email ?? null,
+        payment_intent: typeof s.payment_intent === 'string' ? s.payment_intent : (s.payment_intent as any)?.id ?? null,
+        amount_total: s.amount_total ?? null,
+        currency: s.currency ?? null,
+        payment_status: s.payment_status ?? null,
+        created: s.created ?? null,
+        product_name: ((s as any).line_items?.data?.[0]?.description) || ((s as any).line_items?.data?.[0]?.price?.product as any)?.name || null,
+      }));
+    } catch (error) {
+      logger.error('Error listing Stripe checkout sessions:', error as Error);
+      throw new Error('Failed to list Stripe checkout sessions');
+    }
+  }
+
+  /**
+   * List recent Stripe subscriptions
+   */
+  async listSubscriptions(limit: number = 20): Promise<Array<{
+    id: string;
+    customer: string | null;
+    status: string | null;
+    plan: string | null;
+    amount: number | null;
+    currency: string | null;
+    current_period_end: number | null;
+    trial_end: number | null;
+  }>> {
+    try {
+      const subs = await this.stripe.subscriptions.list({
+        limit,
+        expand: ['data.latest_invoice', 'data.items.data.price.product'],
+      });
+
+      return subs.data.map((s) => {
+        const item = s.items?.data?.[0];
+        const price = item?.price;
+        const product = (price?.product as any);
+        const latestInvoice = (s as any).latest_invoice;
+        const amount = latestInvoice?.total ?? price?.unit_amount ?? null;
+        const currency = latestInvoice?.currency ?? price?.currency ?? null;
+
+        return {
+          id: s.id,
+          customer: typeof s.customer === 'string' ? s.customer : (s.customer as any)?.id ?? null,
+          status: s.status ?? null,
+          plan: product?.name || price?.nickname || price?.id || null,
+          amount: amount ?? null,
+          currency: currency ?? null,
+          current_period_end: s.current_period_end ?? null,
+          trial_end: s.trial_end ?? null,
+        };
+      });
+    } catch (error) {
+      logger.error('Error listing Stripe subscriptions:', error as Error);
+      throw new Error('Failed to list Stripe subscriptions');
+    }
+  }
+
+  /**
+   * List recent Stripe invoices
+   */
+  async listInvoices(limit: number = 20): Promise<Array<{
+    id: string;
+    customer: string | null;
+    customer_email: string | null;
+    status: string | null;
+    total: number | null;
+    amount_due: number | null;
+    amount_paid: number | null;
+    currency: string | null;
+    due_date: number | null;
+    hosted_invoice_url: string | null;
+  }>> {
+    try {
+      const invoices = await this.stripe.invoices.list({ limit });
+
+      return invoices.data.map((inv) => ({
+        id: inv.id,
+        customer: typeof inv.customer === 'string' ? inv.customer : (inv.customer as any)?.id ?? null,
+        customer_email: inv.customer_email ?? null,
+        status: inv.status ?? null,
+        total: inv.total ?? null,
+        amount_due: inv.amount_due ?? null,
+        amount_paid: inv.amount_paid ?? null,
+        currency: inv.currency ?? null,
+        due_date: inv.due_date ?? inv.created ?? null,
+        hosted_invoice_url: inv.hosted_invoice_url ?? null,
+      }));
+    } catch (error) {
+      logger.error('Error listing Stripe invoices:', error as Error);
+      throw new Error('Failed to list Stripe invoices');
+    }
+  }
+
+  /**
+   * List recent Stripe payouts
+   */
+  async listPayouts(limit: number = 10): Promise<Array<{
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    arrival_date: number | null;
+    created: number | null;
+  }>> {
+    try {
+      const payouts = await this.stripe.payouts.list({ limit });
+      return payouts.data.map((p) => ({
+        id: p.id,
+        amount: p.amount,
+        currency: p.currency,
+        status: p.status,
+        arrival_date: (p as any).arrival_date ?? null,
+        created: p.created ?? null,
+      }));
+    } catch (error) {
+      logger.error('Error listing Stripe payouts:', error as Error);
+      throw new Error('Failed to list Stripe payouts');
+    }
+  }
+
+  /**
+   * Get Stripe balance (available/pending)
+   */
+  async getBalance(): Promise<{
+    available: Array<{ amount: number; currency: string }>;
+    pending: Array<{ amount: number; currency: string }>;
+  }> {
+    try {
+      const balance = await this.stripe.balance.retrieve();
+      return {
+        available: balance.available?.map((b) => ({ amount: b.amount, currency: b.currency })) || [],
+        pending: balance.pending?.map((b) => ({ amount: b.amount, currency: b.currency })) || [],
+      };
+    } catch (error) {
+      logger.error('Error fetching Stripe balance:', error as Error);
+      throw new Error('Failed to fetch Stripe balance');
+    }
+  }
 }
 
 export default new StripeService();

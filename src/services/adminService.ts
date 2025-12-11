@@ -1,3 +1,4 @@
+import Stripe from 'stripe';
 import { supabase } from '../config/supabase';
 import { logger } from '../utils/logger';
 import { UserProfile } from './authService';
@@ -128,16 +129,51 @@ export class AdminService {
         });
       }
 
+      // Get prepaid credit balances for all users (for one-time payment plans like explorer/a_la_carte)
+      const { data: creditTransactions, error: creditTransactionsError } = await supabase
+        .from('credit_transactions')
+        .select('user_id, credits, expires_at');
+
+      if (creditTransactionsError) {
+        logger.error('Error fetching credit transactions:', creditTransactionsError);
+      }
+
+      // Calculate prepaid credit balance per user (only non-expired credits)
+      const prepaidCreditsByUser: { [userId: string]: number } = {};
+      if (creditTransactions) {
+        const now = new Date();
+        creditTransactions.forEach((txn: any) => {
+          // Only count non-expired credits
+          if (!txn.expires_at || new Date(txn.expires_at) > now) {
+            if (!prepaidCreditsByUser[txn.user_id]) {
+              prepaidCreditsByUser[txn.user_id] = 0;
+            }
+            prepaidCreditsByUser[txn.user_id] += txn.credits || 0;
+          }
+        });
+      }
+
       // Add credits information to each user
-      // Use the plan's display credits from plan_rules, fallback to user's monthly_generations_limit
+      // For one-time plans (explorer/a_la_carte), use prepaid credits balance
+      // For subscription plans, use plan_rules limit
       return users.map((user: any) => {
         const planName = user.subscription_plan || 'free';
-        const planDisplayCredits = planCreditsMap[planName] || user.monthly_generations_limit || 0;
+        const isOneTimePlan = planName === 'explorer' || planName === 'a_la_carte';
+        
+        let totalCredits: number;
+        if (isOneTimePlan) {
+          // For one-time plans, total is the prepaid balance (credits purchased)
+          // This represents credits they have left to use
+          totalCredits = prepaidCreditsByUser[user.id] || 0;
+        } else {
+          // For subscription plans, use plan_rules monthly limit
+          totalCredits = planCreditsMap[planName] || user.monthly_generations_limit || 0;
+        }
         
         return {
           ...user,
           monthly_credits_used: creditsByUser[user.id] || 0,
-          monthly_credits_total: planDisplayCredits
+          monthly_credits_total: totalCredits
         };
       });
     } catch (error) {
@@ -249,9 +285,33 @@ export class AdminService {
   /**
    * Change user subscription plan
    */
-  async changeUserPlan(userId: string, newPlan: string): Promise<boolean> {
+  async changeUserPlan(userId: string, newPlan: string, stripeSessionId?: string, forceCredits?: boolean): Promise<boolean> {
     try {
-      // Get plan rules for the new plan
+      // Fetch user profile to get email/customer id for Stripe lookup
+      const { data: userProfile, error: userError } = await supabase
+        .from('user_profiles')
+        .select('email, stripe_customer_id')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !userProfile) {
+        logger.error('changeUserPlan: user not found', { userId, newPlan, stripeSessionId, error: userError });
+        throw new Error('User not found');
+      }
+
+      const userEmail = (userProfile.email || '').toLowerCase();
+      const userStripeCustomerId = userProfile.stripe_customer_id as string | null | undefined;
+
+      // For one-time purchase plans, we handle them specially (explorer = 800 credits, a_la_carte = 2500 credits)
+      const isOneTimePlan = newPlan === 'explorer' || newPlan === 'a_la_carte';
+      let creditsToAdd = 0;
+      if (newPlan === 'explorer') {
+        creditsToAdd = 800;
+      } else if (newPlan === 'a_la_carte') {
+        creditsToAdd = 2500;
+      }
+
+      // Get plan rules for the new plan (optional for one-time plans)
       const { data: planRule } = await supabase
         .from('plan_rules')
         .select('*')
@@ -259,8 +319,237 @@ export class AdminService {
         .eq('is_active', true)
         .single();
 
-      if (!planRule) {
-        throw new Error('Invalid plan');
+      // For regular subscription plans, require plan_rules entry
+      if (!planRule && !isOneTimePlan) {
+        logger.error('changeUserPlan: plan not active/valid', { userId, newPlan });
+        throw new Error('Invalid plan. Make sure the plan exists and is active in plan_rules.');
+      }
+
+      // For one-time plans without plan_rules entry, create a default config
+      const effectivePlanRule = planRule || {
+        plan_name: newPlan,
+        monthly_generations_limit: creditsToAdd, // Use credits as the limit for display
+        concurrent_generations: 2,
+        allowed_models: ['interior_design', 'exterior_design', 'smart_effects', 'add_furniture', 'video_motion'],
+        price_per_month: 0,
+        is_active: true
+      };
+
+      if (isOneTimePlan) {
+        // If forceCredits is true, skip Stripe verification and just add credits
+        if (forceCredits) {
+          logger.info('changeUserPlan: forceCredits enabled, skipping Stripe verification', {
+            userId,
+            newPlan,
+            creditsToAdd
+          });
+
+          // Add prepaid credits directly
+          const description = `Admin manual plan change to ${newPlan} (forced without Stripe verification)`;
+          const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
+            p_user_id: userId,
+            p_credits: creditsToAdd,
+            p_description: description,
+            p_stripe_session_id: null,
+            p_stripe_payment_intent_id: null,
+            p_expires_at: null
+          });
+
+          if (rpcError) {
+            logger.warn('RPC add_prepaid_credits failed (force), attempting direct insert', {
+              error: rpcError.message
+            });
+
+            const { data: currentBalanceData } = await supabase
+              .from('credit_transactions')
+              .select('credits, expires_at')
+              .eq('user_id', userId);
+
+            const currentBalance = (currentBalanceData || []).reduce((sum, t) => {
+              if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+                return sum + (t.credits || 0);
+              }
+              return sum;
+            }, 0);
+
+            const newBalance = currentBalance + creditsToAdd;
+
+            const { error: insertError } = await supabase
+              .from('credit_transactions')
+              .insert({
+                user_id: userId,
+                transaction_type: 'admin_grant',
+                credits: creditsToAdd,
+                balance_after: newBalance,
+                description,
+                stripe_session_id: null,
+                stripe_payment_intent_id: null,
+                expires_at: null
+              });
+
+            if (insertError) {
+              logger.error('Direct insert to credit_transactions failed (force):', insertError);
+              return false;
+            }
+          }
+        } else {
+          // Normal flow: require Stripe verification
+          const { getStripeSecretKey } = require('../utils/stripeConfig');
+          const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
+          const expectedAmount = newPlan === 'explorer' ? 27 : 47;
+
+          // Helper: find latest paid checkout session for this user by email or customer id
+          const findLatestPaidSession = async (): Promise<Stripe.Checkout.Session | null> => {
+            let startingAfter: string | undefined;
+            let latest: Stripe.Checkout.Session | null = null;
+
+            // Iterate through paid sessions (paginated) until we find a match
+            do {
+              // Stripe typings for Checkout session list don't expose payment_status filter; fetch and filter in code
+              const listParams: Stripe.Checkout.SessionListParams = { limit: 50 };
+              if (startingAfter) {
+                listParams.starting_after = startingAfter;
+              }
+
+              const sessions = await stripe.checkout.sessions.list(listParams);
+
+              for (const s of sessions.data) {
+                if (s.payment_status !== 'paid') {
+                  continue;
+                }
+                const sessionEmail = s.customer_details?.email?.toLowerCase();
+                const matchEmail = userEmail && sessionEmail === userEmail;
+                const matchCustomer =
+                  !!userStripeCustomerId &&
+                  typeof s.customer === 'string' &&
+                  s.customer === userStripeCustomerId;
+
+                if (!matchEmail && !matchCustomer) {
+                  continue;
+                }
+
+                const paidAmount = (s.amount_total || 0) / 100;
+                if (paidAmount < expectedAmount - 0.01) {
+                  continue;
+                }
+
+                if (!latest || (s.created || 0) > (latest.created || 0)) {
+                  latest = s;
+                }
+              }
+
+              startingAfter = sessions.has_more ? sessions.data[sessions.data.length - 1].id : undefined;
+
+              // Early exit if we already found a match
+              if (latest) {
+                break;
+              }
+            } while (startingAfter);
+
+            return latest;
+          };
+
+          let sessionIdToUse = stripeSessionId;
+          if (!sessionIdToUse) {
+            const latestSession = await findLatestPaidSession();
+            if (!latestSession) {
+              logger.error('changeUserPlan: no paid Stripe session found by email/customer', {
+                userId,
+                newPlan,
+                userEmail,
+                userStripeCustomerId,
+              });
+              throw new Error(`No paid Stripe session found for this user (${userEmail}). The user needs to complete a $${expectedAmount} payment first, or use "Force Credits" to grant manually.`);
+            }
+            sessionIdToUse = latestSession.id;
+          }
+
+          // Verify payment in Stripe before adding credits
+          const session = await stripe.checkout.sessions.retrieve(sessionIdToUse, {
+            expand: ['payment_intent', 'customer', 'customer_details'],
+          });
+
+          if (!session || session.payment_status !== 'paid') {
+            logger.error('changeUserPlan: Stripe session not paid', {
+              userId,
+              newPlan,
+              sessionId: sessionIdToUse,
+              payment_status: session?.payment_status
+            });
+            throw new Error('Stripe session is not paid. Credits not granted.');
+          }
+
+          const amountPaid = (session.amount_total || 0) / 100;
+          if (amountPaid < expectedAmount - 0.01) {
+            logger.error('changeUserPlan: amount mismatch', {
+              userId,
+              newPlan,
+              sessionId: session.id,
+              amountPaid,
+              expectedAmount
+            });
+            throw new Error(`Stripe payment amount mismatch. Expected at least $${expectedAmount}.`);
+          }
+
+          logger.info('changeUserPlan: using Stripe session', {
+            userId,
+            newPlan,
+            sessionId: session.id,
+            amountPaid
+          });
+
+          // Add prepaid credits (RPC first, fallback direct insert)
+          const description = `Admin plan change to ${newPlan} (Stripe session ${session.id})`;
+          const { error: rpcError } = await supabase.rpc('add_prepaid_credits', {
+            p_user_id: userId,
+            p_credits: creditsToAdd,
+            p_description: description,
+            p_stripe_session_id: session.id,
+            p_stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+            p_expires_at: null
+          });
+
+          if (rpcError) {
+            logger.warn('RPC add_prepaid_credits failed, attempting direct insert', {
+              error: rpcError.message,
+              code: rpcError.code,
+              details: rpcError.details,
+              hint: rpcError.hint
+            });
+
+            const { data: currentBalanceData } = await supabase
+              .from('credit_transactions')
+              .select('credits, expires_at')
+              .eq('user_id', userId);
+
+            const currentBalance = (currentBalanceData || []).reduce((sum, t) => {
+              if (!t.expires_at || new Date(t.expires_at) > new Date()) {
+                return sum + (t.credits || 0);
+              }
+              return sum;
+            }, 0);
+
+            const newBalance = currentBalance + creditsToAdd;
+
+            const { error: insertError } = await supabase
+              .from('credit_transactions')
+              .insert({
+                user_id: userId,
+                transaction_type: 'purchase',
+                credits: creditsToAdd,
+                balance_after: newBalance,
+                description,
+                stripe_session_id: session.id,
+                stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
+                expires_at: null
+              });
+
+            if (insertError) {
+              logger.error('Direct insert to credit_transactions failed:', insertError);
+              return false;
+            }
+          }
+        }
       }
 
       // Update user plan and limits
@@ -268,7 +557,7 @@ export class AdminService {
         .from('user_profiles')
         .update({
           subscription_plan: newPlan,
-          monthly_generations_limit: planRule.monthly_generations_limit
+          monthly_generations_limit: effectivePlanRule.monthly_generations_limit
         })
         .eq('id', userId);
 
@@ -529,6 +818,48 @@ export class AdminService {
         message: 'Failed to sync Stripe plans',
       };
     }
+  }
+
+  /**
+   * List recent Stripe customers
+   */
+  async getStripeCustomers(limit: number = 20) {
+    return stripeService.listCustomers(limit);
+  }
+
+  /**
+   * List recent Stripe checkout sessions (transactions)
+   */
+  async getStripeSessions(limit: number = 20) {
+    return stripeService.listCheckoutSessions(limit);
+  }
+
+  /**
+   * List recent Stripe subscriptions
+   */
+  async getStripeSubscriptions(limit: number = 20) {
+    return stripeService.listSubscriptions(limit);
+  }
+
+  /**
+   * List recent Stripe invoices
+   */
+  async getStripeInvoices(limit: number = 20) {
+    return stripeService.listInvoices(limit);
+  }
+
+  /**
+   * List recent Stripe payouts
+   */
+  async getStripePayouts(limit: number = 10) {
+    return stripeService.listPayouts(limit);
+  }
+
+  /**
+   * Get Stripe balance
+   */
+  async getStripeBalance() {
+    return stripeService.getBalance();
   }
 
   /**

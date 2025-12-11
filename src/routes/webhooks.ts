@@ -451,28 +451,34 @@ async function handleOneTimePaymentCompleted(
     let finalUserId = userId ?? undefined;
     let userEmail = customerEmail ?? undefined;
 
-    // If guest checkout, find or create user by email
-    if (isGuest && userEmail) {
-      // Check if user exists by email
+    // For any checkout (guest or not), always try to find user by email first
+    // This handles cases where user was logged in but metadata has guest_ prefix
+    // or where user registered between checkout and webhook processing
+    if (userEmail) {
       const { data: existingUser } = await supabase
         .from('user_profiles')
         .select('id, email')
-        .eq('email', userEmail)
+        .eq('email', userEmail.toLowerCase())
         .single();
 
       if (existingUser) {
-        finalUserId = existingUser.id;
-        logger.info(`Found existing user for email ${userEmail}: ${finalUserId}`);
-      } else {
-        // Create new user account - we'll create it via Supabase Auth in the success page
-        // For now, just log that we need to create it
+        // Found user by email - use their real ID
+        if (!finalUserId || finalUserId.startsWith('guest_')) {
+          finalUserId = existingUser.id;
+          logger.info(`Found existing user by email ${userEmail}: ${finalUserId}`);
+        }
+      } else if (isGuest) {
+        // User doesn't exist yet - PaymentSuccess page will create account and add credits
         logger.info(`User account will be created for email ${userEmail} on success page`);
       }
     }
 
-    if (!finalUserId) {
-      logger.error('Cannot process one-time payment: no userId available');
-      return;
+    // If still no valid userId, we can't process credits here
+    // PaymentSuccess will handle it after user creates account
+    if (!finalUserId || finalUserId.startsWith('guest_')) {
+      logger.info(`Deferring credit processing to PaymentSuccess page: userId=${finalUserId}, email=${userEmail}, credits=${credits}`);
+      // Don't return early - still log the payment for tracking
+      // but skip the actual credit processing
     }
 
     // Update Stripe customer ID if available
@@ -488,13 +494,17 @@ async function handleOneTimePaymentCompleted(
     }
 
     // Determine subscription plan based on offer type
-    // DIY 800 ($27, 800 credits) -> 'explorer'
-    // A la carte ($47, 2500 credits) -> 'a_la_carte'
+    // DIY 800 ($27) -> 'explorer' (800 credits)
+    // A la carte ($47) -> 'a_la_carte' (2500 credits)
     let planName: string | null = null;
     let creditsToAdd = credits; // Default to credits from metadata
     
-    if (offerType === 'credits' && amount === 27 && credits === 800) {
+    if (offerType === 'credits' && amount === 27) {
       planName = 'explorer';
+      // Fallback to 800 if metadata credits are missing/zero
+      if (!creditsToAdd || creditsToAdd < 0) {
+        creditsToAdd = 800;
+      }
     } else if (offerType === 'videos' && amount === 47) {
       planName = 'a_la_carte';
       // A la carte purchase always includes 2500 credits
